@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Flow — a terminal-flavoured exercise app</title>
-<meta name="description" content="Flow is a personal iOS exercise app built in SwiftUI. TokyoNight theme, strength routines, run review, and Obsidian-friendly summaries." />
+<meta name="description" content="Flow is a personal iOS exercise app built in SwiftUI. TokyoNight theme, strength routines, HealthKit run review, and Obsidian-friendly receipts." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -221,6 +221,25 @@
     margin-bottom: 1.8rem;
   }
   .phone-title { color: var(--comment); font-size: 0.75rem; margin-bottom: 0.4rem; }
+  .phone-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.45rem;
+    margin-bottom: 1rem;
+  }
+  .phone-tab {
+    border: 1px solid rgba(86,95,137,0.45);
+    border-radius: 6px;
+    color: var(--comment);
+    padding: 0.45rem 0;
+    text-align: center;
+  }
+  .phone-tab.active {
+    color: var(--bg);
+    background: var(--blue);
+    border-color: var(--blue);
+    font-weight: 700;
+  }
   .phone-exercise {
     color: var(--fg);
     font-size: 1.35rem;
@@ -248,6 +267,70 @@
   .phone-rating.fail { color: var(--red); border-color: rgba(247,118,142,0.4); }
   .phone-rating.good { color: var(--bg); background: var(--green); border-color: var(--green); font-weight: 700; }
   .phone-rating.easy { color: var(--yellow); border-color: rgba(224,175,104,0.4); }
+  .phone-run {
+    border: 1px solid rgba(122,162,247,0.25);
+    background: var(--card);
+    border-radius: 10px;
+    padding: 0.9rem;
+    margin-top: 1rem;
+  }
+  .phone-run-title {
+    color: var(--fg);
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+  }
+  .phone-run-sub {
+    color: var(--comment);
+    font-size: 0.72rem;
+    margin-bottom: 0.75rem;
+  }
+  .phone-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.45rem;
+    margin-bottom: 0.8rem;
+  }
+  .phone-metric {
+    border: 1px solid rgba(86,95,137,0.35);
+    border-radius: 6px;
+    padding: 0.45rem 0.35rem;
+  }
+  .phone-metric .label {
+    color: var(--comment);
+    font-size: 0.6rem;
+    display: block;
+  }
+  .phone-metric .value {
+    color: var(--purple);
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+  .phone-route {
+    height: 72px;
+    border-radius: 8px;
+    background:
+      linear-gradient(135deg, rgba(122,162,247,0.16), transparent 60%),
+      linear-gradient(180deg, var(--dark-card), rgba(26,27,38,0.85));
+    border: 1px solid rgba(86,95,137,0.35);
+    position: relative;
+    overflow: hidden;
+  }
+  .phone-route::before {
+    content: "";
+    position: absolute;
+    left: 18px;
+    top: 32px;
+    width: 200px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--green), var(--blue), var(--purple), var(--orange));
+    border-radius: 999px;
+    transform: rotate(-10deg);
+    box-shadow:
+      32px -18px 0 -1px var(--blue),
+      72px 12px 0 -1px var(--purple),
+      118px -10px 0 -1px var(--orange);
+  }
   .phone-hint { color: var(--comment); font-size: 0.72rem; text-align: center; margin-top: auto; }
   .phone-hint .arrow { color: var(--purple); }
   .ring-row {
@@ -432,13 +515,14 @@
       <span class="tag">// total addressable market: 1</span> &nbsp; • &nbsp; side-loaded &nbsp; • &nbsp; not on the app store
     </div>
     <h1>
-      Lift like it's<br/>
-      a <span class="accent">terminal session.</span>
+      Lift, run, then<br/>
+      <span class="accent">log the evidence.</span>
     </h1>
     <p class="lede">
-      Who wants to manage their workouts in JSON, with an AI loop to seed the base routines, and a
-      TokyoNight colour scheme glowing at them between sets? <em>This guy.</em> Possibly no-one
-      else, ever. Flow is an exercise app carefully tailored to a market of one.
+      Who wants strength routines, HealthKit runs, route crumbs, clipboard summaries, and a
+      TokyoNight colour scheme glowing at them like a very small operations dashboard? <em>This guy.</em>
+      Flow is still an exercise app carefully tailored to a market of one. It has simply acquired
+      a second tab and therefore a modest air of empire.
     </p>
     <div class="ctas">
       <a href="https://github.com/amomand/flow" class="btn btn-primary mono">
@@ -454,8 +538,12 @@
     <div class="phone">
       <div class="phone-notch"></div>
       <div class="phone-screen">
-        <div class="phone-status">// 09:42 · push · set 2/4</div>
-        <div class="phone-title"># push day · chest &amp; shoulders</div>
+        <div class="phone-status">// 09:42 · flow · local only</div>
+        <div class="phone-tabs">
+          <div class="phone-tab active">strength</div>
+          <div class="phone-tab">runs</div>
+        </div>
+        <div class="phone-title"># upper a · kettlebell diplomacy</div>
         <div class="phone-exercise">Incline Press</div>
         <div class="phone-sub">set 2 of 4 · ~60s rest</div>
         <div class="phone-bigset">8<span class="unit">reps</span></div>
@@ -465,7 +553,16 @@
           <div class="phone-rating good">[ good ]</div>
           <div class="phone-rating easy">[ easy ]</div>
         </div>
-        <div class="phone-hint">swipe left <span class="arrow">→</span> complete set</div>
+        <div class="phone-run">
+          <div class="phone-run-title">// latest run</div>
+          <div class="phone-run-sub">8.42 km · 52:18 · suspiciously hilly</div>
+          <div class="phone-metrics">
+            <div class="phone-metric"><span class="label">pace</span><span class="value">6:12</span></div>
+            <div class="phone-metric"><span class="label">gain</span><span class="value">184m</span></div>
+            <div class="phone-metric"><span class="label">hr</span><span class="value">146</span></div>
+          </div>
+          <div class="phone-route"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -476,7 +573,7 @@
   <h2>Things it does, <span class="accent">for the one guy.</span></h2>
   <div class="features">
     <div class="card accent-purple">
-      <div class="icon mono">// card-ui</div>
+      <div class="icon mono">// strength</div>
       <h3>One card, one set</h3>
       <p>Each set is a focused card: exercise, reps, per-side flag, notes. No scrolling mid-lift. Any issues with this, keep them to yourself.</p>
     </div>
@@ -486,14 +583,14 @@
       <p>Separate rest between sets and after the final set of an exercise. A progress ring. A buzz at zero. Pretty standard timer stuff, honestly.</p>
     </div>
     <div class="card accent-green">
-      <div class="icon mono">// ratings</div>
-      <h3>Fail / Good / Easy</h3>
-      <p>Rate each set in one tap. Enough Easies progress the exercise; enough Fails pull it back. The algorithm is vibes-based but it's my vibes.</p>
+      <div class="icon mono">// healthkit</div>
+      <h3>Runs, finally in the room</h3>
+      <p>Pull running workouts from HealthKit, starting from the date you choose. The app does not need to know about 2017. Nobody does.</p>
     </div>
     <div class="card accent-yellow">
-      <div class="icon mono">// summary</div>
-      <h3>Obsidian-shaped output</h3>
-      <p>End-of-workout markdown summary, copied to the clipboard, ready to paste into a training log that also nobody else reads.</p>
+      <div class="icon mono">// maps + charts</div>
+      <h3>Route crumbs and split maths</h3>
+      <p>Run detail pages show the route, pace buckets, elevation samples, splits, and heart rate. A dashboard, but wearing shorts.</p>
     </div>
     <div class="card accent-red">
       <div class="icon mono">// json + ai</div>
@@ -503,34 +600,34 @@
     <div class="card">
       <div class="icon mono">// theme</div>
       <h3>TokyoNight, obviously</h3>
-      <p>Monospaced type, bracketed controls, comment-style headers. The gym is a coding session. The coding session is a gym. It's fine.</p>
+      <p>Monospaced type, bracketed controls, comment-style headers. Strength and runs now share the same nocturnal little command centre.</p>
     </div>
   </div>
 </section>
 
 <section id="flow">
   <div class="section-label mono"><span class="hash">##</span> flow</div>
-  <h2>From home screen to <span class="accent">clipboard markdown.</span></h2>
+  <h2>From home screen to <span class="accent">training receipt.</span></h2>
   <div class="flow">
     <div class="flow-step">
       <div class="num">01</div>
-      <h4>Pick a routine</h4>
-      <p>Starter routines seeded from a training plan I asked an LLM about. Edit them, or don't.</p>
+      <h4>Choose your tab</h4>
+      <p>Strength if you are about to do the thing. Runs if you already did the thing and want to inspect the evidence.</p>
     </div>
     <div class="flow-step">
       <div class="num">02</div>
-      <h4>Work the sets</h4>
-      <p>Swipe to complete reps. Timed exercises auto-advance at zero. Your thumb knows what to do.</p>
+      <h4>Do or review</h4>
+      <p>Swipe through sets, or pull runs from HealthKit. Both are valid forms of staring at numbers with intent.</p>
     </div>
     <div class="flow-step">
       <div class="num">03</div>
-      <h4>Rest, then repeat</h4>
-      <p>Ring counts down. Phone buzzes. Next exercise appears. You, hopefully, lift again.</p>
+      <h4>Rate the damage</h4>
+      <p>Strength gets Fail / Good / Easy. Runs get splits, pace, elevation, and the quiet judgement of a route line.</p>
     </div>
     <div class="flow-step">
       <div class="num">04</div>
-      <h4>Copy the summary</h4>
-      <p>Markdown to clipboard. Paste into Obsidian. Close the vault. Go eat.</p>
+      <h4>Keep the receipt</h4>
+      <p>Copy the workout summary, browse the run, paste what matters into Obsidian. Close the vault. Go eat.</p>
     </div>
   </div>
 </section>
@@ -539,30 +636,31 @@
   <div class="code-row">
     <div>
       <div class="section-label mono"><span class="hash">##</span> data</div>
-      <h2>Routines are just <span class="accent">JSON.</span></h2>
+      <h2>Local data, because <span class="accent">calm is nice.</span></h2>
       <p>
         No backend. No account. No lock-in, because there is nothing to be locked into.
-        Routines live as JSON in the app's documents directory. Build them in the editor, export
-        them to a note, or paste in whatever an LLM hands you and see what happens.
+        Strength routines live as JSON in the app's documents directory. Runs are mirrored from
+        HealthKit into local SwiftData so the list opens quickly and the internet can remain uninvolved.
       </p>
       <p class="comment mono" style="margin-top:1.5rem; font-size:0.85rem;">
-        // if the schema changes, I'll know, because it's me.
+        // if the schema changes, I'll know, because I will have done it to myself.
       </p>
     </div>
     <pre class="code"><span class="c">// Routine.json</span>
 <span class="k">{</span>
-  <span class="t">"name"</span><span class="k">:</span> <span class="s">"Push Day"</span>,
+  <span class="t">"name"</span><span class="k">:</span> <span class="s">"Upper A"</span>,
   <span class="t">"sections"</span><span class="k">:</span> [<span class="k">{</span>
-    <span class="t">"name"</span><span class="k">:</span> <span class="s">"Chest &amp; Shoulders"</span>,
+    <span class="t">"name"</span><span class="k">:</span> <span class="s">"Main Lifts"</span>,
     <span class="t">"exercises"</span><span class="k">:</span> [<span class="k">{</span>
-      <span class="t">"name"</span><span class="k">:</span> <span class="s">"Incline Press"</span>,
+      <span class="t">"name"</span><span class="k">:</span> <span class="s">"Floor press KB"</span>,
       <span class="t">"sets"</span><span class="k">:</span> <span class="n">4</span>,
       <span class="t">"reps"</span><span class="k">:</span> <span class="n">8</span>,
       <span class="t">"restBetweenSetsSeconds"</span><span class="k">:</span> <span class="n">60</span>,
       <span class="t">"restAfterExerciseSeconds"</span><span class="k">:</span> <span class="n">120</span>,
       <span class="t">"perSide"</span><span class="k">:</span> <span class="n">false</span>
     <span class="k">}</span>]
-  <span class="k">}</span>]
+  <span class="k">}</span>],
+  <span class="t">"runs"</span><span class="k">:</span> <span class="s">"HealthKit, politely asked"</span>
 <span class="k">}</span></pre>
   </div>
 </section>
@@ -570,7 +668,7 @@
 
 <footer>
   <div>
-    <span class="comment">// not on the app store · not coming to the app store · please do not ask</span>
+    <span class="comment">// not on the app store · not coming to the app store · now with a runs tab</span>
   </div>
   <div style="margin-top: 0.6rem;">
     <span class="accent">Flow</span> &nbsp;·&nbsp;
