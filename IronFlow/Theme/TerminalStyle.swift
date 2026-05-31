@@ -75,7 +75,13 @@ struct FlowScreenHeader<Actions: View>: View {
     @Environment(\.theme) private var theme
     let title: String
     let subtitle: String
-    @ViewBuilder let actions: Actions
+    let actions: Actions
+
+    init(title: String, subtitle: String, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.subtitle = subtitle
+        self.actions = actions()
+    }
 
     var body: some View {
         HStack(alignment: .center) {

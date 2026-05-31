@@ -146,7 +146,9 @@ class RoutineStore {
         do {
             return try JSONDecoder().decode(Routine.self, from: data)
         } catch {
-            assertionFailure("Failed to decode seed routine JSON: \(error)")
+            let message = "Failed to decode seed routine JSON: \(error)"
+            print(message)
+            assertionFailure(message)
             return nil
         }
     }
