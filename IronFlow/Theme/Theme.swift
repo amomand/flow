@@ -14,10 +14,12 @@ struct Theme: Equatable {
     var fg: Color
     var comment: Color
     var blue: Color      // primary accent (red in Peak)
+    var cyan: Color
     var green: Color
     var yellow: Color
     var red: Color       // danger/warning
     var purple: Color
+    var magenta: Color
     var orange: Color
 
     /// True if this is a light palette. Views can use this for adjustments
@@ -31,10 +33,12 @@ struct Theme: Equatable {
         fg:       Color(hex: 0xc0caf5),
         comment:  Color(hex: 0x565f89),
         blue:     Color(hex: 0x7aa2f7),
+        cyan:     Color(hex: 0x7dcfff),
         green:    Color(hex: 0x9ece6a),
         yellow:   Color(hex: 0xe0af68),
         red:      Color(hex: 0xf7768e),
         purple:   Color(hex: 0xbb9af7),
+        magenta:  Color(hex: 0xbb9af7),
         orange:   Color(hex: 0xff9e64),
         isLight:  false
     )
@@ -48,10 +52,12 @@ struct Theme: Equatable {
         fg:       Color(hex: 0xc0caf5),
         comment:  Color(hex: 0x565f89),
         blue:     Color(hex: 0xf7768e), // remapped: primary accent = red
+        cyan:     Color(hex: 0x7dcfff),
         green:    Color(hex: 0x9ece6a),
         yellow:   Color(hex: 0xe0af68),
         red:      Color(hex: 0xf7768e),
         purple:   Color(hex: 0xbb9af7),
+        magenta:  Color(hex: 0xbb9af7),
         orange:   Color(hex: 0xff9e64),
         isLight:  false
     )
@@ -64,10 +70,12 @@ struct Theme: Equatable {
         fg:       Color(hex: 0x3760bf),
         comment:  Color(hex: 0x848cb5),
         blue:     Color(hex: 0x2e7de9),
+        cyan:     Color(hex: 0x007197),
         green:    Color(hex: 0x587539),
         yellow:   Color(hex: 0x8c6c3e),
         red:      Color(hex: 0xf52a65),
         purple:   Color(hex: 0x9854f1),
+        magenta:  Color(hex: 0x9854f1),
         orange:   Color(hex: 0xb15c00),
         isLight:  true
     )

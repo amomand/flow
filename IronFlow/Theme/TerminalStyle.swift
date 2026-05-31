@@ -58,3 +58,48 @@ extension View {
         modifier(TerminalCardModifier())
     }
 }
+
+struct SectionHeader: View {
+    @Environment(\.theme) private var theme
+    let text: String
+
+    var body: some View {
+        Text("// \(text)")
+            .terminalFont(12, weight: .semibold)
+            .foregroundColor(theme.purple)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct FlowScreenHeader<Actions: View>: View {
+    @Environment(\.theme) private var theme
+    let title: String
+    let subtitle: String
+    let actions: Actions
+
+    init(title: String, subtitle: String, @ViewBuilder actions: () -> Actions) {
+        self.title = title
+        self.subtitle = subtitle
+        self.actions = actions()
+    }
+
+    var body: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("// \(title)")
+                    .terminalFont(22, weight: .bold)
+                    .foregroundColor(theme.blue)
+
+                Text(subtitle)
+                    .terminalFont(13)
+                    .foregroundColor(theme.comment)
+            }
+
+            Spacer()
+
+            actions
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+    }
+}
