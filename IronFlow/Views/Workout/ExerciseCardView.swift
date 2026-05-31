@@ -177,7 +177,7 @@ struct ExerciseCardView: View {
                 .onEnded { value in
                     if value.translation.width < -swipeThreshold {
                         withAnimation(.easeOut(duration: 0.2)) {
-                            dragOffset = -UIScreen.main.bounds.width
+                            dragOffset = -600
                         }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                             dragOffset = 0

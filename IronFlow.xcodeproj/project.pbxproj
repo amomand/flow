@@ -23,6 +23,19 @@
 		E00013 /* RoutineEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10013 /* RoutineEditorView.swift */; };
 		E00014 /* ExerciseEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10014 /* ExerciseEditorView.swift */; };
 		E00016 /* RoutineOverviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10016 /* RoutineOverviewSheet.swift */; };
+		E00030 /* Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10030 /* Run.swift */; };
+		E00031 /* RunMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10031 /* RunMetrics.swift */; };
+		E00032 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10032 /* AppSettings.swift */; };
+		E00033 /* HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10033 /* HealthKitService.swift */; };
+		E00034 /* RouteCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10034 /* RouteCache.swift */; };
+		E00035 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10035 /* SyncCoordinator.swift */; };
+		E00036 /* FirstLaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10036 /* FirstLaunchView.swift */; };
+		E00037 /* RoutePolylineThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10037 /* RoutePolylineThumbnailView.swift */; };
+		E00038 /* RunDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10038 /* RunDetailView.swift */; };
+		E00039 /* RunListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10039 /* RunListView.swift */; };
+		E00040 /* RunRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10040 /* RunRowView.swift */; };
+		E00041 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10041 /* SettingsView.swift */; };
+		E00042 /* SparklineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10042 /* SparklineView.swift */; };
 		E00015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E10015 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -43,6 +56,20 @@
 		E10013 /* RoutineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineEditorView.swift; sourceTree = "<group>"; };
 		E10014 /* ExerciseEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseEditorView.swift; sourceTree = "<group>"; };
 		E10016 /* RoutineOverviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineOverviewSheet.swift; sourceTree = "<group>"; };
+		E10030 /* Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Run.swift; sourceTree = "<group>"; };
+		E10031 /* RunMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetrics.swift; sourceTree = "<group>"; };
+		E10032 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		E10033 /* HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitService.swift; sourceTree = "<group>"; };
+		E10034 /* RouteCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCache.swift; sourceTree = "<group>"; };
+		E10035 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
+		E10036 /* FirstLaunchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstLaunchView.swift; sourceTree = "<group>"; };
+		E10037 /* RoutePolylineThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePolylineThumbnailView.swift; sourceTree = "<group>"; };
+		E10038 /* RunDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunDetailView.swift; sourceTree = "<group>"; };
+		E10039 /* RunListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunListView.swift; sourceTree = "<group>"; };
+		E10040 /* RunRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunRowView.swift; sourceTree = "<group>"; };
+		E10041 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E10042 /* SparklineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparklineView.swift; sourceTree = "<group>"; };
+		E10043 /* Flow.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flow.entitlements; sourceTree = "<group>"; };
 		E10015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E10099 /* IronFlow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = IronFlow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -74,7 +101,9 @@
 				E20004 /* Models */,
 				E20005 /* Storage */,
 				E20006 /* Views */,
+				E20030 /* Runs */,
 				E10015 /* Assets.xcassets */,
+				E10043 /* Flow.entitlements */,
 			);
 			path = IronFlow;
 			sourceTree = "<group>";
@@ -136,6 +165,50 @@
 				E10014 /* ExerciseEditorView.swift */,
 			);
 			path = Editor;
+			sourceTree = "<group>";
+		};
+		E20030 /* Runs */ = {
+			isa = PBXGroup;
+			children = (
+				E20031 /* Models */,
+				E20032 /* Storage */,
+				E20033 /* Views */,
+			);
+			path = Runs;
+			sourceTree = "<group>";
+		};
+		E20031 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				E10030 /* Run.swift */,
+				E10031 /* RunMetrics.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		E20032 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				E10032 /* AppSettings.swift */,
+				E10033 /* HealthKitService.swift */,
+				E10034 /* RouteCache.swift */,
+				E10035 /* SyncCoordinator.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		E20033 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				E10036 /* FirstLaunchView.swift */,
+				E10037 /* RoutePolylineThumbnailView.swift */,
+				E10038 /* RunDetailView.swift */,
+				E10039 /* RunListView.swift */,
+				E10040 /* RunRowView.swift */,
+				E10041 /* SettingsView.swift */,
+				E10042 /* SparklineView.swift */,
+			);
+			path = Views;
 			sourceTree = "<group>";
 		};
 		E20099 /* Products */ = {
@@ -231,6 +304,19 @@
 				E00013 /* RoutineEditorView.swift in Sources */,
 				E00014 /* ExerciseEditorView.swift in Sources */,
 				E00016 /* RoutineOverviewSheet.swift in Sources */,
+				E00030 /* Run.swift in Sources */,
+				E00031 /* RunMetrics.swift in Sources */,
+				E00032 /* AppSettings.swift in Sources */,
+				E00033 /* HealthKitService.swift in Sources */,
+				E00034 /* RouteCache.swift in Sources */,
+				E00035 /* SyncCoordinator.swift in Sources */,
+				E00036 /* FirstLaunchView.swift in Sources */,
+				E00037 /* RoutePolylineThumbnailView.swift in Sources */,
+				E00038 /* RunDetailView.swift in Sources */,
+				E00039 /* RunListView.swift in Sources */,
+				E00040 /* RunRowView.swift in Sources */,
+				E00041 /* SettingsView.swift in Sources */,
+				E00042 /* SparklineView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -289,7 +375,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -345,7 +431,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
@@ -359,11 +445,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = IronFlow/Flow.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = B4YXM5RCS4;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = IronFlow;
+				INFOPLIST_KEY_CFBundleDisplayName = Flow;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Flow reads your running workouts from Apple Health to display past runs.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -389,11 +477,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = IronFlow/Flow.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = B4YXM5RCS4;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = IronFlow;
+				INFOPLIST_KEY_CFBundleDisplayName = Flow;
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Flow reads your running workouts from Apple Health to display past runs.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

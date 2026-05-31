@@ -1,109 +1,124 @@
-# IronFlow
+# Flow
 
-IronFlow is a personal iOS workout timer app built with SwiftUI. It is designed for side-loading via Xcode, not for App Store distribution.
+Flow is a personal iOS exercise app built with SwiftUI. It combines the original IronFlow strength workout timer with the TrailFlow run browser so strength routines and trail runs live in one side-loaded app.
 
-It replaces checking training notes mid-workout with a low-friction interface for moving through a routine, timing work and rest periods, rating sets, and producing an Obsidian-friendly summary.
+The target is still named `IronFlow` internally to preserve the existing bundle identifier and local routine storage, but the installed app display name is `Flow`.
 
 ## What It Does
 
-1. **Pick a routine** from the home screen.
-2. **Follow each set** as a focused card showing the exercise, set count, reps or timed duration, per-side flag, and notes.
-3. **Rate rep-based sets** before swiping: Fail, Good, or Easy. Good is the default.
-4. **Swipe left to complete** a rep-based set and move into the next rest or exercise.
-5. **Run timed exercises** with an automatic countdown and auto-advance at zero.
-6. **Rest between sets or exercises** with a countdown, progress ring, skip control, next-exercise label, and vibration when timers complete.
-7. **Open the routine overview** mid-workout to see completed, current, and upcoming steps.
-8. **Review the workout summary** at the end, including flagged sets and automatic difficulty adjustments.
-9. **Copy the summary as Markdown** for pasting into Obsidian or another training log.
+### Strength
+
+1. Pick a routine from the Strength tab.
+2. Follow each set as a focused card showing exercise, set count, reps or timed duration, per-side flag, and notes.
+3. Rate rep-based sets as Fail, Good, or Easy. Good is the default.
+4. Swipe left to complete a rep-based set and move into rest or the next exercise.
+5. Run timed exercises with automatic countdown and auto-advance.
+6. Rest between sets or exercises with a countdown, progress ring, skip control, next-exercise label, and vibration at zero.
+7. Review an exception-focused workout summary and copy it as Markdown.
+
+### Runs
+
+1. Authorize read-only HealthKit access from the Runs tab.
+2. Pick a start date for imported running workouts.
+3. Browse runs from the local SwiftData mirror.
+4. Open run detail to see route, pace chart, elevation chart, splits, and heart-rate summary.
 
 ## Features
 
-- **Phase system (Base / Peak / Deload)**: each routine runs in one of three phases. Per-exercise overrides adjust sets, reps, or timed durations — unchanged fields inherit from Base. Switching phases updates the on-screen set count immediately, and the workout subtree re-themes to match.
-- **Phase-driven theming**: Base uses TokyoNight Night, Peak uses Storm with red accents, Deload uses TokyoNight Day. Theming is scoped to the in-session workout UI so the home screen phase pills stay readable on every row.
-- **Routine editor**: create and edit routines, sections, exercises, sets, reps, timed durations, rest periods, notes, per-side exercises, and per-phase overrides.
-- **JSON import/export**: export routines to the clipboard and import routine JSON generated elsewhere, including from an LLM. Phase overrides round-trip cleanly; older routines without phase data decode unchanged.
-- **Split rest timers**: configure separate rest durations between sets and after the final set of an exercise.
-- **Timed exercise support**: use `durationSeconds` for holds or other time-based movements.
-- **Automatic progression**: at workout completion, exercises with enough Fail ratings are reduced, and exercises with enough Easy ratings are progressed.
-- **Exception-focused summaries**: all-good workouts stay brief; failed, easy, and adjusted exercises are highlighted.
-- **Workout-friendly behavior**: the screen stays awake during workouts, and the app avoids audio-session changes so music can keep playing.
-- **Terminal-inspired UI**: TokyoNight colors, monospaced type, bracketed controls, and comment-style section headers.
+- Single app shell with `Strength` and `Runs` tabs.
+- Terminal-inspired TokyoNight UI: monospaced type, bracketed controls, and comment-style section headers.
+- Phase system for strength routines: Base, Peak, and Deload.
+- Phase-driven workout theming, including the light Deload palette.
+- Routine editor with sections, exercises, timed work, split rests, notes, per-side flags, and per-phase overrides.
+- JSON import/export for strength routines.
+- Automatic strength progression based on Fail and Easy ratings.
+- Read-only HealthKit running sync into SwiftData.
+- Route thumbnails, MapKit route detail, Swift Charts pace/elevation views, splits, and HR.
+- No backend, account, or third-party package dependencies.
 
 ## Data Model
 
-Routines are stored as JSON in the app documents directory:
+Strength routines are stored as JSON in the app documents directory:
 
 ```text
 Routine
-├── name
-├── currentPhase            # .base | .peak | .deload
-└── sections
-    ├── name
-    └── exercises
-        ├── name
-        ├── sets
-        ├── reps
-        ├── durationSeconds
-        ├── restBetweenSetsSeconds
-        ├── restAfterExerciseSeconds
-        ├── notes
-        ├── perSide
-        └── phaseOverrides   # optional Peak / Deload overrides for sets, reps, durationSeconds
+|-- name
+|-- currentPhase
+`-- sections
+    |-- name
+    `-- exercises
+        |-- name
+        |-- sets
+        |-- reps
+        |-- durationSeconds
+        |-- restBetweenSetsSeconds
+        |-- restAfterExerciseSeconds
+        |-- notes
+        |-- perSide
+        `-- phaseOverrides
 ```
 
-During a workout, `Routine.buildSteps()` resolves each exercise against the routine's `currentPhase` and flattens into one `WorkoutStep` per set, so downstream views stay phase-agnostic. `WorkoutSession` tracks the current step, ratings, timers, results, summary output, and computed adjustments. Workout sessions are currently in-memory only; historical workout logs are not persisted.
+Runs are read from HealthKit and mirrored locally with SwiftData:
+
+```text
+Run
+|-- id                 # HKWorkout.uuid
+|-- startDate
+|-- endDate
+|-- distanceMetres
+|-- durationSeconds
+|-- elevationGainMetres
+|-- avgHeartRate
+`-- maxHeartRate
+```
+
+Route locations and derived pace buckets are fetched lazily from HealthKit and cached in memory for the process lifetime.
 
 ## Tech
 
-- **Pure SwiftUI**: no pods, no Swift Package Manager dependencies.
-- **iOS 17+** target.
-- **Swift Observation**: uses `@Observable` rather than `ObservableObject`.
-- **Local JSON storage**: routines are stored in the app documents directory.
-- **Backward-compatible decoding**: routine JSON handles older fields such as string reps and legacy single-rest values.
+- Pure SwiftUI.
+- iOS 26 deployment target.
+- Swift Observation with `@Observable`.
+- SwiftData for the run mirror.
+- HealthKit, MapKit, and Swift Charts for run review.
+- Local JSON storage for strength routines.
+- Backward-compatible routine decoding for older JSON.
 
 ## Project Structure
 
 ```text
 IronFlow/
-├── IronFlowApp.swift                  # App entry point
-├── Theme/
-│   ├── TokyoNightColors.swift         # TN.bg, TN.blue, TN.red, etc. (base palette)
-│   ├── Theme.swift                    # Phase-driven palettes + @Environment(\.theme) injection
-│   └── TerminalStyle.swift            # Shared fonts, button styles, card modifier
-├── Models/
-│   ├── Routine.swift                  # Routine -> Section -> ExerciseBlock
-│   ├── SetRating.swift                # Fail / Good / Easy
-│   └── WorkoutSession.swift           # Live workout state, timers, results, summaries, adjustments
-├── Storage/
-│   └── RoutineStore.swift             # JSON persistence, import/export, starter routines
-└── Views/
-    ├── RoutineListView.swift          # Home screen, import/export, routine selection
-    ├── Workout/
-    │   ├── WorkoutFlowView.swift      # Orchestrates exercise, timed work, rest, summary
-    │   ├── ExerciseCardView.swift     # Rep-based exercise display, rating, swipe gesture
-    │   ├── RestTimerView.swift        # Rest timer and timed exercise views
-    │   ├── RoutineOverviewSheet.swift # Mid-workout full routine overview
-    │   └── WorkoutSummaryView.swift   # End-of-workout report and clipboard copy
-    └── Editor/
-        ├── RoutineEditorView.swift    # Edit routine sections and exercises
-        └── ExerciseEditorView.swift   # Edit individual exercise details
+|-- IronFlowApp.swift                  # Flow app entry point and tab shell
+|-- Flow.entitlements                  # HealthKit entitlement
+|-- Theme/
+|   |-- TokyoNightColors.swift
+|   |-- Theme.swift
+|   `-- TerminalStyle.swift
+|-- Models/
+|   |-- Routine.swift
+|   |-- SetRating.swift
+|   `-- WorkoutSession.swift
+|-- Storage/
+|   `-- RoutineStore.swift
+|-- Views/
+|   |-- RoutineListView.swift
+|   |-- Workout/
+|   `-- Editor/
+`-- Runs/
+    |-- Models/
+    |-- Storage/
+    `-- Views/
 ```
 
 ## Building & Deploying
 
 Open `IronFlow.xcodeproj` in Xcode, select an iPhone destination, and run the app.
 
-You can also build from the command line:
+Command-line build:
 
 ```bash
 xcodebuild -project IronFlow.xcodeproj -scheme IronFlow \
-  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
+  -destination 'generic/platform=iOS Simulator' build
 ```
 
-With a free Apple Developer account, a side-loaded app normally needs to be refreshed every 7 days. With a paid account, the signing period is longer.
-
-## Starter Data
-
-On first launch, IronFlow seeds the local JSON store with starter routines. These are just editable local data: change them in the app, import replacement JSON, or update `RoutineStore.swift`.
-
-The README intentionally does not document the specific routine contents because those are personal training data and expected to change.
+The app uses bundle identifier `com.alexomand.IronFlow` so existing IronFlow routine data can survive the display-name change to Flow.

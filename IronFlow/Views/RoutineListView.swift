@@ -15,34 +15,23 @@ struct RoutineListView: View {
                 TN.bg.ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                    HStack {
-                        Text("// IRONFLOW")
-                            .terminalFont(22, weight: .bold)
-                            .foregroundColor(TN.blue)
-                        Spacer()
-                        Button {
-                            showingImport = true
-                        } label: {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 16, weight: .bold, design: .monospaced))
-                                .foregroundColor(TN.purple)
+                    FlowScreenHeader(title: "STRENGTH", subtitle: "select routine to begin") {
+                        HStack(spacing: 12) {
+                            Button {
+                                showingImport = true
+                            } label: {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                                    .foregroundColor(TN.blue)
+                            }
+                            Button {
+                                showingNewRoutine = true
+                            } label: {
+                                Text("[ + NEW ]")
+                            }
+                            .buttonStyle(TerminalButtonStyle(color: TN.green))
                         }
-                        Button {
-                            showingNewRoutine = true
-                        } label: {
-                            Text("[ + NEW ]")
-                        }
-                        .buttonStyle(TerminalButtonStyle(color: TN.green))
                     }
-                    .padding(.horizontal)
-                    .padding(.top, 8)
-
-                    Text("select routine to begin")
-                        .terminalFont(13)
-                        .foregroundColor(TN.comment)
-                        .padding(.horizontal)
-                        .padding(.top, 4)
 
                     Divider()
                         .background(TN.comment.opacity(0.3))
