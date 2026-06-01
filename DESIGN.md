@@ -7,14 +7,14 @@ Reference document for future development sessions.
 Flow is one side-loaded iOS app with two exercise surfaces:
 
 - Strength: the original IronFlow routine editor and live workout timer.
-- Runs: the original TrailFlow read-only HealthKit run browser.
+- Cardio: the original TrailFlow read-only HealthKit browser, now covering runs and rides.
 
 The app display name is `Flow`, but the Xcode project, scheme, target, and bundle identifier remain `IronFlow` / `com.alexomand.IronFlow` for continuity with existing local routine data.
 
 ## Design Principles
 
 - Terminal aesthetic: TokyoNight palette, SF Mono, `// SECTION HEADERS`, `[ BUTTON LABELS ]`, and comment-coloured secondary text.
-- One app, separate domains: strength and runs share shell/theme primitives, but keep separate models and storage.
+- One app, separate domains: strength and cardio share shell/theme primitives, but keep separate models and storage.
 - Minimal interaction during workouts: swipe left to advance, tap to rate, avoid mid-set navigation.
 - Read-only run sync: Flow reads Apple Health workouts and never writes back.
 - No audio session changes: music playback should not be interrupted.
@@ -27,8 +27,8 @@ The app display name is `Flow`, but the Xcode project, scheme, target, and bundl
 IronFlowApp
 |-- FlowRootView
     |-- Strength tab -> RoutineListView
-    `-- Runs tab -> RunsRootView
-        |-- FirstLaunchView
+    |-- Health Sync sheet from the Strength overflow menu
+    `-- Dynamic cardio tabs, shown only when matching workouts exist
         `-- RunListView -> RunDetailView
 ```
 
@@ -36,7 +36,7 @@ IronFlowApp
 
 - `RoutineStore` for strength JSON persistence.
 - `ModelContainer(for: Run.self)` for SwiftData.
-- `AppSettings.shared` for run onboarding and start-date filtering.
+- `AppSettings.shared` for HealthKit onboarding and start-date filtering.
 - `SyncCoordinator` for HealthKit -> SwiftData sync.
 
 ## Strength Model
@@ -69,6 +69,7 @@ Routine (Codable, stored as JSON in app documents dir)
 ```text
 Run (@Model, SwiftData mirror of HKWorkout)
 |-- id: UUID
+|-- activityRawValue: String
 |-- startDate: Date
 |-- endDate: Date
 |-- distanceMetres: Double
@@ -78,7 +79,7 @@ Run (@Model, SwiftData mirror of HKWorkout)
 `-- maxHeartRate: Double?
 ```
 
-`HealthKitService` performs async HealthKit queries. `SyncCoordinator` imports running workouts from the selected start date and upserts by `HKWorkout.uuid`. `RouteCache` lazily loads route locations and pace buckets for rows/details.
+`HealthKitService` performs async HealthKit queries. `SyncCoordinator` imports running and cycling workouts from the selected start date and upserts by `HKWorkout.uuid`. `RouteCache` lazily loads route locations and pace buckets for rows/details.
 
 ## Key Behaviours
 
@@ -86,8 +87,9 @@ Run (@Model, SwiftData mirror of HKWorkout)
 - Single-set warmups are exempt from automatic strength progression.
 - Split rest timers use `restBetweenSetsSeconds` between sets and `restAfterExerciseSeconds` after an exercise.
 - Strength timers vibrate at completion and continue to catch up when the app returns active.
-- Runs onboarding is scoped to the Runs tab; opening Strength should not ask for HealthKit permission.
-- Runs list reads SwiftData first and syncs in the background.
+- HealthKit onboarding is scoped to the Health Sync sheet; opening Strength should not ask for HealthKit permission.
+- Cardio tabs are hidden until matching local workouts exist.
+- Cardio lists read SwiftData first and sync in the background.
 - Route and chart detail can fail independently of the run list; rows/details log failures and keep rendering available metadata.
 
 ## Shared Theme

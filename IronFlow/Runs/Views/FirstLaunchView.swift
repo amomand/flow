@@ -25,7 +25,7 @@ struct FirstLaunchView: View {
 
                     SectionHeader(text: "PERMISSIONS")
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Flow reads running workouts from Apple Health.")
+                        Text("Flow reads running and cycling workouts from Apple Health.")
                             .terminalFont(13)
                             .foregroundColor(theme.fg)
                         Text("Read-only. Never writes back.")

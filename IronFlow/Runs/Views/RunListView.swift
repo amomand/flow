@@ -5,9 +5,10 @@ struct RunListView: View {
     @Environment(\.theme) private var theme
     @Query(sort: \Run.startDate, order: .reverse) private var runs: [Run]
 
+    let activity: CardioActivity
     let settings: AppSettings
     let coordinator: SyncCoordinator
-    @State private var showSettings = false
+    @State private var showHealthSync = false
 
     var body: some View {
         let displayedRuns = visibleRuns
@@ -15,9 +16,9 @@ struct RunListView: View {
             ZStack {
                 theme.bg.ignoresSafeArea()
                 VStack(alignment: .leading, spacing: 0) {
-                    FlowScreenHeader(title: "RUNS", subtitle: runsSubtitle(runCount: displayedRuns.count)) {
+                    FlowScreenHeader(title: activity.headerTitle, subtitle: runsSubtitle(runCount: displayedRuns.count)) {
                         Button {
-                            showSettings = true
+                            showHealthSync = true
                         } label: {
                             Image(systemName: "gearshape")
                                 .font(.system(size: 17, weight: .bold, design: .monospaced))
@@ -40,7 +41,7 @@ struct RunListView: View {
                         .padding(.vertical, 12)
 
                     if displayedRuns.isEmpty {
-                        EmptyStateView(syncState: coordinator.state, onRetry: refresh)
+                        EmptyStateView(activity: activity, syncState: coordinator.state, onRetry: refresh)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ScrollView {
@@ -64,19 +65,19 @@ struct RunListView: View {
             .toolbar(.hidden, for: .navigationBar)
             .toolbarBackground(theme.bg, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
-            .sheet(isPresented: $showSettings) {
-                SettingsView(settings: settings, coordinator: coordinator)
+            .sheet(isPresented: $showHealthSync) {
+                HealthSyncView(settings: settings, coordinator: coordinator)
             }
             .task { await coordinator.sync(startDate: settings.startDate) }
         }
     }
 
     private var visibleRuns: [Run] {
-        runs.filter { $0.startDate >= settings.startDate }
+        runs.filter { $0.activity == activity && $0.startDate >= settings.startDate }
     }
 
     private func runsSubtitle(runCount: Int) -> String {
-        "\(runCount) runs since \(shortDate(settings.startDate))"
+        "\(runCount) \(activity.pluralTitle.lowercased()) since \(shortDate(settings.startDate))"
     }
 
     private func refresh() {
@@ -90,12 +91,13 @@ struct RunListView: View {
 
 private struct EmptyStateView: View {
     @Environment(\.theme) private var theme
+    let activity: CardioActivity
     let syncState: SyncCoordinator.State
     let onRetry: () -> Void
 
     var body: some View {
         VStack(spacing: 16) {
-            Text("$ ls runs/")
+            Text("$ ls \(activity.pluralTitle.lowercased())/")
                 .terminalFont(16, weight: .bold)
                 .foregroundColor(theme.cyan)
             switch syncState {
@@ -111,7 +113,7 @@ private struct EmptyStateView: View {
                 Button("[ retry ]", action: onRetry)
                     .buttonStyle(TerminalButtonStyle(color: theme.cyan))
             case .idle:
-                Text("// no runs found since your start date")
+                Text("// no \(activity.pluralTitle.lowercased()) found since your start date")
                     .terminalFont(12)
                     .foregroundColor(theme.comment)
                 Text("// if this looks wrong, check Health permissions")

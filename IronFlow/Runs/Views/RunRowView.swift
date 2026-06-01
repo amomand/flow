@@ -14,7 +14,7 @@ struct RunRowView: View {
                 HStack(spacing: 6) {
                     Text("$")
                         .foregroundColor(theme.green)
-                    Text("run --date")
+                    Text("\(run.activity.commandName) --date")
                         .foregroundColor(theme.fg)
                     Text(run.isoDate)
                         .foregroundColor(theme.cyan)

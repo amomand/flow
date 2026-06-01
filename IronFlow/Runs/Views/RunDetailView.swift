@@ -49,7 +49,7 @@ struct RunDetailView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("$ run --date \(run.isoDate)")
+            Text("$ \(run.activity.commandName) --date \(run.isoDate)")
                 .terminalFont(13)
                 .foregroundColor(theme.green)
             HStack(spacing: 10) {

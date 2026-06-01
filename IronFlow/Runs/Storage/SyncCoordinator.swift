@@ -35,20 +35,23 @@ final class SyncCoordinator {
             let existing = (try? context.fetch(descriptor)) ?? []
             let existingIds = Set(existing.map { $0.id })
 
-            let workouts = try await hk.fetchRunningWorkouts(since: startDate)
-            for w in workouts {
-                if existingIds.contains(w.uuid) { continue }
-                let run = Run(
-                    id: w.uuid,
-                    startDate: w.startDate,
-                    endDate: w.endDate,
-                    distanceMetres: hk.distanceMetres(for: w),
-                    durationSeconds: w.duration,
-                    elevationGainMetres: hk.elevationGainMetres(for: w),
-                    avgHeartRate: hk.averageHeartRate(for: w),
-                    maxHeartRate: hk.maxHeartRate(for: w)
-                )
-                context.insert(run)
+            for activity in CardioActivity.allCases {
+                let workouts = try await hk.fetchWorkouts(activity: activity, since: startDate)
+                for w in workouts {
+                    if existingIds.contains(w.uuid) { continue }
+                    let run = Run(
+                        id: w.uuid,
+                        activity: activity,
+                        startDate: w.startDate,
+                        endDate: w.endDate,
+                        distanceMetres: hk.distanceMetres(for: w, activity: activity),
+                        durationSeconds: w.duration,
+                        elevationGainMetres: hk.elevationGainMetres(for: w),
+                        avgHeartRate: hk.averageHeartRate(for: w),
+                        maxHeartRate: hk.maxHeartRate(for: w)
+                    )
+                    context.insert(run)
+                }
             }
             try context.save()
             lastSyncedAt = Date()

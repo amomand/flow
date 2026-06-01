@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Flow — a terminal-flavoured exercise app</title>
-<meta name="description" content="Flow is a personal iOS exercise app built in SwiftUI. TokyoNight theme, strength routines, HealthKit run review, and Obsidian-friendly receipts." />
+<title>Flow — a terminal-flavoured training app</title>
+<meta name="description" content="Flow is a personal iOS exercise app built in SwiftUI. TokyoNight theme, strength routines, HealthKit runs and rides, dynamic tabs, and Obsidian-friendly receipts." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -223,7 +223,7 @@
   .phone-title { color: var(--comment); font-size: 0.75rem; margin-bottom: 0.4rem; }
   .phone-tabs {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.45rem;
     margin-bottom: 1rem;
   }
@@ -515,12 +515,13 @@
       <span class="tag">// total addressable market: 1</span> &nbsp; • &nbsp; side-loaded &nbsp; • &nbsp; not on the app store
     </div>
     <h1>
-      Lift, run, then<br/>
+      Lift, run, ride, then<br/>
       <span class="accent">log the evidence.</span>
     </h1>
     <p class="lede">
-      Who wants strength routines, HealthKit runs, and JSON import/export glowing in a TokyoNight
-      colour scheme? <em>This guy.</em> Flow is an exercise app carefully tailored to a market of one.
+      Who wants strength routines, HealthKit runs and rides, and JSON import/export glowing in a TokyoNight
+      colour scheme? <em>This guy.</em> Flow is an exercise app carefully tailored to a market of one,
+      which is fortunate, because the market has been consulted extensively.
     </p>
     <div class="ctas">
       <a href="https://github.com/amomand/flow" class="btn btn-primary mono">
@@ -540,6 +541,7 @@
         <div class="phone-tabs">
           <div class="phone-tab active">strength</div>
           <div class="phone-tab">runs</div>
+          <div class="phone-tab">rides</div>
         </div>
         <div class="phone-title"># upper a · kettlebell diplomacy</div>
         <div class="phone-exercise">Incline Press</div>
@@ -552,8 +554,8 @@
           <div class="phone-rating easy">[ easy ]</div>
         </div>
         <div class="phone-run">
-          <div class="phone-run-title">// latest run</div>
-          <div class="phone-run-sub">8.42 km · 52:18 · suspiciously hilly</div>
+          <div class="phone-run-title">// latest ride</div>
+          <div class="phone-run-sub">24.8 km · 1:14:03 · allegedly recovery</div>
           <div class="phone-metrics">
             <div class="phone-metric"><span class="label">pace</span><span class="value">6:12</span></div>
             <div class="phone-metric"><span class="label">gain</span><span class="value">184m</span></div>
@@ -582,13 +584,13 @@
     </div>
     <div class="card accent-green">
       <div class="icon mono">// healthkit</div>
-      <h3>HealthKit runs</h3>
-      <p>Pull running workouts from the start date you choose. The app does not need to know about 2017. Nobody does.</p>
+      <h3>HealthKit runs and rides</h3>
+      <p>Pull running and cycling workouts from the start date you choose. The app does not need to know about 2017. Nobody does.</p>
     </div>
     <div class="card accent-yellow">
       <div class="icon mono">// maps + charts</div>
       <h3>Route crumbs and split maths</h3>
-      <p>Run detail pages show the route, pace buckets, elevation samples, splits, and heart rate. A dashboard, but wearing shorts.</p>
+      <p>Cardio detail pages show the route, pace buckets, elevation samples, splits, and heart rate. A dashboard, but wearing shorts.</p>
     </div>
     <div class="card accent-red">
       <div class="icon mono">// json + ai</div>
@@ -598,7 +600,7 @@
     <div class="card">
       <div class="icon mono">// theme</div>
       <h3>TokyoNight, obviously</h3>
-      <p>Monospaced type, bracketed controls, comment-style headers. Strength and runs share one nocturnal little command centre.</p>
+      <p>Monospaced type, bracketed controls, comment-style headers. Strength, runs, and rides share one nocturnal little command centre.</p>
     </div>
   </div>
 </section>
@@ -609,23 +611,23 @@
   <div class="flow">
     <div class="flow-step">
       <div class="num">01</div>
-      <h4>Choose your tab</h4>
-      <p>Strength if you are about to do the thing. Runs if you already did the thing and want to inspect the evidence.</p>
+      <h4>Choose your tab, if one exists</h4>
+      <p>Strength stands alone until HealthKit provides cardio evidence. One tab would be decorative, and we are trying to stay composed.</p>
     </div>
     <div class="flow-step">
       <div class="num">02</div>
       <h4>Do or review</h4>
-      <p>Swipe through sets, or pull runs from HealthKit. Both are valid forms of staring at numbers with intent.</p>
+      <p>Swipe through sets, or pull runs and rides from HealthKit. Both are valid forms of staring at numbers with intent.</p>
     </div>
     <div class="flow-step">
       <div class="num">03</div>
       <h4>Rate the damage</h4>
-      <p>Strength gets Fail / Good / Easy. Runs get splits, pace, elevation, and the quiet judgement of a route line.</p>
+      <p>Strength gets Fail / Good / Easy. Cardio gets splits, pace, elevation, and the quiet judgement of a route line.</p>
     </div>
     <div class="flow-step">
       <div class="num">04</div>
       <h4>Keep the receipt</h4>
-      <p>Copy the workout summary, browse the run, paste what matters into Obsidian. Close the vault. Go eat.</p>
+      <p>Copy the workout summary, browse the cardio, paste what matters into Obsidian. Close the vault. Go eat.</p>
     </div>
   </div>
 </section>
@@ -637,8 +639,8 @@
       <h2>Local data, because <span class="accent">calm is nice.</span></h2>
       <p>
         No backend. No account. No lock-in, because there is nothing to be locked into.
-        Strength routines live as JSON in the app's documents directory. Runs are mirrored from
-        HealthKit into local SwiftData so the list opens quickly and the internet can remain uninvolved.
+        Strength routines live as JSON in the app's documents directory. Runs and rides are mirrored from
+        HealthKit into local SwiftData so the lists open quickly and the internet can remain uninvolved.
       </p>
       <p class="comment mono" style="margin-top:1.5rem; font-size:0.85rem;">
         // if the schema changes, I'll know, because I will have done it to myself.
@@ -658,7 +660,7 @@
       <span class="t">"perSide"</span><span class="k">:</span> <span class="n">false</span>
     <span class="k">}</span>]
   <span class="k">}</span>],
-  <span class="t">"runs"</span><span class="k">:</span> <span class="s">"HealthKit, politely asked"</span>
+  <span class="t">"cardio"</span><span class="k">:</span> <span class="s">"HealthKit, politely asked"</span>
 <span class="k">}</span></pre>
   </div>
 </section>
