@@ -32,41 +32,67 @@ struct IronFlowApp: App {
 
 struct FlowRootView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.scenePhase) private var scenePhase
+    @Query(sort: \Run.startDate, order: .reverse) private var workouts: [Run]
+
     let routineStore: RoutineStore
     let runSettings: AppSettings
     let syncCoordinator: SyncCoordinator
 
     var body: some View {
-        TabView {
-            RoutineListView(store: routineStore)
-                .tabItem {
-                    Label("Strength", systemImage: "figure.strengthtraining.traditional")
-                }
+        let activities = visibleActivities
 
-            RunsRootView(settings: runSettings, coordinator: syncCoordinator)
-                .tabItem {
-                    Label("Runs", systemImage: "figure.run")
+        Group {
+            if activities.isEmpty {
+                strengthView
+            } else {
+                TabView {
+                    strengthView
+                        .tabItem {
+                            Label("Strength", systemImage: "figure.strengthtraining.traditional")
+                        }
+
+                    ForEach(activities) { activity in
+                        RunsRootView(activity: activity, settings: runSettings, coordinator: syncCoordinator)
+                            .tabItem {
+                                Label(activity.pluralTitle, systemImage: activity.tabImageName)
+                            }
+                    }
                 }
+                .tint(theme.blue)
+            }
         }
-        .tint(theme.blue)
+        .task { await syncIfNeeded() }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task { await syncIfNeeded() }
+        }
+    }
+
+    private var strengthView: some View {
+        RoutineListView(store: routineStore, settings: runSettings, coordinator: syncCoordinator)
+    }
+
+    private var visibleActivities: [CardioActivity] {
+        CardioActivity.allCases.filter { activity in
+            workouts.contains { $0.activity == activity && $0.startDate >= runSettings.startDate }
+        }
+    }
+
+    private func syncIfNeeded() async {
+        guard runSettings.hasOnboarded else { return }
+        await syncCoordinator.sync(startDate: runSettings.startDate)
     }
 }
 
 struct RunsRootView: View {
     @Environment(\.theme) private var theme
+    let activity: CardioActivity
     let settings: AppSettings
     let coordinator: SyncCoordinator
 
     var body: some View {
-        Group {
-            if settings.hasOnboarded {
-                RunListView(settings: settings, coordinator: coordinator)
-            } else {
-                FirstLaunchView(settings: settings) {
-                    Task { await coordinator.sync(startDate: settings.startDate) }
-                }
-            }
-        }
+        RunListView(activity: activity, settings: settings, coordinator: coordinator)
         .tint(theme.cyan)
     }
 }

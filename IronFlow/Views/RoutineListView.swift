@@ -2,10 +2,14 @@ import SwiftUI
 
 struct RoutineListView: View {
     @Bindable var store: RoutineStore
+    let settings: AppSettings
+    let coordinator: SyncCoordinator
+
     @State private var selectedRoutine: Routine?
     @State private var editingRoutine: Routine?
     @State private var showingNewRoutine = false
     @State private var showingImport = false
+    @State private var showingHealthSync = false
     @State private var exportedJSON: String?
     @State private var showExportCopied = false
 
@@ -16,20 +20,25 @@ struct RoutineListView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     FlowScreenHeader(title: "STRENGTH", subtitle: "select routine to begin") {
-                        HStack(spacing: 12) {
-                            Button {
-                                showingImport = true
-                            } label: {
-                                Image(systemName: "square.and.arrow.down")
-                                    .font(.system(size: 16, weight: .bold, design: .monospaced))
-                                    .foregroundColor(TN.blue)
-                            }
+                        HStack(spacing: 8) {
                             Button {
                                 showingNewRoutine = true
                             } label: {
-                                Text("[ + NEW ]")
+                                HeaderIcon(systemName: "plus", color: TN.green)
                             }
-                            .buttonStyle(TerminalButtonStyle(color: TN.green))
+                            .buttonStyle(.plain)
+
+                            Menu {
+                                Button("Health Sync") {
+                                    showingHealthSync = true
+                                }
+                                Button("Import Routine") {
+                                    showingImport = true
+                                }
+                            } label: {
+                                HeaderIcon(systemName: "ellipsis", color: TN.blue)
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
 
@@ -97,6 +106,9 @@ struct RoutineListView: View {
             .sheet(isPresented: $showingImport) {
                 ImportRoutineSheet(store: store)
             }
+            .sheet(isPresented: $showingHealthSync) {
+                HealthSyncView(settings: settings, coordinator: coordinator)
+            }
             .overlay {
                 if showExportCopied {
                     Text("[ ✓ JSON COPIED ]")
@@ -117,6 +129,26 @@ struct RoutineListView: View {
                 }
             }
         }
+    }
+}
+
+private struct HeaderIcon: View {
+    let systemName: String
+    let color: Color
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: 16, weight: .bold, design: .monospaced))
+            .foregroundColor(color)
+            .frame(width: 36, height: 36)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(TN.darkCard)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(TN.comment.opacity(0.3), lineWidth: 1)
+                    )
+            )
     }
 }
 

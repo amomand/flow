@@ -1,9 +1,47 @@
 import Foundation
 import SwiftData
 
+enum CardioActivity: String, CaseIterable, Identifiable {
+    case running
+    case cycling
+
+    var id: String { rawValue }
+
+    var pluralTitle: String {
+        switch self {
+        case .running: return "Runs"
+        case .cycling: return "Rides"
+        }
+    }
+
+    var headerTitle: String { pluralTitle.uppercased() }
+
+    var commandName: String {
+        switch self {
+        case .running: return "run"
+        case .cycling: return "ride"
+        }
+    }
+
+    var tabImageName: String {
+        switch self {
+        case .running: return "figure.run"
+        case .cycling: return "figure.outdoor.cycle"
+        }
+    }
+
+    var accentName: String {
+        switch self {
+        case .running: return "cyan"
+        case .cycling: return "green"
+        }
+    }
+}
+
 @Model
 final class Run {
     @Attribute(.unique) var id: UUID
+    var activityRawValue: String = CardioActivity.running.rawValue
     var startDate: Date
     var endDate: Date
     var distanceMetres: Double
@@ -14,6 +52,7 @@ final class Run {
 
     init(
         id: UUID,
+        activity: CardioActivity = .running,
         startDate: Date,
         endDate: Date,
         distanceMetres: Double,
@@ -23,6 +62,7 @@ final class Run {
         maxHeartRate: Double? = nil
     ) {
         self.id = id
+        self.activityRawValue = activity.rawValue
         self.startDate = startDate
         self.endDate = endDate
         self.distanceMetres = distanceMetres
@@ -34,6 +74,10 @@ final class Run {
 }
 
 extension Run {
+    var activity: CardioActivity {
+        CardioActivity(rawValue: activityRawValue) ?? .running
+    }
+
     var distanceKm: Double { distanceMetres / 1000.0 }
 
     var formattedDistance: String {

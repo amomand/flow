@@ -1,6 +1,6 @@
 # Flow
 
-Flow is a personal iOS exercise app built with SwiftUI. It combines the original IronFlow strength workout timer with the TrailFlow run browser so strength routines and trail runs live in one side-loaded app.
+Flow is a personal iOS exercise app built with SwiftUI. It combines the original IronFlow strength workout timer with a read-only HealthKit cardio browser so strength routines, trail runs, and rides live in one side-loaded app.
 
 The target is still named `IronFlow` internally to preserve the existing bundle identifier and local routine storage, but the installed app display name is `Flow`.
 
@@ -16,23 +16,23 @@ The target is still named `IronFlow` internally to preserve the existing bundle 
 6. Rest between sets or exercises with a countdown, progress ring, skip control, next-exercise label, and vibration at zero.
 7. Review an exception-focused workout summary and copy it as Markdown.
 
-### Runs
+### Cardio
 
-1. Authorize read-only HealthKit access from the Runs tab.
-2. Pick a start date for imported running workouts.
-3. Browse runs from the local SwiftData mirror.
-4. Open run detail to see route, pace chart, elevation chart, splits, and heart-rate summary.
+1. Authorize read-only HealthKit access from Health Sync.
+2. Pick a start date for imported running and cycling workouts.
+3. Browse runs and rides from the local SwiftData mirror.
+4. Open workout detail to see route, pace chart, elevation chart, splits, and heart-rate summary.
 
 ## Features
 
-- Single app shell with `Strength` and `Runs` tabs.
+- Single app shell with dynamic cardio tabs: `Strength` stands alone until runs or rides are found.
 - Terminal-inspired TokyoNight UI: monospaced type, bracketed controls, and comment-style section headers.
 - Phase system for strength routines: Base, Peak, and Deload.
 - Phase-driven workout theming, including the light Deload palette.
 - Routine editor with sections, exercises, timed work, split rests, notes, per-side flags, and per-phase overrides.
 - JSON import/export for strength routines.
 - Automatic strength progression based on Fail and Easy ratings.
-- Read-only HealthKit running sync into SwiftData.
+- Read-only HealthKit running and cycling sync into SwiftData.
 - Route thumbnails, MapKit route detail, Swift Charts pace/elevation views, splits, and HR.
 - No backend, account, or third-party package dependencies.
 
@@ -58,11 +58,12 @@ Routine
         `-- phaseOverrides
 ```
 
-Runs are read from HealthKit and mirrored locally with SwiftData:
+Cardio workouts are read from HealthKit and mirrored locally with SwiftData:
 
 ```text
 Run
 |-- id                 # HKWorkout.uuid
+|-- activityRawValue   # running or cycling
 |-- startDate
 |-- endDate
 |-- distanceMetres
