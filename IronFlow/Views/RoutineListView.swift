@@ -38,6 +38,7 @@ struct RoutineListView: View {
                             } label: {
                                 HeaderIcon(systemName: "ellipsis", color: TN.blue)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
 

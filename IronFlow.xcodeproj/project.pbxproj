@@ -29,12 +29,11 @@
 		E00033 /* HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10033 /* HealthKitService.swift */; };
 		E00034 /* RouteCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10034 /* RouteCache.swift */; };
 		E00035 /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10035 /* SyncCoordinator.swift */; };
-		E00036 /* FirstLaunchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10036 /* FirstLaunchView.swift */; };
 		E00037 /* RoutePolylineThumbnailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10037 /* RoutePolylineThumbnailView.swift */; };
 		E00038 /* RunDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10038 /* RunDetailView.swift */; };
 		E00039 /* RunListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10039 /* RunListView.swift */; };
 		E00040 /* RunRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10040 /* RunRowView.swift */; };
-		E00041 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10041 /* SettingsView.swift */; };
+		E00041 /* HealthSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10041 /* HealthSyncView.swift */; };
 		E00042 /* SparklineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10042 /* SparklineView.swift */; };
 		E00015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E10015 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -62,12 +61,11 @@
 		E10033 /* HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitService.swift; sourceTree = "<group>"; };
 		E10034 /* RouteCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RouteCache.swift; sourceTree = "<group>"; };
 		E10035 /* SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncCoordinator.swift; sourceTree = "<group>"; };
-		E10036 /* FirstLaunchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FirstLaunchView.swift; sourceTree = "<group>"; };
 		E10037 /* RoutePolylineThumbnailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutePolylineThumbnailView.swift; sourceTree = "<group>"; };
 		E10038 /* RunDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunDetailView.swift; sourceTree = "<group>"; };
 		E10039 /* RunListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunListView.swift; sourceTree = "<group>"; };
 		E10040 /* RunRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunRowView.swift; sourceTree = "<group>"; };
-		E10041 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E10041 /* HealthSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncView.swift; sourceTree = "<group>"; };
 		E10042 /* SparklineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparklineView.swift; sourceTree = "<group>"; };
 		E10043 /* Flow.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flow.entitlements; sourceTree = "<group>"; };
 		E10015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -200,12 +198,11 @@
 		E20033 /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				E10036 /* FirstLaunchView.swift */,
 				E10037 /* RoutePolylineThumbnailView.swift */,
 				E10038 /* RunDetailView.swift */,
 				E10039 /* RunListView.swift */,
 				E10040 /* RunRowView.swift */,
-				E10041 /* SettingsView.swift */,
+				E10041 /* HealthSyncView.swift */,
 				E10042 /* SparklineView.swift */,
 			);
 			path = Views;
@@ -310,12 +307,11 @@
 				E00033 /* HealthKitService.swift in Sources */,
 				E00034 /* RouteCache.swift in Sources */,
 				E00035 /* SyncCoordinator.swift in Sources */,
-				E00036 /* FirstLaunchView.swift in Sources */,
 				E00037 /* RoutePolylineThumbnailView.swift in Sources */,
 				E00038 /* RunDetailView.swift in Sources */,
 				E00039 /* RunListView.swift in Sources */,
 				E00040 /* RunRowView.swift in Sources */,
-				E00041 /* SettingsView.swift in Sources */,
+				E00041 /* HealthSyncView.swift in Sources */,
 				E00042 /* SparklineView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

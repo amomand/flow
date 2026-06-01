@@ -32,7 +32,7 @@ final class HealthKitService {
         try await store.requestAuthorization(toShare: [], read: readTypes)
     }
 
-    /// Fetch all workouts of the requested activity ending after `since`.
+    /// Fetch all workouts of the requested activity starting on or after `since`.
     func fetchWorkouts(activity: CardioActivity, since: Date) async throws -> [HKWorkout] {
         let workoutType = HKObjectType.workoutType()
         let activityPred = HKQuery.predicateForWorkouts(with: activity.healthKitType)
