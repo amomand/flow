@@ -6,10 +6,10 @@ Reference document for future development sessions.
 
 Flow is one side-loaded iOS app with two exercise surfaces:
 
-- Strength: the original IronFlow routine editor and live workout timer.
-- Cardio: the original TrailFlow read-only HealthKit browser, now covering runs and rides.
+- Strength: routine editing and live workout timing.
+- Cardio: a read-only HealthKit browser for runs and rides.
 
-The app display name is `Flow`, but the Xcode project, scheme, target, and bundle identifier remain `IronFlow` / `com.alexomand.IronFlow` for continuity with existing local routine data.
+The app, Xcode project, scheme, target, product, and bundle identifier use `Flow` or `flow` naming consistently.
 
 ## Design Principles
 
@@ -24,7 +24,7 @@ The app display name is `Flow`, but the Xcode project, scheme, target, and bundl
 ## App Shell
 
 ```text
-IronFlowApp
+FlowApp
 |-- FlowRootView
     |-- Strength tab -> RoutineListView
     |-- Health Sync sheet from the Strength overflow menu
@@ -32,7 +32,7 @@ IronFlowApp
         `-- RunListView -> RunDetailView
 ```
 
-`IronFlowApp` owns the long-lived stores:
+`FlowApp` owns the long-lived stores:
 
 - `RoutineStore` for strength JSON persistence.
 - `ModelContainer(for: Run.self)` for SwiftData.
@@ -94,7 +94,7 @@ Run (@Model, SwiftData mirror of HKWorkout)
 
 ## Shared Theme
 
-The shared `Theme` type is the superset of the old IronFlow and TrailFlow themes. It includes base strength colours plus run-specific `cyan` and `magenta` slots. Phase-specific themes are still used by the strength workout flow; the app shell and runs area use the default base theme.
+The shared `Theme` type covers the strength and cardio surfaces. It includes base strength colours plus run-specific `cyan` and `magenta` slots. Phase-specific themes are still used by the strength workout flow; the app shell and runs area use the default base theme.
 
 ## Future Ideas
 
