@@ -5,8 +5,8 @@ import SwiftUI
 final class AppSettings {
     static let shared = AppSettings()
 
-    private let startDateKey = "trailflow.startDate"
-    private let onboardedKey = "trailflow.hasOnboarded"
+    private let startDateKey = "flow.startDate"
+    private let onboardedKey = "flow.hasOnboarded"
 
     /// Default per the brief: 26 April 2026.
     static let defaultStartDate: Date = {

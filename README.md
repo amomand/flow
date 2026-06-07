@@ -1,8 +1,8 @@
 # Flow
 
-Flow is a personal iOS exercise app built with SwiftUI. It combines the original IronFlow strength workout timer with a read-only HealthKit cardio browser so strength routines, trail runs, and rides live in one side-loaded app.
+Flow is a personal iOS exercise app built with SwiftUI. It brings strength workout planning, live workout timing, and a read-only HealthKit cardio browser into one side-loaded app.
 
-The target is still named `IronFlow` internally to preserve the existing bundle identifier and local routine storage, but the installed app display name is `Flow`.
+The project, target, scheme, installed app, and bundle identifier use `Flow` or `flow` consistently.
 
 ## What It Does
 
@@ -88,8 +88,8 @@ Route locations and derived pace buckets are fetched lazily from HealthKit and c
 ## Project Structure
 
 ```text
-IronFlow/
-|-- IronFlowApp.swift                  # Flow app entry point and tab shell
+Flow/
+|-- FlowApp.swift                      # App entry point and tab shell
 |-- Flow.entitlements                  # HealthKit entitlement
 |-- Theme/
 |   |-- TokyoNightColors.swift
@@ -113,13 +113,13 @@ IronFlow/
 
 ## Building & Deploying
 
-Open `IronFlow.xcodeproj` in Xcode, select an iPhone destination, and run the app.
+Open `Flow.xcodeproj` in Xcode, select an iPhone destination, and run the app.
 
 Command-line build:
 
 ```bash
-xcodebuild -project IronFlow.xcodeproj -scheme IronFlow \
+xcodebuild -project Flow.xcodeproj -scheme Flow \
   -destination 'generic/platform=iOS Simulator' build
 ```
 
-The app uses bundle identifier `com.alexomand.IronFlow` so existing IronFlow routine data can survive the display-name change to Flow.
+The app uses bundle identifier `com.alexomand.flow`.

@@ -1,9 +1,9 @@
-# Copilot Instructions — IronFlow
+# Copilot Instructions - Flow
 
 ## Build
 
 ```bash
-xcodebuild -project IronFlow.xcodeproj -scheme IronFlow \
+xcodebuild -project Flow.xcodeproj -scheme Flow \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
 ```
 
@@ -11,15 +11,15 @@ No tests, linter, or package manager. Pure SwiftUI with zero dependencies.
 
 ## Architecture
 
-**Personal iOS workout app** — side-loaded via Xcode, not for the App Store. Single user, single device.
+**Personal iOS workout app** - side-loaded via Xcode, not for the App Store. Single user, single device. The app combines strength routines, live workout timing, and read-only HealthKit cardio browsing.
 
 The app has three layers:
 
-- **Models** — `Routine → Section → ExerciseBlock` hierarchy (persisted as JSON), `WorkoutSession` (in-memory workout state), `SetRating` enum
-- **Storage** — `RoutineStore` handles JSON persistence in the app documents dir, plus import/export and seed data
-- **Views** — `RoutineListView` (home) → `WorkoutFlowView` (orchestrator) → `ExerciseCardView` / `RestTimerView` / `WorkoutSummaryView`
+- **Models** - `Routine -> Section -> ExerciseBlock` hierarchy (persisted as JSON), `WorkoutSession` (in-memory workout state), `SetRating` enum, and SwiftData `Run` records
+- **Storage** - `RoutineStore` handles JSON persistence, `SyncCoordinator` mirrors HealthKit workouts, and `AppSettings` stores cardio sync preferences
+- **Views** - `RoutineListView` (strength home), `WorkoutFlowView` (workout orchestrator), and the run list/detail HealthKit browser
 
-Key data flow: `Routine.buildSteps()` flattens the routine into a `[WorkoutStep]` array — one entry per individual set. `WorkoutSession` walks through this array, tracking ratings and computing adjustments.
+Key data flow: `Routine.buildSteps()` flattens the routine into a `[WorkoutStep]` array, one entry per individual set. `WorkoutSession` walks through this array, tracking ratings and computing adjustments.
 
 **Automatic difficulty adjustment** runs at workout end: `WorkoutSession.computeAdjustments()` analyses per-exercise ratings (≥50% FAIL → reduce, ≥75% EASY → increase) and `applyAdjustments(to:)` mutates the saved routine. Single-set exercises (warm-ups) are exempt.
 
@@ -33,4 +33,4 @@ Key data flow: `Routine.buildSteps()` flattens the routine into a `[WorkoutStep]
 - **Split rest timers** — each exercise has `restBetweenSetsSeconds` (between sets) and `restAfterExerciseSeconds` (after the last set). `WorkoutStep.restSeconds` is a computed property that picks the right one based on `isLastSetOfExercise`.
 - **No audio** — the app never touches `AVAudioSession`. Music playback must not be interrupted.
 - **Screen stays on** — `isIdleTimerDisabled` is set during workouts only.
-- **Xcode project uses explicit file references** — new `.swift` files must be added to `project.pbxproj` manually (PBXFileReference + PBXBuildFile + group children + sources list). Follow the `E1XXXX`/`E0XXXX` ID pattern.
+- **Xcode project uses explicit file references** - new `.swift` files must be added to `project.pbxproj` manually (PBXFileReference + PBXBuildFile + group children + sources list). Follow the `E1XXXX`/`E0XXXX` ID pattern.

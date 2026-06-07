@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 @main
-struct IronFlowApp: App {
+struct FlowApp: App {
     let runContainer: ModelContainer
     @State private var routineStore = RoutineStore()
     @State private var runSettings = AppSettings.shared
