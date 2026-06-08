@@ -228,9 +228,9 @@ struct ExerciseEditorView: View {
             get: { exercise.isTimed },
             set: { isTimed in
                 if isTimed {
-                    exercise.durationSeconds = exercise.durationSeconds ?? max(exercise.reps, 30)
+                    exercise.setTimed(true)
                 } else {
-                    exercise.durationSeconds = nil
+                    exercise.setTimed(false)
                 }
             }
         )

@@ -194,6 +194,21 @@ struct ExerciseBlock: Identifiable, Codable, Equatable {
         return copy
     }
 
+    mutating func setTimed(_ isTimed: Bool) {
+        if isTimed {
+            durationSeconds = durationSeconds ?? max(reps, 30)
+            for phase in phaseOverrides.keys {
+                phaseOverrides[phase]?.reps = nil
+            }
+        } else {
+            durationSeconds = nil
+            for phase in phaseOverrides.keys {
+                phaseOverrides[phase]?.durationSeconds = nil
+            }
+        }
+        phaseOverrides = phaseOverrides.filter { !$0.value.isEmpty }
+    }
+
     private static func legacyDurationSeconds(from notes: String, reps: Int) -> Int? {
         let normalizedNotes = notes.lowercased()
         guard reps > 0 else { return nil }
@@ -204,11 +219,24 @@ struct ExerciseBlock: Identifiable, Codable, Equatable {
 }
 
 // Flattened step for the workout flow
+enum WorkoutSide: String, Codable, Hashable {
+    case left
+    case right
+
+    var displayName: String {
+        switch self {
+        case .left: return "Left"
+        case .right: return "Right"
+        }
+    }
+}
+
 struct WorkoutStep: Identifiable {
     let id = UUID()
     let sectionName: String
     let exercise: ExerciseBlock
     let setNumber: Int
+    let side: WorkoutSide?
     let isFirstInSection: Bool
     let isLastSetOfExercise: Bool
 
@@ -218,6 +246,17 @@ struct WorkoutStep: Identifiable {
 
     var workSeconds: Int {
         exercise.durationSeconds ?? 30
+    }
+
+    var setDisplayText: String {
+        if let side {
+            return "\(stepSetText) \(side.displayName)"
+        }
+        return stepSetText
+    }
+
+    private var stepSetText: String {
+        "Set \(setNumber) of \(exercise.sets)"
     }
 }
 
@@ -234,16 +273,24 @@ extension Routine {
             for (exerciseIndex, exercise) in section.exercises.enumerated() {
                 let resolved = exercise.resolved(for: phase)
                 for setNum in 1...max(resolved.sets, 1) {
-                    steps.append(WorkoutStep(
-                        sectionName: section.name,
-                        exercise: resolved,
-                        setNumber: setNum,
-                        isFirstInSection: exerciseIndex == 0 && setNum == 1,
-                        isLastSetOfExercise: setNum == resolved.sets
-                    ))
+                    let sides: [WorkoutSide?] = resolved.isTimed && resolved.perSide ? [.left, .right] : [nil]
+                    for (sideIndex, side) in sides.enumerated() {
+                        steps.append(WorkoutStep(
+                            sectionName: section.name,
+                            exercise: resolved,
+                            setNumber: setNum,
+                            side: side,
+                            isFirstInSection: exerciseIndex == 0 && setNum == 1 && sideIndex == 0,
+                            isLastSetOfExercise: setNum == resolved.sets && sideIndex == sides.count - 1
+                        ))
+                    }
                 }
             }
         }
         return steps
+    }
+
+    var canStartWorkout: Bool {
+        !buildSteps().isEmpty
     }
 }

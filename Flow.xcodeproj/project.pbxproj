@@ -14,12 +14,15 @@
 		E00004 /* Routine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10004 /* Routine.swift */; };
 		E00005 /* WorkoutSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10005 /* WorkoutSession.swift */; };
 		E00006 /* SetRating.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10006 /* SetRating.swift */; };
+		E00043 /* CompletedWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10047 /* CompletedWorkout.swift */; };
 		E00007 /* RoutineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10007 /* RoutineStore.swift */; };
+		E00044 /* StrengthHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10048 /* StrengthHistoryStore.swift */; };
 		E00008 /* RoutineListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10008 /* RoutineListView.swift */; };
 		E00009 /* WorkoutFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10009 /* WorkoutFlowView.swift */; };
 		E00010 /* ExerciseCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10010 /* ExerciseCardView.swift */; };
 		E00011 /* RestTimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10011 /* RestTimerView.swift */; };
 		E00012 /* WorkoutSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10012 /* WorkoutSummaryView.swift */; };
+		E00045 /* WorkoutHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10049 /* WorkoutHistoryView.swift */; };
 		E00013 /* RoutineEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10013 /* RoutineEditorView.swift */; };
 		E00014 /* ExerciseEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10014 /* ExerciseEditorView.swift */; };
 		E00016 /* RoutineOverviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10016 /* RoutineOverviewSheet.swift */; };
@@ -36,7 +39,20 @@
 		E00041 /* HealthSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10041 /* HealthSyncView.swift */; };
 		E00042 /* SparklineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10042 /* SparklineView.swift */; };
 		E00015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E10015 /* Assets.xcassets */; };
+		E00050 /* WorkoutSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10051 /* WorkoutSessionTests.swift */; };
+		E00051 /* RoutineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10052 /* RoutineStoreTests.swift */; };
+		E00052 /* RunMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10053 /* RunMetricsTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		E80050 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E40099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E40001;
+			remoteInfo = Flow;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		E10001 /* FlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowApp.swift; sourceTree = "<group>"; };
@@ -46,12 +62,15 @@
 		E10004 /* Routine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Routine.swift; sourceTree = "<group>"; };
 		E10005 /* WorkoutSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSession.swift; sourceTree = "<group>"; };
 		E10006 /* SetRating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetRating.swift; sourceTree = "<group>"; };
+		E10047 /* CompletedWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedWorkout.swift; sourceTree = "<group>"; };
 		E10007 /* RoutineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStore.swift; sourceTree = "<group>"; };
+		E10048 /* StrengthHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrengthHistoryStore.swift; sourceTree = "<group>"; };
 		E10008 /* RoutineListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineListView.swift; sourceTree = "<group>"; };
 		E10009 /* WorkoutFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFlowView.swift; sourceTree = "<group>"; };
 		E10010 /* ExerciseCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCardView.swift; sourceTree = "<group>"; };
 		E10011 /* RestTimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerView.swift; sourceTree = "<group>"; };
 		E10012 /* WorkoutSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSummaryView.swift; sourceTree = "<group>"; };
+		E10049 /* WorkoutHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutHistoryView.swift; sourceTree = "<group>"; };
 		E10013 /* RoutineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineEditorView.swift; sourceTree = "<group>"; };
 		E10014 /* ExerciseEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseEditorView.swift; sourceTree = "<group>"; };
 		E10016 /* RoutineOverviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineOverviewSheet.swift; sourceTree = "<group>"; };
@@ -70,10 +89,21 @@
 		E10043 /* Flow.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flow.entitlements; sourceTree = "<group>"; };
 		E10015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E10099 /* Flow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flow.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E10050 /* FlowTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlowTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		E10051 /* WorkoutSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSessionTests.swift; sourceTree = "<group>"; };
+		E10052 /* RoutineStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStoreTests.swift; sourceTree = "<group>"; };
+		E10053 /* RunMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetricsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		E30001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E30050 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -87,6 +117,7 @@
 			isa = PBXGroup;
 			children = (
 				E20002 /* Flow */,
+				E20050 /* FlowTests */,
 				E20099 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -122,6 +153,7 @@
 				E10004 /* Routine.swift */,
 				E10005 /* WorkoutSession.swift */,
 				E10006 /* SetRating.swift */,
+				E10047 /* CompletedWorkout.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -130,6 +162,7 @@
 			isa = PBXGroup;
 			children = (
 				E10007 /* RoutineStore.swift */,
+				E10048 /* StrengthHistoryStore.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -151,6 +184,7 @@
 				E10010 /* ExerciseCardView.swift */,
 				E10011 /* RestTimerView.swift */,
 				E10012 /* WorkoutSummaryView.swift */,
+				E10049 /* WorkoutHistoryView.swift */,
 				E10016 /* RoutineOverviewSheet.swift */,
 			);
 			path = Workout;
@@ -212,8 +246,19 @@
 			isa = PBXGroup;
 			children = (
 				E10099 /* Flow.app */,
+				E10050 /* FlowTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E20050 /* FlowTests */ = {
+			isa = PBXGroup;
+			children = (
+				E10051 /* WorkoutSessionTests.swift */,
+				E10052 /* RoutineStoreTests.swift */,
+				E10053 /* RunMetricsTests.swift */,
+			);
+			path = FlowTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -236,6 +281,24 @@
 			productReference = E10099 /* Flow.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E40050 /* FlowTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E60050 /* Build configuration list for PBXNativeTarget "FlowTests" */;
+			buildPhases = (
+				E50050 /* Sources */,
+				E30050 /* Frameworks */,
+				E50051 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E80051 /* PBXTargetDependency */,
+			);
+			name = FlowTests;
+			productName = FlowTests;
+			productReference = E10050 /* FlowTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -248,6 +311,10 @@
 				TargetAttributes = {
 					E40001 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					E40050 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = E40001;
 					};
 				};
 			};
@@ -265,6 +332,7 @@
 			projectRoot = "";
 			targets = (
 				E40001 /* Flow */,
+				E40050 /* FlowTests */,
 			);
 		};
 /* End PBXProject section */
@@ -275,6 +343,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				E00015 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E50051 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -292,12 +367,15 @@
 				E00004 /* Routine.swift in Sources */,
 				E00005 /* WorkoutSession.swift in Sources */,
 				E00006 /* SetRating.swift in Sources */,
+				E00043 /* CompletedWorkout.swift in Sources */,
 				E00007 /* RoutineStore.swift in Sources */,
+				E00044 /* StrengthHistoryStore.swift in Sources */,
 				E00008 /* RoutineListView.swift in Sources */,
 				E00009 /* WorkoutFlowView.swift in Sources */,
 				E00010 /* ExerciseCardView.swift in Sources */,
 				E00011 /* RestTimerView.swift in Sources */,
 				E00012 /* WorkoutSummaryView.swift in Sources */,
+				E00045 /* WorkoutHistoryView.swift in Sources */,
 				E00013 /* RoutineEditorView.swift in Sources */,
 				E00014 /* ExerciseEditorView.swift in Sources */,
 				E00016 /* RoutineOverviewSheet.swift in Sources */,
@@ -316,7 +394,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E50050 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E00050 /* WorkoutSessionTests.swift in Sources */,
+				E00051 /* RoutineStoreTests.swift in Sources */,
+				E00052 /* RunMetricsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E80051 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E40001 /* Flow */;
+			targetProxy = E80050 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		E70001 /* Debug */ = {
@@ -500,6 +596,58 @@
 			};
 			name = Release;
 		};
+		E70050 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B4YXM5RCS4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexomand.flow.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Flow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Flow";
+			};
+			name = Debug;
+		};
+		E70051 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B4YXM5RCS4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexomand.flow.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Flow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Flow";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -517,6 +665,15 @@
 			buildConfigurations = (
 				E70003 /* Debug */,
 				E70004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E60050 /* Build configuration list for PBXNativeTarget "FlowTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E70050 /* Debug */,
+				E70051 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -4,6 +4,7 @@ import AudioToolbox
 struct WorkoutFlowView: View {
     let routine: Routine
     let store: RoutineStore
+    let historyStore: StrengthHistoryStore
     let onDismiss: () -> Void
     @Environment(\.scenePhase) private var scenePhase
     @State private var session: WorkoutSession
@@ -13,9 +14,10 @@ struct WorkoutFlowView: View {
 
     private let clock = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
 
-    init(routine: Routine, store: RoutineStore, onDismiss: @escaping () -> Void) {
+    init(routine: Routine, store: RoutineStore, historyStore: StrengthHistoryStore, onDismiss: @escaping () -> Void) {
         self.routine = routine
         self.store = store
+        self.historyStore = historyStore
         self.onDismiss = onDismiss
         self._session = State(initialValue: WorkoutSession(routine: routine))
     }
@@ -29,12 +31,12 @@ struct WorkoutFlowView: View {
             theme.bg.ignoresSafeArea()
 
             if session.isFinished {
-                WorkoutSummaryView(session: session, store: store, onDone: onDismiss)
+                WorkoutSummaryView(session: session, store: store, historyStore: historyStore, onDone: onDismiss)
             } else if session.isResting {
                 RestTimerView(
                     seconds: session.currentTimerDurationSeconds,
                     remaining: session.remainingTimerSeconds(at: now),
-                    nextExerciseName: session.nextStep?.exercise.name ?? "done!",
+                    nextExerciseName: nextStepName,
                     estimatedMinutes: session.estimatedMinutesRemaining,
                     onSkip: {
                         let eventDate = Date()
@@ -124,6 +126,14 @@ struct WorkoutFlowView: View {
             return "rest"
         }
 
-        return session.nextStep?.exercise.name ?? "done!"
+        return nextStepName
+    }
+
+    private var nextStepName: String {
+        guard let step = session.nextStep else { return "done!" }
+        if let side = step.side {
+            return "\(step.exercise.name) (\(side.displayName.lowercased()))"
+        }
+        return step.exercise.name
     }
 }

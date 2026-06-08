@@ -15,6 +15,7 @@ The project, target, scheme, installed app, and bundle identifier use `Flow` or 
 5. Run timed exercises with automatic countdown and auto-advance.
 6. Rest between sets or exercises with a countdown, progress ring, skip control, next-exercise label, and vibration at zero.
 7. Review an exception-focused workout summary and copy it as Markdown.
+8. Save completed workout history with ratings, duration, and applied/skipped progression decisions.
 
 ### Cardio
 
@@ -32,6 +33,7 @@ The project, target, scheme, installed app, and bundle identifier use `Flow` or 
 - Routine editor with sections, exercises, timed work, split rests, notes, per-side flags, and per-phase overrides.
 - JSON import/export for strength routines.
 - Automatic strength progression based on Fail and Easy ratings.
+- Strength workout history with immutable completed-workout snapshots.
 - Read-only HealthKit running and cycling sync into SwiftData.
 - Route thumbnails, MapKit route detail, Swift Charts pace/elevation views, splits, and HR.
 - No backend, account, or third-party package dependencies.
@@ -70,10 +72,23 @@ Run
 |-- durationSeconds
 |-- elevationGainMetres
 |-- avgHeartRate
-`-- maxHeartRate
+|-- maxHeartRate
+|-- paceBuckets
+`-- routePoints
 ```
 
-Route locations and derived pace buckets are fetched lazily from HealthKit and cached in memory for the process lifetime.
+Completed strength workouts are stored separately with SwiftData:
+
+```text
+CompletedWorkout
+|-- startedAt / endedAt / durationSeconds
+|-- routineId / routineName / phase
+|-- setResults
+|-- proposedAdjustments
+`-- appliedAdjustments + decision
+```
+
+Route locations are fetched lazily from HealthKit. Lightweight row derivations are persisted on the `Run` model, while full routes stay in a bounded in-memory cache for detail views.
 
 ## Tech
 
@@ -81,9 +96,11 @@ Route locations and derived pace buckets are fetched lazily from HealthKit and c
 - iOS 26 deployment target.
 - Swift Observation with `@Observable`.
 - SwiftData for the run mirror.
+- SwiftData for completed strength workout history.
 - HealthKit, MapKit, and Swift Charts for run review.
 - Local JSON storage for strength routines.
 - Backward-compatible routine decoding for older JSON.
+- Focused XCTest coverage for progression, routine storage, and route metrics.
 
 ## Project Structure
 

@@ -4,10 +4,12 @@ struct WorkoutSummaryView: View {
     @Environment(\.theme) private var theme
     let session: WorkoutSession
     let store: RoutineStore
+    let historyStore: StrengthHistoryStore
     let onDone: () -> Void
 
     @State private var copied = false
-    @State private var adjustmentsApplied = false
+    @State private var adjustmentDecision: AdjustmentDecision = .proposed
+    @State private var didRecordInitialHistory = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,7 +24,7 @@ struct WorkoutSummaryView: View {
                 .foregroundColor(theme.comment)
                 .padding(.top, 4)
 
-            let duration = formattedDuration
+            let duration = session.formattedDuration
             Text("Duration: \(duration)")
                 .terminalFont(13)
                 .foregroundColor(theme.comment)
@@ -101,7 +103,7 @@ struct WorkoutSummaryView: View {
                                 .background(theme.comment.opacity(0.3))
                                 .padding(.vertical, 4)
 
-                            Text("📐 ADJUSTMENTS APPLIED")
+                            Text("📐 ADJUSTMENTS \(adjustmentDecision.displayName.uppercased())")
                                 .terminalFont(14, weight: .bold)
                                 .foregroundColor(theme.blue)
 
@@ -130,8 +132,26 @@ struct WorkoutSummaryView: View {
 
             // Action buttons
             VStack(spacing: 12) {
+                if needsAdjustmentDecision {
+                    HStack(spacing: 10) {
+                        Button {
+                            applyAdjustments()
+                        } label: {
+                            Text("[ APPLY ]")
+                        }
+                        .buttonStyle(TerminalButtonStyle(color: theme.green))
+
+                        Button {
+                            skipAdjustments()
+                        } label: {
+                            Text("[ SKIP ]")
+                        }
+                        .buttonStyle(TerminalButtonStyle(color: theme.yellow))
+                    }
+                }
+
                 Button {
-                    UIPasteboard.general.string = session.generateSummaryMarkdown()
+                    UIPasteboard.general.string = session.generateSummaryMarkdown(adjustmentDecision: adjustmentDecision)
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         copied = false
@@ -147,24 +167,34 @@ struct WorkoutSummaryView: View {
                     Text("[ DONE ]")
                 }
                 .buttonStyle(TerminalButtonStyle(color: theme.comment))
+                .disabled(needsAdjustmentDecision)
+                .opacity(needsAdjustmentDecision ? 0.45 : 1)
             }
             .padding(.bottom, 32)
         }
         .onAppear {
-            if !adjustmentsApplied && !session.adjustments.isEmpty {
-                adjustmentsApplied = true
-                var updated = session.routine
-                session.applyAdjustments(to: &updated)
-                store.updateRoutine(updated)
-            }
+            guard !didRecordInitialHistory else { return }
+            didRecordInitialHistory = true
+            adjustmentDecision = session.adjustments.isEmpty ? .none : .proposed
+            historyStore.record(session: session, decision: adjustmentDecision)
         }
     }
 
-    private var formattedDuration: String {
-        let elapsed = Int(Date().timeIntervalSince(session.startedAt))
-        let mins = elapsed / 60
-        let secs = elapsed % 60
-        return String(format: "%d:%02d", mins, secs)
+    private var needsAdjustmentDecision: Bool {
+        !session.adjustments.isEmpty && adjustmentDecision == .proposed
+    }
+
+    private func applyAdjustments() {
+        var updated = session.routine
+        session.applyAdjustments(to: &updated)
+        store.updateRoutine(updated)
+        adjustmentDecision = .applied
+        historyStore.record(session: session, decision: .applied, appliedAdjustments: session.adjustments)
+    }
+
+    private func skipAdjustments() {
+        adjustmentDecision = .skipped
+        historyStore.record(session: session, decision: .skipped)
     }
 }
 

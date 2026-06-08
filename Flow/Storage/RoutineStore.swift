@@ -3,16 +3,29 @@ import Foundation
 @Observable
 class RoutineStore {
     var routines: [Routine] = []
+    var loadError: String?
     private static let seedVersion = "summer-arc-upper-core-v2"
     private static let seedVersionKey = "RoutineStore.seedVersion"
 
-    private let fileURL: URL = {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        return docs.appendingPathComponent("routines.json")
-    }()
+    private enum LoadResult {
+        case missing
+        case loaded
+        case failed(Error)
+    }
 
-    init() {
-        load()
+    private let fileURL: URL
+    private let defaults: UserDefaults
+    private var loadResult: LoadResult = .missing
+
+    init(fileURL: URL? = nil, defaults: UserDefaults = .standard) {
+        if let fileURL {
+            self.fileURL = fileURL
+        } else {
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            self.fileURL = docs.appendingPathComponent("routines.json")
+        }
+        self.defaults = defaults
+        loadResult = loadFromDisk()
         migrateSeedRoutinesIfNeeded()
     }
 
@@ -25,13 +38,33 @@ class RoutineStore {
         }
     }
 
-    func load() {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+    @discardableResult
+    func load() -> Bool {
+        switch loadFromDisk() {
+        case .loaded:
+            loadResult = .loaded
+            return true
+        case .missing:
+            loadResult = .missing
+            return false
+        case .failed(let error):
+            loadResult = .failed(error)
+            return false
+        }
+    }
+
+    private func loadFromDisk() -> LoadResult {
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return .missing }
         do {
             let data = try Data(contentsOf: fileURL)
             routines = try JSONDecoder().decode([Routine].self, from: data)
+            loadError = nil
+            return .loaded
         } catch {
+            loadError = error.localizedDescription
+            preserveCorruptFile()
             print("Failed to load routines: \(error)")
+            return .failed(error)
         }
     }
 
@@ -103,23 +136,37 @@ class RoutineStore {
     }
 
     private func migrateSeedRoutinesIfNeeded() {
-        let defaults = UserDefaults.standard
         let appliedVersion = defaults.string(forKey: Self.seedVersionKey)
 
-        guard appliedVersion != Self.seedVersion else {
-            if routines.isEmpty {
-                routines = Self.seedRoutines()
-                save()
-            }
+        if case .failed = loadResult {
             return
         }
 
-        if routines.isEmpty || Self.matchesLegacySeedRoutines(routines) {
+        if case .missing = loadResult {
+            routines = Self.seedRoutines()
+            save()
+            defaults.set(Self.seedVersion, forKey: Self.seedVersionKey)
+            return
+        }
+
+        guard appliedVersion != Self.seedVersion else {
+            return
+        }
+
+        if Self.matchesLegacySeedRoutines(routines) {
             routines = Self.seedRoutines()
             save()
         }
 
         defaults.set(Self.seedVersion, forKey: Self.seedVersionKey)
+    }
+
+    private func preserveCorruptFile() {
+        let backupName = "routines.corrupt-\(Int(Date().timeIntervalSince1970)).json"
+        let backupURL = fileURL.deletingLastPathComponent().appendingPathComponent(backupName)
+        if !FileManager.default.fileExists(atPath: backupURL.path) {
+            try? FileManager.default.copyItem(at: fileURL, to: backupURL)
+        }
     }
 
     private static func matchesLegacySeedRoutines(_ routines: [Routine]) -> Bool {

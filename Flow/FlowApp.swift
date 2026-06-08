@@ -5,15 +5,12 @@ import SwiftData
 struct FlowApp: App {
     let runContainer: ModelContainer
     @State private var routineStore = RoutineStore()
+    @State private var historyStore = StrengthHistoryStore()
     @State private var runSettings = AppSettings.shared
     @State private var syncCoordinator: SyncCoordinator
 
     init() {
-        do {
-            runContainer = try ModelContainer(for: Run.self)
-        } catch {
-            fatalError("Failed to create run model container: \(error)")
-        }
+        runContainer = Self.makeRunContainer()
         _syncCoordinator = State(initialValue: SyncCoordinator(modelContainer: runContainer))
     }
 
@@ -21,11 +18,39 @@ struct FlowApp: App {
         WindowGroup {
             FlowRootView(
                 routineStore: routineStore,
+                historyStore: historyStore,
                 runSettings: runSettings,
                 syncCoordinator: syncCoordinator
             )
                 .preferredColorScheme(.dark)
                 .modelContainer(runContainer)
+        }
+    }
+
+    private static func makeRunContainer() -> ModelContainer {
+        let schema = Schema([Run.self])
+        let config = ModelConfiguration("RunCache", schema: schema)
+        do {
+            return try ModelContainer(for: schema, configurations: config)
+        } catch {
+            print("[Flow] Run ModelContainer open failed (\(error)); rebuilding cache store.")
+            destroyRunStore()
+            if let fresh = try? ModelContainer(for: schema, configurations: config) {
+                return fresh
+            }
+            let memory = ModelConfiguration("RunCacheMemory", schema: schema, isStoredInMemoryOnly: true)
+            return try! ModelContainer(for: schema, configurations: memory)
+        }
+    }
+
+    private static func destroyRunStore() {
+        let fm = FileManager.default
+        guard let appSupport = try? fm.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: false) else { return }
+        for name in ["RunCache.store", "default.store"] {
+            let base = appSupport.appendingPathComponent(name)
+            for suffix in ["", "-shm", "-wal"] {
+                try? fm.removeItem(at: URL(fileURLWithPath: base.path + suffix))
+            }
         }
     }
 }
@@ -36,6 +61,7 @@ struct FlowRootView: View {
     @Query(sort: \Run.startDate, order: .reverse) private var workouts: [Run]
 
     let routineStore: RoutineStore
+    let historyStore: StrengthHistoryStore
     let runSettings: AppSettings
     let syncCoordinator: SyncCoordinator
 
@@ -70,7 +96,7 @@ struct FlowRootView: View {
     }
 
     private var strengthView: some View {
-        RoutineListView(store: routineStore, settings: runSettings, coordinator: syncCoordinator)
+        RoutineListView(store: routineStore, historyStore: historyStore, settings: runSettings, coordinator: syncCoordinator)
     }
 
     private var visibleActivities: [CardioActivity] {
@@ -81,7 +107,7 @@ struct FlowRootView: View {
 
     private func syncIfNeeded() async {
         guard runSettings.hasOnboarded else { return }
-        await syncCoordinator.sync(startDate: runSettings.startDate)
+        await syncCoordinator.sync()
     }
 }
 

@@ -58,7 +58,7 @@ struct RunListView: View {
                             .padding(.horizontal, 16)
                             .padding(.bottom, 16)
                         }
-                        .refreshable { await coordinator.sync(startDate: settings.startDate) }
+                        .refreshable { await coordinator.sync() }
                     }
                 }
             }
@@ -68,7 +68,6 @@ struct RunListView: View {
             .sheet(isPresented: $showHealthSync) {
                 HealthSyncView(settings: settings, coordinator: coordinator)
             }
-            .task { await coordinator.sync(startDate: settings.startDate) }
         }
     }
 
@@ -81,7 +80,7 @@ struct RunListView: View {
     }
 
     private func refresh() {
-        Task { await coordinator.sync(startDate: settings.startDate) }
+        Task { await coordinator.sync() }
     }
 
     private func shortDate(_ date: Date) -> String {

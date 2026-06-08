@@ -1,6 +1,6 @@
 import Foundation
 
-enum SetRating: String, Codable, CaseIterable {
+enum SetRating: String, Codable, CaseIterable, Hashable {
     case couldNotComplete = "fail"
     case good = "good"
     case tooEasy = "easy"

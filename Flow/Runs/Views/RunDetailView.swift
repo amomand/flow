@@ -5,6 +5,7 @@ import CoreLocation
 
 struct RunDetailView: View {
     @Environment(\.theme) private var theme
+    @Environment(\.modelContext) private var modelContext
     let run: Run
 
     @State private var entry: RouteCache.Entry?
@@ -103,6 +104,8 @@ struct RunDetailView: View {
         .chartXScale(domain: 0...domainEnd)
         .frame(height: 140)
         .terminalCard()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pace chart")
     }
 
     private func elevationChart(samples: [MetricSample]) -> some View {
@@ -129,6 +132,8 @@ struct RunDetailView: View {
         .chartXScale(domain: 0...domainEnd)
         .frame(height: 140)
         .terminalCard()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Elevation chart")
     }
 
     private var splitsTable: some View {
@@ -189,9 +194,15 @@ struct RunDetailView: View {
 
     private func applyEntry(_ e: RouteCache.Entry) {
         entry = e
-        splits = RunMetrics.splits(from: e.locations)
+        splits = RunMetrics.splits(from: e.locations, reconcileElevationTo: run.elevationGainMetres)
         elevation = RunMetrics.elevationSamples(from: e.locations)
         routeDistanceKm = RunMetrics.totalDistanceKm(from: e.locations)
+
+        if !run.hasCachedRoute, !e.paceBuckets.isEmpty {
+            run.paceBuckets = e.paceBuckets
+            run.routePoints = RunMetrics.downsampledRoutePoints(from: e.locations)
+            try? modelContext.save()
+        }
     }
 
     private func boundingRegion(for coords: [CLLocationCoordinate2D]) -> MKCoordinateRegion {
@@ -246,9 +257,13 @@ struct RunDetailView: View {
     }
 
     private func formattedTime(_ d: Date) -> String {
+        Self.timeFormatter.string(from: d)
+    }
+
+    private static let timeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .none
         f.timeStyle = .short
-        return f.string(from: d)
-    }
+        return f
+    }()
 }

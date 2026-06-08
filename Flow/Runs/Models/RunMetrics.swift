@@ -56,9 +56,12 @@ enum RunMetrics {
         return result
     }
 
-    static func splits(from locations: [CLLocation]) -> [Split] {
+    static func splits(from locations: [CLLocation], reconcileElevationTo authoritativeGain: Double? = nil) -> [Split] {
         guard locations.count >= 2 else { return [] }
-        var splits: [Split] = []
+        let altitudes = smoothedAltitudes(from: locations)
+
+        struct RawSplit { let kmIndex: Int; let duration: Double; let gain: Double }
+        var raws: [RawSplit] = []
         var nextKmIndex = 1
         var splitStartTime = locations.first!.timestamp
         var elevAccum = 0.0
@@ -67,26 +70,28 @@ enum RunMetrics {
         for i in 1..<locations.count {
             let previous = locations[i - 1]
             let current = locations[i]
+            let previousAltitude = altitudes[i - 1]
+            let currentAltitude = altitudes[i]
             let segmentStartDist = cumDist
             let segmentDistance = current.distance(from: previous)
             guard segmentDistance > 0 else { continue }
 
             let segmentEndDist = segmentStartDist + segmentDistance
             let segmentDuration = current.timestamp.timeIntervalSince(previous.timestamp)
-            let segmentAltitudeDelta = current.altitude - previous.altitude
+            let segmentAltitudeDelta = currentAltitude - previousAltitude
             var localStartDist = segmentStartDist
-            var localStartAltitude = previous.altitude
+            var localStartAltitude = previousAltitude
 
             while Double(nextKmIndex) * 1000.0 <= segmentEndDist {
                 let boundaryDist = Double(nextKmIndex) * 1000.0
                 let fraction = (boundaryDist - segmentStartDist) / segmentDistance
                 let boundaryTime = previous.timestamp.addingTimeInterval(segmentDuration * fraction)
-                let boundaryAltitude = previous.altitude + segmentAltitudeDelta * fraction
+                let boundaryAltitude = previousAltitude + segmentAltitudeDelta * fraction
                 let altitudeDelta = boundaryAltitude - localStartAltitude
                 if altitudeDelta > 0 { elevAccum += altitudeDelta }
 
                 let dt = boundaryTime.timeIntervalSince(splitStartTime)
-                splits.append(Split(kmIndex: nextKmIndex, durationSeconds: dt, elevationGainMetres: elevAccum))
+                raws.append(RawSplit(kmIndex: nextKmIndex, duration: dt, gain: elevAccum))
 
                 nextKmIndex += 1
                 splitStartTime = boundaryTime
@@ -95,18 +100,59 @@ enum RunMetrics {
                 localStartAltitude = boundaryAltitude
             }
 
-            let remainingAltitudeDelta = current.altitude - localStartAltitude
+            let remainingAltitudeDelta = currentAltitude - localStartAltitude
             if segmentEndDist > localStartDist, remainingAltitudeDelta > 0 {
                 elevAccum += remainingAltitudeDelta
             }
             cumDist = segmentEndDist
         }
-        return splits
+
+        let gpsTotal = raws.reduce(0) { $0 + $1.gain }
+        let scale: Double
+        if let target = authoritativeGain, target > 0, gpsTotal > 0 {
+            scale = target / gpsTotal
+        } else {
+            scale = 1
+        }
+
+        return raws.map {
+            Split(kmIndex: $0.kmIndex, durationSeconds: $0.duration, elevationGainMetres: $0.gain * scale)
+        }
     }
 
-    /// Elevation values in metres sampled along the route.
-    static func elevationProfile(from locations: [CLLocation], count: Int = 64) -> [Double] {
-        elevationSamples(from: locations, count: count).map(\.value)
+    static func smoothedAltitudes(from locations: [CLLocation], window: Int = 5) -> [Double] {
+        let altitudes = locations.map(\.altitude)
+        guard altitudes.count > 2, window > 1 else { return altitudes }
+        let half = window / 2
+        var out = [Double](repeating: 0, count: altitudes.count)
+        for i in altitudes.indices {
+            let lower = max(0, i - half)
+            let upper = min(altitudes.count - 1, i + half)
+            var sum = 0.0
+            for j in lower...upper { sum += altitudes[j] }
+            out[i] = sum / Double(upper - lower + 1)
+        }
+        return out
+    }
+
+    static func downsampledRoutePoints(from locations: [CLLocation], maxPoints: Int = 120) -> [Double] {
+        guard locations.count >= 2, maxPoints >= 2 else { return [] }
+        let stride = max(1, locations.count / maxPoints)
+        var points: [Double] = []
+        var index = 0
+        while index < locations.count {
+            let coordinate = locations[index].coordinate
+            points.append(coordinate.latitude)
+            points.append(coordinate.longitude)
+            index += stride
+        }
+        if let last = locations.last?.coordinate,
+           points.count >= 2,
+           points[points.count - 2] != last.latitude || points[points.count - 1] != last.longitude {
+            points.append(last.latitude)
+            points.append(last.longitude)
+        }
+        return points
     }
 
     static func totalDistanceKm(from locations: [CLLocation]) -> Double {
@@ -120,14 +166,15 @@ enum RunMetrics {
 
     static func elevationSamples(from locations: [CLLocation], count: Int = 64) -> [MetricSample] {
         guard locations.count >= 2 else { return [] }
+        let altitudes = smoothedAltitudes(from: locations)
         let step = max(1, locations.count / count)
         var cumDist = 0.0
-        var samples: [MetricSample] = [MetricSample(id: 0, distanceKm: 0, value: locations[0].altitude)]
+        var samples: [MetricSample] = [MetricSample(id: 0, distanceKm: 0, value: altitudes[0])]
 
         for i in 1..<locations.count {
             cumDist += locations[i].distance(from: locations[i - 1])
             if i % step == 0 || i == locations.count - 1 {
-                samples.append(MetricSample(id: samples.count, distanceKm: cumDist / 1000.0, value: locations[i].altitude))
+                samples.append(MetricSample(id: samples.count, distanceKm: cumDist / 1000.0, value: altitudes[i]))
             }
         }
         return samples
