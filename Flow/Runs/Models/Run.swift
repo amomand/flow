@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CoreLocation
 
 enum CardioActivity: String, CaseIterable, Identifiable {
     case running
@@ -49,6 +50,8 @@ final class Run {
     var elevationGainMetres: Double?
     var avgHeartRate: Double?
     var maxHeartRate: Double?
+    var paceBuckets: [Double] = []
+    var routePoints: [Double] = []
 
     init(
         id: UUID,
@@ -59,7 +62,9 @@ final class Run {
         durationSeconds: Double,
         elevationGainMetres: Double? = nil,
         avgHeartRate: Double? = nil,
-        maxHeartRate: Double? = nil
+        maxHeartRate: Double? = nil,
+        paceBuckets: [Double] = [],
+        routePoints: [Double] = []
     ) {
         self.id = id
         self.activityRawValue = activity.rawValue
@@ -70,12 +75,35 @@ final class Run {
         self.elevationGainMetres = elevationGainMetres
         self.avgHeartRate = avgHeartRate
         self.maxHeartRate = maxHeartRate
+        self.paceBuckets = paceBuckets
+        self.routePoints = routePoints
     }
 }
 
 extension Run {
     var activity: CardioActivity {
         CardioActivity(rawValue: activityRawValue) ?? .running
+    }
+
+    var hasCachedRoute: Bool {
+        paceBuckets.count >= 2 && routePoints.count >= 4
+    }
+
+    var cachedCoordinates: [CLLocationCoordinate2D] {
+        guard routePoints.count >= 4 else { return [] }
+        var coords: [CLLocationCoordinate2D] = []
+        coords.reserveCapacity(routePoints.count / 2)
+        var i = 0
+        while i + 1 < routePoints.count {
+            coords.append(CLLocationCoordinate2D(latitude: routePoints[i], longitude: routePoints[i + 1]))
+            i += 2
+        }
+        return coords
+    }
+
+    func clearCachedRoute() {
+        paceBuckets = []
+        routePoints = []
     }
 
     var distanceKm: Double { distanceMetres / 1000.0 }
@@ -99,14 +127,22 @@ extension Run {
     }
 
     var formattedDateHeader: String {
-        let f = DateFormatter()
-        f.dateFormat = "EEE d MMM"
-        return f.string(from: startDate)
+        Self.headerFormatter.string(from: startDate)
     }
 
     var isoDate: String {
+        Self.isoFormatter.string(from: startDate)
+    }
+
+    private static let headerFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "EEE d MMM"
+        return f
+    }()
+
+    private static let isoFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
-        return f.string(from: startDate)
-    }
+        return f
+    }()
 }

@@ -5,14 +5,16 @@ struct SetResult: Identifiable, Codable {
     let exerciseId: UUID
     let exerciseName: String
     let setNumber: Int
+    let side: WorkoutSide?
     let rating: SetRating
     let completedAt: Date
 
-    init(exerciseId: UUID, exerciseName: String, setNumber: Int, rating: SetRating, completedAt: Date = Date()) {
+    init(exerciseId: UUID, exerciseName: String, setNumber: Int, side: WorkoutSide?, rating: SetRating, completedAt: Date = Date()) {
         self.id = UUID()
         self.exerciseId = exerciseId
         self.exerciseName = exerciseName
         self.setNumber = setNumber
+        self.side = side
         self.rating = rating
         self.completedAt = completedAt
     }
@@ -32,6 +34,7 @@ struct WorkoutTimer {
 
 struct RoutineAdjustment: Identifiable {
     let id = UUID()
+    let exerciseId: UUID
     let exerciseName: String
     let field: String          // "reps" or "sets"
     let oldValue: Int
@@ -40,6 +43,7 @@ struct RoutineAdjustment: Identifiable {
 
 @Observable
 class WorkoutSession {
+    let id = UUID()
     let routine: Routine
     let steps: [WorkoutStep]
     var currentStepIndex: Int = 0
@@ -47,6 +51,7 @@ class WorkoutSession {
     var results: [SetResult] = []
     var isFinished: Bool = false
     let startedAt: Date
+    var endedAt: Date?
     var adjustments: [RoutineAdjustment] = []
     var activeTimer: WorkoutTimer?
 
@@ -112,10 +117,26 @@ class WorkoutSession {
         return max(1, (totalSeconds + 30) / 60)
     }
 
-    init(routine: Routine) {
+    var durationSeconds: Double {
+        (endedAt ?? Date()).timeIntervalSince(startedAt)
+    }
+
+    var formattedDuration: String {
+        let elapsed = Int(durationSeconds.rounded())
+        let mins = elapsed / 60
+        let secs = elapsed % 60
+        return String(format: "%d:%02d", mins, secs)
+    }
+
+    init(routine: Routine, startedAt: Date = Date()) {
         self.routine = routine
         self.steps = routine.buildSteps()
-        self.startedAt = Date()
+        self.startedAt = startedAt
+        if steps.isEmpty {
+            self.isFinished = true
+            self.endedAt = startedAt
+            return
+        }
         configureCurrentStage(startingAt: startedAt)
     }
 
@@ -133,6 +154,7 @@ class WorkoutSession {
             exerciseId: step.exercise.id,
             exerciseName: step.exercise.name,
             setNumber: step.setNumber,
+            side: step.side,
             rating: selectedRating,
             completedAt: completedAt
         )
@@ -182,16 +204,23 @@ class WorkoutSession {
         selectedRating = .good
         currentStepIndex += 1
         if currentStepIndex >= steps.count {
-            isFinished = true
-            adjustments = computeAdjustments()
+            finish(at: date)
         } else {
             configureCurrentStage(startingAt: date)
         }
     }
 
+    private func finish(at date: Date) {
+        guard !isFinished else { return }
+        isFinished = true
+        endedAt = date
+        adjustments = computeAdjustments()
+    }
+
     // MARK: - Adjustment Engine
 
     func computeAdjustments() -> [RoutineAdjustment] {
+        guard routine.currentPhase == .base else { return [] }
         var adj: [RoutineAdjustment] = []
 
         // Group results by exercise ID
@@ -216,12 +245,14 @@ class WorkoutSession {
                         let newReps = max(5, exercise.reps - drop)
                         if newReps != exercise.reps {
                             adj.append(RoutineAdjustment(
+                                exerciseId: exercise.id,
                                 exerciseName: exercise.name, field: "reps",
                                 oldValue: exercise.reps, newValue: newReps
                             ))
                         }
                     } else if exercise.sets > 2 {
                         adj.append(RoutineAdjustment(
+                            exerciseId: exercise.id,
                             exerciseName: exercise.name, field: "sets",
                             oldValue: exercise.sets, newValue: exercise.sets - 1
                         ))
@@ -233,12 +264,14 @@ class WorkoutSession {
                         let newReps = min(20, exercise.reps + bump)
                         if newReps != exercise.reps {
                             adj.append(RoutineAdjustment(
+                                exerciseId: exercise.id,
                                 exerciseName: exercise.name, field: "reps",
                                 oldValue: exercise.reps, newValue: newReps
                             ))
                         }
                     } else if exercise.sets < 6 {
                         adj.append(RoutineAdjustment(
+                            exerciseId: exercise.id,
                             exerciseName: exercise.name, field: "sets",
                             oldValue: exercise.sets, newValue: exercise.sets + 1
                         ))
@@ -254,7 +287,7 @@ class WorkoutSession {
         for adjustment in adjustments {
             for si in routine.sections.indices {
                 for ei in routine.sections[si].exercises.indices {
-                    if routine.sections[si].exercises[ei].name == adjustment.exerciseName {
+                    if routine.sections[si].exercises[ei].id == adjustment.exerciseId {
                         if adjustment.field == "reps" {
                             routine.sections[si].exercises[ei].reps = adjustment.newValue
                         } else if adjustment.field == "sets" {
@@ -266,13 +299,14 @@ class WorkoutSession {
         }
     }
 
-    func generateSummaryMarkdown() -> String {
+    func generateSummaryMarkdown(adjustmentDecision: AdjustmentDecision = .proposed) -> String {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let dateStr = dateFormatter.string(from: startedAt)
 
         var md = "## Workout Summary — \(routine.name)\n"
         md += "**Date:** \(dateStr)\n\n"
+        md += "**Duration:** \(formattedDuration)\n\n"
 
         let fails = results.filter { $0.rating == .couldNotComplete }
         let easies = results.filter { $0.rating == .tooEasy }
@@ -286,7 +320,7 @@ class WorkoutSession {
             md += "### ❌ Needs Attention\n"
             let grouped = Dictionary(grouping: fails) { $0.exerciseName }
             for (name, sets) in grouped.sorted(by: { $0.key < $1.key }) {
-                let setNums = sets.map { "Set \($0.setNumber)" }.joined(separator: ", ")
+                let setNums = sets.map { $0.summarySetLabel }.joined(separator: ", ")
                 md += "- **\(name)** — \(setNums): Couldn't complete\n"
             }
             md += "\n"
@@ -300,7 +334,7 @@ class WorkoutSession {
                 if sets.count == totalSetsForExercise {
                     md += "- **\(name)** — All sets\n"
                 } else {
-                    let setNums = sets.map { "Set \($0.setNumber)" }.joined(separator: ", ")
+                    let setNums = sets.map { $0.summarySetLabel }.joined(separator: ", ")
                     md += "- **\(name)** — \(setNums): Too easy\n"
                 }
             }
@@ -308,7 +342,7 @@ class WorkoutSession {
         }
 
         if !adjustments.isEmpty {
-            md += "### 📐 Adjustments Applied\n"
+            md += "### 📐 Adjustments \(adjustmentDecision.displayName)\n"
             for a in adjustments {
                 md += "- **\(a.exerciseName)** — \(a.field): \(a.oldValue) → \(a.newValue)\n"
             }
@@ -330,5 +364,14 @@ class WorkoutSession {
             startedAt: date,
             endsAt: date.addingTimeInterval(Double(durationSeconds))
         )
+    }
+}
+
+private extension SetResult {
+    var summarySetLabel: String {
+        if let side {
+            return "Set \(setNumber) \(side.displayName)"
+        }
+        return "Set \(setNumber)"
     }
 }

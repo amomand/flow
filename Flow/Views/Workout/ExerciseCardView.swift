@@ -95,7 +95,7 @@ struct ExerciseCardView: View {
                                 Text("SET")
                                     .terminalFont(11)
                                     .foregroundColor(theme.comment)
-                                Text("\(step.setNumber) of \(step.exercise.sets)")
+                                Text(step.setDisplayText)
                                     .terminalFont(18, weight: .bold)
                                     .foregroundColor(theme.blue)
                             }
@@ -115,7 +115,7 @@ struct ExerciseCardView: View {
                         }
 
                         if step.exercise.perSide {
-                            Text("↔ EACH SIDE")
+                            Text(step.side.map { "↔ \($0.displayName.uppercased()) SIDE" } ?? "↔ EACH SIDE")
                                 .terminalFont(12, weight: .bold)
                                 .foregroundColor(theme.orange)
                         }

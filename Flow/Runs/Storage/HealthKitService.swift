@@ -32,18 +32,26 @@ final class HealthKitService {
         try await store.requestAuthorization(toShare: [], read: readTypes)
     }
 
-    /// Fetch all workouts of the requested activity starting on or after `since`.
-    func fetchWorkouts(activity: CardioActivity, since: Date) async throws -> [HKWorkout] {
-        let workoutType = HKObjectType.workoutType()
-        let activityPred = HKQuery.predicateForWorkouts(with: activity.healthKitType)
-        let datePred = HKQuery.predicateForSamples(withStart: since, end: nil, options: .strictStartDate)
-        let pred = NSCompoundPredicate(andPredicateWithSubpredicates: [activityPred, datePred])
-        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+    struct WorkoutChanges {
+        let added: [HKWorkout]
+        let deletedUUIDs: [UUID]
+        let newAnchor: HKQueryAnchor?
+    }
 
+    /// Additions, edits and deletions to workouts of the requested activity since a saved anchor.
+    func fetchWorkoutChanges(activity: CardioActivity, anchor: HKQueryAnchor?) async throws -> WorkoutChanges {
+        let activityPred = HKQuery.predicateForWorkouts(with: activity.healthKitType)
         return try await withCheckedThrowingContinuation { cont in
-            let q = HKSampleQuery(sampleType: workoutType, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, error in
+            let q = HKAnchoredObjectQuery(
+                type: HKObjectType.workoutType(),
+                predicate: activityPred,
+                anchor: anchor,
+                limit: HKObjectQueryNoLimit
+            ) { _, samples, deleted, newAnchor, error in
                 if let error { cont.resume(throwing: error); return }
-                cont.resume(returning: (samples as? [HKWorkout]) ?? [])
+                let added = (samples as? [HKWorkout]) ?? []
+                let deletedUUIDs = (deleted ?? []).map(\.uuid)
+                cont.resume(returning: WorkoutChanges(added: added, deletedUUIDs: deletedUUIDs, newAnchor: newAnchor))
             }
             store.execute(q)
         }
@@ -106,19 +114,6 @@ final class HealthKitService {
                 if let error { cont.resume(throwing: error); return }
                 if let locs { collected.append(contentsOf: locs) }
                 if done { cont.resume(returning: collected) }
-            }
-            store.execute(q)
-        }
-    }
-
-    /// Fetch heart rate samples that fall within the workout's time range.
-    func fetchHeartRateSamples(for workout: HKWorkout) async throws -> [HKQuantitySample] {
-        let pred = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: .strictStartDate)
-        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
-        return try await withCheckedThrowingContinuation { cont in
-            let q = HKSampleQuery(sampleType: HKQuantityType(.heartRate), predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, samples, error in
-                if let error { cont.resume(throwing: error); return }
-                cont.resume(returning: (samples as? [HKQuantitySample]) ?? [])
             }
             store.execute(q)
         }

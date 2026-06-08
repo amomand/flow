@@ -82,7 +82,7 @@ struct HealthSyncView: View {
                                 .labelsHidden()
                                 .colorScheme(.dark)
                                 .accentColor(theme.cyan)
-                            Text("// moving this earlier backfills older Health workouts")
+                            Text("// this filters which mirrored workouts are shown")
                                 .terminalFont(11)
                                 .foregroundColor(theme.comment)
                         }
@@ -160,7 +160,7 @@ struct HealthSyncView: View {
             requesting = true
             errorText = nil
         }
-        await coordinator.sync(startDate: workingDate)
+        await coordinator.sync()
         await MainActor.run { requesting = false }
     }
 }

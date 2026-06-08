@@ -1,11 +1,16 @@
 import SwiftUI
 
 struct TerminalFont: ViewModifier {
-    let size: CGFloat
     let weight: Font.Weight
+    @ScaledMetric(relativeTo: .body) private var scaledSize: CGFloat = 16
+
+    init(size: CGFloat, weight: Font.Weight) {
+        self.weight = weight
+        _scaledSize = ScaledMetric(wrappedValue: size, relativeTo: .body)
+    }
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size, weight: weight, design: .monospaced))
+        content.font(.system(size: scaledSize, weight: weight, design: .monospaced))
     }
 }
 

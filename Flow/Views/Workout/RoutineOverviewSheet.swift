@@ -113,7 +113,7 @@ struct OverviewStepRow: View {
                     .strikethrough(isCompleted)
 
                 HStack(spacing: 8) {
-                    Text("Set \(step.setNumber)/\(step.exercise.sets)")
+                    Text(step.side.map { "Set \(step.setNumber)/\(step.exercise.sets) \($0.displayName)" } ?? "Set \(step.setNumber)/\(step.exercise.sets)")
                         .terminalFont(11)
                         .foregroundColor(isCompleted ? theme.comment.opacity(0.3) : theme.comment)
                     Text(step.exercise.isTimed ? "⏱ \(step.exercise.workDisplayValue)s" : "× \(step.exercise.reps) reps")

@@ -4,7 +4,6 @@ import SwiftUI
 struct SparklineView: View {
     @Environment(\.theme) private var theme
     let values: [Double]
-    var color: Color? = nil
     var height: CGFloat = 28
 
     var body: some View {
@@ -24,8 +23,9 @@ struct SparklineView: View {
                 if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
                 else { path.addLine(to: CGPoint(x: x, y: y)) }
             }
-            context.stroke(path, with: .color(color ?? theme.magenta), lineWidth: 1.5)
+            context.stroke(path, with: .color(theme.magenta), lineWidth: 1.5)
         }
         .frame(height: height)
+        .accessibilityHidden(true)
     }
 }

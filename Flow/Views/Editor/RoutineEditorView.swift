@@ -54,6 +54,13 @@ struct RoutineEditorView: View {
                         )
                     }
 
+                    if !routine.canStartWorkout {
+                        Text("// add a section and exercise before saving")
+                            .terminalFont(12)
+                            .foregroundColor(TN.red)
+                            .padding(.horizontal)
+                    }
+
                     // Add section
                     Button {
                         routine.sections.append(Section(name: "New Section"))
@@ -87,8 +94,14 @@ struct RoutineEditorView: View {
                 }
                 .foregroundColor(TN.blue)
                 .bold()
+                .disabled(!canSave)
             }
         }
+    }
+
+    private var canSave: Bool {
+        !routine.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && routine.canStartWorkout
     }
 }
 

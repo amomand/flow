@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RoutineListView: View {
     @Bindable var store: RoutineStore
+    let historyStore: StrengthHistoryStore
     let settings: AppSettings
     let coordinator: SyncCoordinator
 
@@ -10,6 +11,7 @@ struct RoutineListView: View {
     @State private var showingNewRoutine = false
     @State private var showingImport = false
     @State private var showingHealthSync = false
+    @State private var showingHistory = false
     @State private var exportedJSON: String?
     @State private var showExportCopied = false
 
@@ -29,6 +31,9 @@ struct RoutineListView: View {
                             .buttonStyle(.plain)
 
                             Menu {
+                                Button("Workout History") {
+                                    showingHistory = true
+                                }
                                 Button("Health Sync") {
                                     showingHealthSync = true
                                 }
@@ -59,6 +64,7 @@ struct RoutineListView: View {
                                 )
                                     .contentShape(Rectangle())
                                     .onTapGesture {
+                                        guard routine.canStartWorkout else { return }
                                         // Use the latest stored version so currentPhase is fresh.
                                         selectedRoutine = store.routines.first(where: { $0.id == routine.id }) ?? routine
                                     }
@@ -89,7 +95,7 @@ struct RoutineListView: View {
             }
             .navigationBarHidden(true)
             .fullScreenCover(item: $selectedRoutine) { routine in
-                WorkoutFlowView(routine: routine, store: store) {
+                WorkoutFlowView(routine: routine, store: store, historyStore: historyStore) {
                     selectedRoutine = nil
                 }
             }
@@ -108,6 +114,9 @@ struct RoutineListView: View {
             }
             .sheet(isPresented: $showingHealthSync) {
                 HealthSyncView(settings: settings, coordinator: coordinator)
+            }
+            .sheet(isPresented: $showingHistory) {
+                WorkoutHistoryView(historyStore: historyStore)
             }
             .overlay {
                 if showExportCopied {
@@ -176,6 +185,12 @@ struct RoutineRow: View {
             .foregroundColor(TN.comment)
 
             PhasePicker(current: routine.currentPhase, onSelect: onSelectPhase)
+
+            if !routine.canStartWorkout {
+                Text("// add at least one exercise before starting")
+                    .terminalFont(12)
+                    .foregroundColor(TN.red)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .terminalCard()
