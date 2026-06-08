@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F00000000000000000000001 /* WorkoutSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F00000000000000000000003 /* WorkoutSessionTests.swift */; };
+		F00000000000000000000002 /* XCTest.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F00000000000000000000005 /* XCTest.framework */; };
 		E00001 /* FlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10001 /* FlowApp.swift */; };
 		E00002 /* TokyoNightColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10002 /* TokyoNightColors.swift */; };
 		E00003 /* TerminalStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10003 /* TerminalStyle.swift */; };
@@ -38,7 +40,20 @@
 		E00015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E10015 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		F0000000000000000000000E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E40099 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E40001;
+			remoteInfo = Flow;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		F00000000000000000000003 /* WorkoutSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSessionTests.swift; sourceTree = "<group>"; };
+		F00000000000000000000004 /* FlowTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlowTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		F00000000000000000000005 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = Platforms/iPhoneOS.platform/Developer/Library/Frameworks/XCTest.framework; sourceTree = DEVELOPER_DIR; };
 		E10001 /* FlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowApp.swift; sourceTree = "<group>"; };
 		E10002 /* TokyoNightColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokyoNightColors.swift; sourceTree = "<group>"; };
 		E10003 /* TerminalStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalStyle.swift; sourceTree = "<group>"; };
@@ -73,6 +88,14 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		F00000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F00000000000000000000002 /* XCTest.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E30001 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -87,6 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				E20002 /* Flow */,
+				F00000000000000000000006 /* FlowTests */,
 				E20099 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -212,13 +236,40 @@
 			isa = PBXGroup;
 			children = (
 				E10099 /* Flow.app */,
+				F00000000000000000000004 /* FlowTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		F00000000000000000000006 /* FlowTests */ = {
+			isa = PBXGroup;
+			children = (
+				F00000000000000000000003 /* WorkoutSessionTests.swift */,
+			);
+			path = FlowTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		F00000000000000000000008 /* FlowTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F0000000000000000000000B /* Build configuration list for PBXNativeTarget "FlowTests" */;
+			buildPhases = (
+				F00000000000000000000009 /* Sources */,
+				F00000000000000000000007 /* Frameworks */,
+				F0000000000000000000000A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F0000000000000000000000F /* PBXTargetDependency */,
+			);
+			name = FlowTests;
+			productName = FlowTests;
+			productReference = F00000000000000000000004 /* FlowTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		E40001 /* Flow */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = E60002 /* Build configuration list for PBXNativeTarget "Flow" */;
@@ -249,6 +300,10 @@
 					E40001 = {
 						CreatedOnToolsVersion = 15.0;
 					};
+					F00000000000000000000008 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = E40001;
+					};
 				};
 			};
 			buildConfigurationList = E60001 /* Build configuration list for PBXProject "Flow" */;
@@ -265,11 +320,19 @@
 			projectRoot = "";
 			targets = (
 				E40001 /* Flow */,
+				F00000000000000000000008 /* FlowTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		F0000000000000000000000A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E50002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -281,6 +344,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		F00000000000000000000009 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F00000000000000000000001 /* WorkoutSessionTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		E50001 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -318,7 +389,64 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		F0000000000000000000000F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E40001 /* Flow */;
+			targetProxy = F0000000000000000000000E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		F0000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B4YXM5RCS4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexomand.flowTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Flow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Flow";
+				WRAPPER_EXTENSION = xctest;
+			};
+			name = Debug;
+		};
+		F0000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = B4YXM5RCS4;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.alexomand.flowTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Flow.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Flow";
+				WRAPPER_EXTENSION = xctest;
+			};
+			name = Release;
+		};
 		E70001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -517,6 +645,15 @@
 			buildConfigurations = (
 				E70003 /* Debug */,
 				E70004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F0000000000000000000000B /* Build configuration list for PBXNativeTarget "FlowTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0000000000000000000000C /* Debug */,
+				F0000000000000000000000D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -3,18 +3,15 @@ import SwiftData
 
 @main
 struct FlowApp: App {
-    let runContainer: ModelContainer
+    private let runStorage: RunStorage
     @State private var routineStore = RoutineStore()
     @State private var runSettings = AppSettings.shared
     @State private var syncCoordinator: SyncCoordinator
 
     init() {
-        do {
-            runContainer = try ModelContainer(for: Run.self)
-        } catch {
-            fatalError("Failed to create run model container: \(error)")
-        }
-        _syncCoordinator = State(initialValue: SyncCoordinator(modelContainer: runContainer))
+        let runStorage = RunStorage.create()
+        self.runStorage = runStorage
+        _syncCoordinator = State(initialValue: SyncCoordinator(modelContainer: runStorage.container))
     }
 
     var body: some Scene {
@@ -25,7 +22,25 @@ struct FlowApp: App {
                 syncCoordinator: syncCoordinator
             )
                 .preferredColorScheme(.dark)
-                .modelContainer(runContainer)
+                .modelContainer(runStorage.container)
+        }
+    }
+}
+
+private struct RunStorage {
+    let container: ModelContainer
+
+    static func create() -> RunStorage {
+        do {
+            return RunStorage(container: try ModelContainer(for: Run.self))
+        } catch {
+            print("Failed to create persistent run model container; using in-memory cache: \(error)")
+            do {
+                let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+                return RunStorage(container: try ModelContainer(for: Run.self, configurations: configuration))
+            } catch {
+                preconditionFailure("Failed to create in-memory run model container: \(error)")
+            }
         }
     }
 }

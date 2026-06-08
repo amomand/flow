@@ -161,10 +161,7 @@ struct WorkoutSummaryView: View {
     }
 
     private var formattedDuration: String {
-        let elapsed = Int(Date().timeIntervalSince(session.startedAt))
-        let mins = elapsed / 60
-        let secs = elapsed % 60
-        return String(format: "%d:%02d", mins, secs)
+        WorkoutSession.formatDuration(session.durationSeconds)
     }
 }
 

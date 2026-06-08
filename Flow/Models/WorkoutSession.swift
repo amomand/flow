@@ -47,6 +47,7 @@ class WorkoutSession {
     var results: [SetResult] = []
     var isFinished: Bool = false
     let startedAt: Date
+    var endedAt: Date?
     var adjustments: [RoutineAdjustment] = []
     var activeTimer: WorkoutTimer?
 
@@ -112,10 +113,14 @@ class WorkoutSession {
         return max(1, (totalSeconds + 30) / 60)
     }
 
-    init(routine: Routine) {
+    var durationSeconds: TimeInterval {
+        (endedAt ?? .now).timeIntervalSince(startedAt)
+    }
+
+    init(routine: Routine, startedAt: Date = .now) {
         self.routine = routine
         self.steps = routine.buildSteps()
-        self.startedAt = Date()
+        self.startedAt = startedAt
         configureCurrentStage(startingAt: startedAt)
     }
 
@@ -182,6 +187,9 @@ class WorkoutSession {
         selectedRating = .good
         currentStepIndex += 1
         if currentStepIndex >= steps.count {
+            if endedAt == nil {
+                endedAt = date
+            }
             isFinished = true
             adjustments = computeAdjustments()
         } else {
@@ -273,6 +281,7 @@ class WorkoutSession {
 
         var md = "## Workout Summary — \(routine.name)\n"
         md += "**Date:** \(dateStr)\n\n"
+        md += "**Duration:** \(Self.formatDuration(durationSeconds))\n\n"
 
         let fails = results.filter { $0.rating == .couldNotComplete }
         let easies = results.filter { $0.rating == .tooEasy }
@@ -330,5 +339,12 @@ class WorkoutSession {
             startedAt: date,
             endsAt: date.addingTimeInterval(Double(durationSeconds))
         )
+    }
+
+    static func formatDuration(_ duration: TimeInterval) -> String {
+        let elapsed = max(0, Int(duration))
+        let mins = elapsed / 60
+        let secs = elapsed % 60
+        return String(format: "%d:%02d", mins, secs)
     }
 }
