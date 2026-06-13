@@ -39,6 +39,10 @@ struct WorkoutSummaryView: View {
                     let fails = session.results.filter { $0.rating == .couldNotComplete }
                     let easies = session.results.filter { $0.rating == .tooEasy }
 
+                    if let completedWorkout, completedWorkout.hasHealthKitMetrics {
+                        SummaryHealthKitMetrics(workout: completedWorkout)
+                    }
+
                     if fails.isEmpty && easies.isEmpty && session.adjustments.isEmpty {
                         HStack {
                             Spacer()
@@ -151,7 +155,7 @@ struct WorkoutSummaryView: View {
                 }
 
                 Button {
-                    UIPasteboard.general.string = session.generateSummaryMarkdown(adjustmentDecision: adjustmentDecision)
+                    UIPasteboard.general.string = summaryMarkdown
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         copied = false
@@ -176,12 +180,62 @@ struct WorkoutSummaryView: View {
             guard !didRecordInitialHistory else { return }
             didRecordInitialHistory = true
             adjustmentDecision = session.adjustments.isEmpty ? .none : .proposed
-            historyStore.record(session: session, decision: adjustmentDecision)
+            let workout = historyStore.record(session: session, decision: adjustmentDecision)
+            Task {
+                await historyStore.syncHealthKitMetrics(for: workout.id)
+            }
         }
+    }
+
+    private var completedWorkout: CompletedWorkout? {
+        historyStore.workouts.first { $0.id == session.id }
     }
 
     private var needsAdjustmentDecision: Bool {
         !session.adjustments.isEmpty && adjustmentDecision == .proposed
+    }
+
+    private var summaryMarkdown: String {
+        var markdown = session.generateSummaryMarkdown(adjustmentDecision: adjustmentDecision)
+        guard let completedWorkout, completedWorkout.hasHealthKitMetrics else { return markdown }
+
+        markdown += "\n\n### Apple Watch\n"
+        if let activity = completedWorkout.healthKitWorkoutActivityName {
+            markdown += "- **Workout:** \(activity)\n"
+        }
+        if let duration = completedWorkout.formattedHealthKitDuration {
+            markdown += "- **Watch duration:** \(duration)\n"
+        }
+        if let energy = completedWorkout.formattedActiveEnergy {
+            markdown += "- **Active energy:** \(energy)\n"
+        }
+        if let exerciseTime = completedWorkout.formattedAppleExerciseTime {
+            markdown += "- **Exercise time:** \(exerciseTime)\n"
+        }
+        if let averageHeartRate = completedWorkout.averageHeartRate {
+            markdown += "- **Average heart rate:** \(Int(averageHeartRate.rounded())) bpm\n"
+        }
+        if let maxHeartRate = completedWorkout.maxHeartRate {
+            markdown += "- **Max heart rate:** \(Int(maxHeartRate.rounded())) bpm\n"
+        }
+        if let effort = completedWorkout.workoutEffortScore {
+            markdown += "- **Effort:** \(formatOneDecimal(effort))\n"
+        } else if let estimatedEffort = completedWorkout.estimatedWorkoutEffortScore {
+            markdown += "- **Estimated effort:** \(formatOneDecimal(estimatedEffort))\n"
+        }
+        if let averageMETs = completedWorkout.averageMETs {
+            markdown += "- **Average METs:** \(formatOneDecimal(averageMETs))\n"
+        }
+
+        return markdown
+    }
+
+    private func formatOneDecimal(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return String(format: "%.0f", rounded)
+        }
+        return String(format: "%.1f", rounded)
     }
 
     private func applyAdjustments() {
@@ -195,6 +249,119 @@ struct WorkoutSummaryView: View {
     private func skipAdjustments() {
         adjustmentDecision = .skipped
         historyStore.record(session: session, decision: .skipped)
+    }
+}
+
+private struct SummaryHealthKitMetrics: View {
+    @Environment(\.theme) private var theme
+    let workout: CompletedWorkout
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("APPLE WATCH")
+                    .terminalFont(14, weight: .bold)
+                    .foregroundColor(theme.purple)
+                Spacer()
+                if let duration = workout.formattedHealthKitDuration {
+                    Text(duration)
+                        .terminalFont(12, weight: .bold)
+                        .foregroundColor(theme.comment)
+                }
+            }
+
+            if let activity = workout.healthKitWorkoutActivityName {
+                Text(activity)
+                    .terminalFont(12)
+                    .foregroundColor(theme.comment)
+            }
+
+            HealthKitMetricBadges(workout: workout)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .terminalCard()
+    }
+}
+
+struct HealthKitMetricBadges: View {
+    @Environment(\.theme) private var theme
+    let workout: CompletedWorkout
+
+    var body: some View {
+        FlowLayout(spacing: 8) {
+            ForEach(workout.healthKitMetricBadges, id: \.self) { text in
+                Text(text)
+                    .terminalFont(11, weight: .bold)
+                    .foregroundColor(theme.fg)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(theme.darkCard)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 4)
+                                    .stroke(theme.purple.opacity(0.35), lineWidth: 1)
+                            )
+                    )
+            }
+        }
+    }
+}
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var rowWidth: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var widestRow: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let proposedRowWidth = rowWidth == 0 ? size.width : rowWidth + spacing + size.width
+
+            if rowWidth > 0 && proposedRowWidth > maxWidth {
+                widestRow = max(widestRow, rowWidth)
+                totalHeight += rowHeight + spacing
+                rowWidth = size.width
+                rowHeight = size.height
+            } else {
+                rowWidth = proposedRowWidth
+                rowHeight = max(rowHeight, size.height)
+            }
+        }
+
+        widestRow = max(widestRow, rowWidth)
+        totalHeight += rowHeight
+
+        return CGSize(width: proposal.width ?? widestRow, height: totalHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let proposedX = x == bounds.minX ? x + size.width : x + spacing + size.width
+
+            if x > bounds.minX && proposedX > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+
+            if x > bounds.minX {
+                x += spacing
+            }
+
+            subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width
+            rowHeight = max(rowHeight, size.height)
+        }
     }
 }
 

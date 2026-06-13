@@ -43,6 +43,9 @@ struct WorkoutHistoryView: View {
             .toolbarBackground(theme.bg, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .onAppear { historyStore.reload() }
+            .task {
+                await historyStore.syncHealthKitMetricsForRecentWorkouts()
+            }
         }
     }
 }
@@ -79,6 +82,27 @@ private struct WorkoutHistoryRow: View {
                 Text("adjustments: \(workout.adjustmentDecision.displayName.lowercased())")
                     .terminalFont(12)
                     .foregroundColor(workout.adjustmentDecision == .applied ? theme.green : theme.comment)
+            }
+
+            if workout.hasHealthKitMetrics {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("watch")
+                            .terminalFont(11, weight: .bold)
+                            .foregroundColor(theme.purple)
+                        if let duration = workout.formattedHealthKitDuration {
+                            Text(duration)
+                                .terminalFont(11)
+                                .foregroundColor(theme.comment)
+                        }
+                        if let activity = workout.healthKitWorkoutActivityName {
+                            Text(activity.lowercased())
+                                .terminalFont(11)
+                                .foregroundColor(theme.comment)
+                        }
+                    }
+                    HealthKitMetricBadges(workout: workout)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

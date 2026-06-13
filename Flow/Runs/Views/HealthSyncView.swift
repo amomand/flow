@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import UIKit
+import HealthKit
 
 struct HealthSyncView: View {
     @Environment(\.theme) private var theme
@@ -37,7 +38,7 @@ struct HealthSyncView: View {
 
                         SectionHeader(text: "APPLE HEALTH")
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(settings.hasOnboarded ? "Health access has been requested." : "Connect Apple Health to discover runs and rides.")
+                            Text(settings.hasOnboarded ? "Health access has been requested." : "Connect Apple Health to discover runs, rides, and strength metrics.")
                                 .terminalFont(13)
                                 .foregroundColor(theme.fg)
                             Text("Read-only. Flow never writes workouts back.")
@@ -144,23 +145,59 @@ struct HealthSyncView: View {
                 await MainActor.run {
                     settings.hasOnboarded = true
                 }
-                await sync()
+                await sync(requestAuthorization: false)
             } catch {
                 await MainActor.run {
-                    errorText = error.localizedDescription
+                    errorText = healthKitErrorText(error)
                     requesting = false
                 }
             }
         }
     }
 
-    private func sync() async {
+    private func sync(requestAuthorization: Bool = true) async {
         await MainActor.run {
             settings.startDate = workingDate
             requesting = true
             errorText = nil
         }
-        await coordinator.sync()
-        await MainActor.run { requesting = false }
+        do {
+            if requestAuthorization {
+                try await HealthKitService.shared.requestAuthorization()
+            }
+            await coordinator.sync()
+            await MainActor.run { requesting = false }
+        } catch {
+            await MainActor.run {
+                errorText = healthKitErrorText(error)
+                requesting = false
+            }
+        }
+    }
+
+    private func healthKitErrorText(_ error: Error) -> String {
+        if let healthKitError = error as? HealthKitError {
+            return healthKitError.errorDescription ?? error.localizedDescription
+        }
+
+        let nsError = error as NSError
+        guard nsError.domain == HKError.errorDomain,
+              let code = HKError.Code(rawValue: nsError.code)
+        else {
+            return error.localizedDescription
+        }
+
+        switch code {
+        case .errorHealthDataUnavailable:
+            return "Health data is not available on this device."
+        case .errorAuthorizationDenied:
+            return "Health access was denied. Open iOS Settings to review Flow's permissions."
+        case .errorAuthorizationNotDetermined:
+            return "Health access has not been granted yet."
+        case .errorDatabaseInaccessible:
+            return "Health data is temporarily inaccessible. Try again after unlocking the device."
+        default:
+            return error.localizedDescription
+        }
     }
 }

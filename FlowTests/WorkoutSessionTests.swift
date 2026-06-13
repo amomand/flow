@@ -121,4 +121,53 @@ final class WorkoutSessionTests: XCTestCase {
         exercise.setTimed(true)
         XCTAssertNil(exercise.phaseOverrides[.peak])
     }
+
+    func testCompletedWorkoutPreservesHealthKitMetricsOnUpdate() {
+        let startedAt = Date(timeIntervalSince1970: 10_000)
+        let endedAt = startedAt.addingTimeInterval(42 * 60)
+        let routine = Routine(
+            name: "Strength",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Squat", sets: 1, reps: 5)])]
+        )
+        let workout = CompletedWorkout(
+            id: UUID(),
+            startedAt: startedAt,
+            endedAt: endedAt,
+            routineId: routine.id,
+            routineName: routine.name,
+            phase: .base,
+            durationSeconds: endedAt.timeIntervalSince(startedAt),
+            setResults: [],
+            proposedAdjustments: [],
+            adjustmentDecision: .none
+        )
+        let healthKitWorkoutId = UUID()
+        let metrics = HealthKitStrengthWorkoutMetrics(
+            workoutId: healthKitWorkoutId,
+            activityName: "Traditional Strength",
+            startDate: startedAt,
+            endDate: endedAt,
+            durationSeconds: endedAt.timeIntervalSince(startedAt),
+            activeEnergyKilocalories: 123.4,
+            appleExerciseTimeSeconds: 35 * 60,
+            averageHeartRate: 118.6,
+            maxHeartRate: 151.2,
+            workoutEffortScore: 7,
+            estimatedWorkoutEffortScore: nil,
+            averageMETs: 5.8
+        )
+
+        workout.applyHealthKitMetrics(metrics, syncedAt: endedAt)
+
+        let session = WorkoutSession(routine: routine, startedAt: startedAt)
+        session.completeCurrentSet(completedAt: endedAt)
+        workout.update(from: session, decision: .none, appliedAdjustments: [])
+
+        XCTAssertEqual(workout.healthKitWorkoutId, healthKitWorkoutId)
+        XCTAssertEqual(workout.formattedActiveEnergy, "123 kcal")
+        XCTAssertEqual(workout.formattedAverageHeartRate, "119 avg bpm")
+        XCTAssertEqual(workout.formattedMaxHeartRate, "151 max bpm")
+        XCTAssertEqual(workout.formattedEffortScore, "effort 7")
+        XCTAssertEqual(workout.formattedAverageMETs, "5.8 METs")
+    }
 }

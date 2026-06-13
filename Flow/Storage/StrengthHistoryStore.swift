@@ -12,6 +12,7 @@ final class StrengthHistoryStore {
     private let container: ModelContainer
     private(set) var storageState: StorageState
     private(set) var workouts: [CompletedWorkout] = []
+    private(set) var healthKitSyncingWorkoutIds: Set<UUID> = []
 
     init() {
         let result = Self.makeContainer()
@@ -65,6 +66,57 @@ final class StrengthHistoryStore {
         try? context.save()
         reload()
         return workout
+    }
+
+    func isSyncingHealthKitMetrics(for workoutId: UUID) -> Bool {
+        healthKitSyncingWorkoutIds.contains(workoutId)
+    }
+
+    func syncHealthKitMetrics(for workoutId: UUID) async {
+        guard HealthKitService.shared.isAvailable() else { return }
+        guard !healthKitSyncingWorkoutIds.contains(workoutId) else { return }
+
+        guard let snapshot = workout(id: workoutId), !snapshot.hasHealthKitMetrics else { return }
+
+        healthKitSyncingWorkoutIds.insert(workoutId)
+        defer { healthKitSyncingWorkoutIds.remove(workoutId) }
+
+        do {
+            guard let metrics = try await HealthKitService.shared.fetchBestStrengthWorkout(
+                startedAt: snapshot.startedAt,
+                endedAt: snapshot.endedAt
+            ) else {
+                return
+            }
+
+            guard let current = workout(id: workoutId), !current.hasHealthKitMetrics else { return }
+            current.applyHealthKitMetrics(metrics)
+            try container.mainContext.save()
+            reload()
+        } catch {
+            print("[Flow] Strength HealthKit metrics sync failed: \(error)")
+        }
+    }
+
+    func syncHealthKitMetricsForRecentWorkouts(limit: Int = 20, lookbackDays: Int = 14) async {
+        guard HealthKitService.shared.isAvailable() else { return }
+        let cutoff = Date().addingTimeInterval(-Double(lookbackDays) * 24 * 60 * 60)
+        let candidates = workouts
+            .filter { !$0.hasHealthKitMetrics && $0.endedAt >= cutoff }
+            .prefix(limit)
+            .map(\.id)
+
+        for id in candidates {
+            await syncHealthKitMetrics(for: id)
+        }
+    }
+
+    private func workout(id: UUID) -> CompletedWorkout? {
+        var descriptor = FetchDescriptor<CompletedWorkout>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+        return try? container.mainContext.fetch(descriptor).first
     }
 
     private static func makeContainer() -> (container: ModelContainer, state: StorageState) {
