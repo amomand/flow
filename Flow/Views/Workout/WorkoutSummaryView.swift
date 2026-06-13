@@ -302,23 +302,31 @@ struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? 0
-        var x: CGFloat = 0
-        var y: CGFloat = 0
+        let maxWidth = proposal.width ?? .infinity
+        var rowWidth: CGFloat = 0
         var rowHeight: CGFloat = 0
+        var totalHeight: CGFloat = 0
+        var widestRow: CGFloat = 0
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            if maxWidth > 0 && x > 0 && x + size.width > maxWidth {
-                x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
+            let proposedRowWidth = rowWidth == 0 ? size.width : rowWidth + spacing + size.width
+
+            if rowWidth > 0 && proposedRowWidth > maxWidth {
+                widestRow = max(widestRow, rowWidth)
+                totalHeight += rowHeight + spacing
+                rowWidth = size.width
+                rowHeight = size.height
+            } else {
+                rowWidth = proposedRowWidth
+                rowHeight = max(rowHeight, size.height)
             }
-            x += size.width + (x > 0 ? spacing : 0)
-            rowHeight = max(rowHeight, size.height)
         }
 
-        return CGSize(width: maxWidth, height: y + rowHeight)
+        widestRow = max(widestRow, rowWidth)
+        totalHeight += rowHeight
+
+        return CGSize(width: proposal.width ?? widestRow, height: totalHeight)
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -328,13 +336,20 @@ struct FlowLayout: Layout {
 
         for subview in subviews {
             let size = subview.sizeThatFits(.unspecified)
-            if x > bounds.minX && x + size.width > bounds.maxX {
+            let proposedX = x == bounds.minX ? x + size.width : x + spacing + size.width
+
+            if x > bounds.minX && proposedX > bounds.maxX {
                 x = bounds.minX
                 y += rowHeight + spacing
                 rowHeight = 0
             }
+
+            if x > bounds.minX {
+                x += spacing
+            }
+
             subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
+            x += size.width
             rowHeight = max(rowHeight, size.height)
         }
     }

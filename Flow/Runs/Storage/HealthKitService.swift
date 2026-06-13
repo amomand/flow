@@ -2,9 +2,18 @@ import Foundation
 import HealthKit
 import CoreLocation
 
-enum HealthKitError: Error {
+enum HealthKitError: LocalizedError {
     case notAvailable
     case unauthorized
+
+    var errorDescription: String? {
+        switch self {
+        case .notAvailable:
+            return "Health data is not available on this device."
+        case .unauthorized:
+            return "Health access is not authorized for Flow."
+        }
+    }
 }
 
 struct HealthKitStrengthWorkoutMetrics: Equatable {
