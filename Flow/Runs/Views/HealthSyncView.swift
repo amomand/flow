@@ -145,7 +145,7 @@ struct HealthSyncView: View {
                 await MainActor.run {
                     settings.hasOnboarded = true
                 }
-                await sync()
+                await sync(requestAuthorization: false)
             } catch {
                 await MainActor.run {
                     errorText = healthKitErrorText(error)
@@ -155,14 +155,16 @@ struct HealthSyncView: View {
         }
     }
 
-    private func sync() async {
+    private func sync(requestAuthorization: Bool = true) async {
         await MainActor.run {
             settings.startDate = workingDate
             requesting = true
             errorText = nil
         }
         do {
-            try await HealthKitService.shared.requestAuthorization()
+            if requestAuthorization {
+                try await HealthKitService.shared.requestAuthorization()
+            }
             await coordinator.sync()
             await MainActor.run { requesting = false }
         } catch {
