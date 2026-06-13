@@ -212,20 +212,30 @@ struct WorkoutSummaryView: View {
         if let exerciseTime = completedWorkout.formattedAppleExerciseTime {
             markdown += "- **Exercise time:** \(exerciseTime)\n"
         }
-        if let averageHeartRate = completedWorkout.formattedAverageHeartRate {
-            markdown += "- **Average heart rate:** \(averageHeartRate)\n"
+        if let averageHeartRate = completedWorkout.averageHeartRate {
+            markdown += "- **Average heart rate:** \(Int(averageHeartRate.rounded())) bpm\n"
         }
-        if let maxHeartRate = completedWorkout.formattedMaxHeartRate {
-            markdown += "- **Max heart rate:** \(maxHeartRate)\n"
+        if let maxHeartRate = completedWorkout.maxHeartRate {
+            markdown += "- **Max heart rate:** \(Int(maxHeartRate.rounded())) bpm\n"
         }
-        if let effort = completedWorkout.formattedEffortScore {
-            markdown += "- **Effort:** \(effort)\n"
+        if let effort = completedWorkout.workoutEffortScore {
+            markdown += "- **Effort:** \(formatOneDecimal(effort))\n"
+        } else if let estimatedEffort = completedWorkout.estimatedWorkoutEffortScore {
+            markdown += "- **Estimated effort:** \(formatOneDecimal(estimatedEffort))\n"
         }
-        if let mets = completedWorkout.formattedAverageMETs {
-            markdown += "- **Average METs:** \(mets)\n"
+        if let averageMETs = completedWorkout.averageMETs {
+            markdown += "- **Average METs:** \(formatOneDecimal(averageMETs))\n"
         }
 
         return markdown
+    }
+
+    private func formatOneDecimal(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return String(format: "%.0f", rounded)
+        }
+        return String(format: "%.1f", rounded)
     }
 
     private func applyAdjustments() {
