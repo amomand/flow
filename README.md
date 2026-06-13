@@ -15,7 +15,7 @@ The project, target, scheme, installed app, and bundle identifier use `Flow` or 
 5. Run timed exercises with automatic countdown and auto-advance.
 6. Rest between sets or exercises with a countdown, progress ring, skip control, next-exercise label, and vibration at zero.
 7. Review an exception-focused workout summary and copy it as Markdown.
-8. Save completed workout history with ratings, duration, and applied/skipped progression decisions.
+8. Save completed workout history with ratings, duration, applied/skipped progression decisions, and optional Apple Watch metrics from HealthKit strength workouts.
 
 ### Cardio
 
@@ -34,6 +34,7 @@ The project, target, scheme, installed app, and bundle identifier use `Flow` or 
 - JSON import/export for strength routines.
 - Automatic strength progression based on Fail and Easy ratings.
 - Strength workout history with immutable completed-workout snapshots.
+- Read-only HealthKit matching for Apple Watch strength workouts, including active energy, exercise time, heart rate, effort, and METs when available.
 - Read-only HealthKit running and cycling sync into SwiftData.
 - Route thumbnails, MapKit route detail, Swift Charts pace/elevation views, splits, and HR.
 - No backend, account, or third-party package dependencies.
@@ -85,7 +86,8 @@ CompletedWorkout
 |-- routineId / routineName / phase
 |-- setResults
 |-- proposedAdjustments
-`-- appliedAdjustments + decision
+|-- appliedAdjustments + decision
+`-- optional HealthKit strength metrics
 ```
 
 Route locations are fetched lazily from HealthKit. Lightweight row derivations are persisted on the `Run` model, while full routes stay in a bounded in-memory cache for detail views.

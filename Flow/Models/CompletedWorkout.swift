@@ -68,6 +68,19 @@ final class CompletedWorkout {
     var setResultsData: Data
     var proposedAdjustmentsData: Data
     var appliedAdjustmentsData: Data
+    var healthKitWorkoutId: UUID?
+    var healthKitWorkoutActivityName: String?
+    var healthKitWorkoutStartedAt: Date?
+    var healthKitWorkoutEndedAt: Date?
+    var healthKitDurationSeconds: Double?
+    var activeEnergyKilocalories: Double?
+    var appleExerciseTimeSeconds: Double?
+    var averageHeartRate: Double?
+    var maxHeartRate: Double?
+    var workoutEffortScore: Double?
+    var estimatedWorkoutEffortScore: Double?
+    var averageMETs: Double?
+    var healthKitMetricsSyncedAt: Date?
 
     init(
         id: UUID,
@@ -128,6 +141,61 @@ extension CompletedWorkout {
         return String(format: "%d:%02d", minutes, seconds)
     }
 
+    var hasHealthKitMetrics: Bool {
+        healthKitWorkoutId != nil
+    }
+
+    var formattedHealthKitDuration: String? {
+        guard let healthKitDurationSeconds else { return nil }
+        return Self.formatDuration(healthKitDurationSeconds)
+    }
+
+    var formattedActiveEnergy: String? {
+        guard let activeEnergyKilocalories else { return nil }
+        return "\(Int(activeEnergyKilocalories.rounded())) kcal"
+    }
+
+    var formattedAppleExerciseTime: String? {
+        guard let appleExerciseTimeSeconds else { return nil }
+        return Self.formatDuration(appleExerciseTimeSeconds)
+    }
+
+    var formattedAverageHeartRate: String? {
+        guard let averageHeartRate else { return nil }
+        return "\(Int(averageHeartRate.rounded())) avg bpm"
+    }
+
+    var formattedMaxHeartRate: String? {
+        guard let maxHeartRate else { return nil }
+        return "\(Int(maxHeartRate.rounded())) max bpm"
+    }
+
+    var formattedEffortScore: String? {
+        if let workoutEffortScore {
+            return "effort \(Self.formatOneDecimal(workoutEffortScore))"
+        }
+        if let estimatedWorkoutEffortScore {
+            return "est effort \(Self.formatOneDecimal(estimatedWorkoutEffortScore))"
+        }
+        return nil
+    }
+
+    var formattedAverageMETs: String? {
+        guard let averageMETs else { return nil }
+        return "\(Self.formatOneDecimal(averageMETs)) METs"
+    }
+
+    var healthKitMetricBadges: [String] {
+        [
+            formattedActiveEnergy,
+            formattedAppleExerciseTime.map { "exercise \($0)" },
+            formattedAverageHeartRate,
+            formattedMaxHeartRate,
+            formattedEffortScore,
+            formattedAverageMETs
+        ].compactMap(\.self)
+    }
+
     func update(
         from session: WorkoutSession,
         decision: AdjustmentDecision,
@@ -145,6 +213,22 @@ extension CompletedWorkout {
         adjustmentDecision = decision
     }
 
+    func applyHealthKitMetrics(_ metrics: HealthKitStrengthWorkoutMetrics, syncedAt: Date = Date()) {
+        healthKitWorkoutId = metrics.workoutId
+        healthKitWorkoutActivityName = metrics.activityName
+        healthKitWorkoutStartedAt = metrics.startDate
+        healthKitWorkoutEndedAt = metrics.endDate
+        healthKitDurationSeconds = metrics.durationSeconds
+        activeEnergyKilocalories = metrics.activeEnergyKilocalories
+        appleExerciseTimeSeconds = metrics.appleExerciseTimeSeconds
+        averageHeartRate = metrics.averageHeartRate
+        maxHeartRate = metrics.maxHeartRate
+        workoutEffortScore = metrics.workoutEffortScore
+        estimatedWorkoutEffortScore = metrics.estimatedWorkoutEffortScore
+        averageMETs = metrics.averageMETs
+        healthKitMetricsSyncedAt = syncedAt
+    }
+
     private static func encode<T: Encodable>(_ value: T) -> Data {
         (try? JSONEncoder().encode(value)) ?? Data()
     }
@@ -152,5 +236,24 @@ extension CompletedWorkout {
     private static func decode<T: Decodable>(_ type: T.Type, from data: Data) -> T? {
         guard !data.isEmpty else { return nil }
         return try? JSONDecoder().decode(type, from: data)
+    }
+
+    private static func formatDuration(_ seconds: Double) -> String {
+        let elapsed = Int(seconds.rounded())
+        let hours = elapsed / 3600
+        let minutes = (elapsed % 3600) / 60
+        let seconds = elapsed % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private static func formatOneDecimal(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return String(format: "%.0f", rounded)
+        }
+        return String(format: "%.1f", rounded)
     }
 }

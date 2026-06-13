@@ -37,7 +37,7 @@ struct HealthSyncView: View {
 
                         SectionHeader(text: "APPLE HEALTH")
                         VStack(alignment: .leading, spacing: 12) {
-                            Text(settings.hasOnboarded ? "Health access has been requested." : "Connect Apple Health to discover runs and rides.")
+                            Text(settings.hasOnboarded ? "Health access has been requested." : "Connect Apple Health to discover runs, rides, and strength metrics.")
                                 .terminalFont(13)
                                 .foregroundColor(theme.fg)
                             Text("Read-only. Flow never writes workouts back.")
@@ -160,7 +160,15 @@ struct HealthSyncView: View {
             requesting = true
             errorText = nil
         }
-        await coordinator.sync()
-        await MainActor.run { requesting = false }
+        do {
+            try await HealthKitService.shared.requestAuthorization()
+            await coordinator.sync()
+            await MainActor.run { requesting = false }
+        } catch {
+            await MainActor.run {
+                errorText = error.localizedDescription
+                requesting = false
+            }
+        }
     }
 }

@@ -108,6 +108,7 @@ struct FlowRootView: View {
     private func syncIfNeeded() async {
         guard runSettings.hasOnboarded else { return }
         await syncCoordinator.sync()
+        await historyStore.syncHealthKitMetricsForRecentWorkouts()
     }
 }
 

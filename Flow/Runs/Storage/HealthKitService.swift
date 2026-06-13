@@ -7,6 +7,21 @@ enum HealthKitError: Error {
     case unauthorized
 }
 
+struct HealthKitStrengthWorkoutMetrics: Equatable {
+    let workoutId: UUID
+    let activityName: String
+    let startDate: Date
+    let endDate: Date
+    let durationSeconds: Double
+    let activeEnergyKilocalories: Double?
+    let appleExerciseTimeSeconds: Double?
+    let averageHeartRate: Double?
+    let maxHeartRate: Double?
+    let workoutEffortScore: Double?
+    let estimatedWorkoutEffortScore: Double?
+    let averageMETs: Double?
+}
+
 final class HealthKitService {
     static let shared = HealthKitService()
     let store = HKHealthStore()
@@ -17,7 +32,11 @@ final class HealthKitService {
             HKSeriesType.workoutRoute(),
             HKQuantityType(.heartRate),
             HKQuantityType(.distanceWalkingRunning),
-            HKQuantityType(.distanceCycling)
+            HKQuantityType(.distanceCycling),
+            HKQuantityType(.appleExerciseTime),
+            HKQuantityType(.physicalEffort),
+            HKQuantityType(.workoutEffortScore),
+            HKQuantityType(.estimatedWorkoutEffortScore)
         ]
         if let active = HKObjectType.quantityType(forIdentifier: .activeEnergyBurned) {
             s.insert(active)
@@ -130,6 +149,123 @@ final class HealthKitService {
         let type = HKQuantityType(.heartRate)
         guard let q = workout.statistics(for: type)?.maximumQuantity() else { return nil }
         return q.doubleValue(for: HKUnit(from: "count/min"))
+    }
+
+    func fetchBestStrengthWorkout(
+        startedAt: Date,
+        endedAt: Date,
+        tolerance: TimeInterval = 30 * 60
+    ) async throws -> HealthKitStrengthWorkoutMetrics? {
+        guard isAvailable() else { throw HealthKitError.notAvailable }
+
+        let searchStart = startedAt.addingTimeInterval(-tolerance)
+        let searchEnd = endedAt.addingTimeInterval(tolerance)
+        let datePredicate = HKQuery.predicateForSamples(withStart: searchStart, end: searchEnd)
+        let activityPredicate = NSCompoundPredicate(orPredicateWithSubpredicates: strengthActivityTypes.map {
+            HKQuery.predicateForWorkouts(with: $0)
+        })
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [datePredicate, activityPredicate])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+
+        let workouts: [HKWorkout] = try await withCheckedThrowingContinuation { cont in
+            let q = HKSampleQuery(
+                sampleType: HKObjectType.workoutType(),
+                predicate: predicate,
+                limit: 20,
+                sortDescriptors: [sort]
+            ) { _, samples, error in
+                if let error { cont.resume(throwing: error); return }
+                cont.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            store.execute(q)
+        }
+
+        guard let best = workouts
+            .filter({ Self.isPlausibleStrengthMatch($0, startedAt: startedAt, endedAt: endedAt) })
+            .max(by: {
+                Self.strengthMatchScore($0, startedAt: startedAt, endedAt: endedAt)
+                    < Self.strengthMatchScore($1, startedAt: startedAt, endedAt: endedAt)
+            })
+        else {
+            return nil
+        }
+
+        return strengthMetrics(for: best)
+    }
+
+    func strengthMetrics(for workout: HKWorkout) -> HealthKitStrengthWorkoutMetrics {
+        HealthKitStrengthWorkoutMetrics(
+            workoutId: workout.uuid,
+            activityName: Self.strengthActivityName(for: workout.workoutActivityType),
+            startDate: workout.startDate,
+            endDate: workout.endDate,
+            durationSeconds: workout.duration,
+            activeEnergyKilocalories: sumQuantity(.activeEnergyBurned, in: workout, unit: .kilocalorie()),
+            appleExerciseTimeSeconds: sumQuantity(.appleExerciseTime, in: workout, unit: .second()),
+            averageHeartRate: averageHeartRate(for: workout),
+            maxHeartRate: maxHeartRate(for: workout),
+            workoutEffortScore: averageOrMaximumQuantity(.workoutEffortScore, in: workout, unit: .count()),
+            estimatedWorkoutEffortScore: averageOrMaximumQuantity(.estimatedWorkoutEffortScore, in: workout, unit: .count()),
+            averageMETs: averageMETs(for: workout)
+        )
+    }
+
+    private var strengthActivityTypes: [HKWorkoutActivityType] {
+        [.traditionalStrengthTraining, .functionalStrengthTraining]
+    }
+
+    private func sumQuantity(_ identifier: HKQuantityTypeIdentifier, in workout: HKWorkout, unit: HKUnit) -> Double? {
+        let type = HKQuantityType(identifier)
+        return workout.statistics(for: type)?.sumQuantity()?.doubleValue(for: unit)
+    }
+
+    private func averageOrMaximumQuantity(_ identifier: HKQuantityTypeIdentifier, in workout: HKWorkout, unit: HKUnit) -> Double? {
+        let type = HKQuantityType(identifier)
+        let stats = workout.statistics(for: type)
+        return stats?.averageQuantity()?.doubleValue(for: unit)
+            ?? stats?.maximumQuantity()?.doubleValue(for: unit)
+    }
+
+    private func averageMETs(for workout: HKWorkout) -> Double? {
+        let metsUnit = HKUnit(from: "kcal/(kg*hr)")
+        if let average = workout.metadata?[HKMetadataKeyAverageMETs] as? HKQuantity {
+            return average.doubleValue(for: metsUnit)
+        }
+        return averageOrMaximumQuantity(.physicalEffort, in: workout, unit: metsUnit)
+    }
+
+    private static func isPlausibleStrengthMatch(_ workout: HKWorkout, startedAt: Date, endedAt: Date) -> Bool {
+        let sessionDuration = max(endedAt.timeIntervalSince(startedAt), 1)
+        let overlap = overlapSeconds(workout, startedAt: startedAt, endedAt: endedAt)
+        let minOverlap = min(5 * 60, sessionDuration * 0.25)
+
+        if overlap >= minOverlap {
+            return true
+        }
+
+        let startDelta = abs(workout.startDate.timeIntervalSince(startedAt))
+        let endDelta = abs(workout.endDate.timeIntervalSince(endedAt))
+        return startDelta <= 10 * 60 && endDelta <= 10 * 60
+    }
+
+    private static func strengthMatchScore(_ workout: HKWorkout, startedAt: Date, endedAt: Date) -> Double {
+        let overlap = overlapSeconds(workout, startedAt: startedAt, endedAt: endedAt)
+        let startPenalty = abs(workout.startDate.timeIntervalSince(startedAt)) * 0.1
+        let endPenalty = abs(workout.endDate.timeIntervalSince(endedAt)) * 0.1
+        let durationPenalty = abs(workout.duration - endedAt.timeIntervalSince(startedAt)) * 0.05
+        return overlap - startPenalty - endPenalty - durationPenalty
+    }
+
+    private static func overlapSeconds(_ workout: HKWorkout, startedAt: Date, endedAt: Date) -> Double {
+        max(0, min(workout.endDate, endedAt).timeIntervalSince(max(workout.startDate, startedAt)))
+    }
+
+    private static func strengthActivityName(for type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .functionalStrengthTraining: return "Functional Strength"
+        case .traditionalStrengthTraining: return "Traditional Strength"
+        default: return "Strength"
+        }
     }
 }
 
