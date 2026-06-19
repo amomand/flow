@@ -32,6 +32,7 @@ The project, target, scheme, installed app, and bundle identifier use `Flow` or 
 - Phase-driven workout theming, including the light Deload palette.
 - Routine editor with sections, exercises, timed work, split rests, notes, per-side flags, and per-phase overrides.
 - JSON import/export for strength routines.
+- Flow Coach export and patch workflow for ChatGPT-assisted routine edits.
 - Automatic strength progression based on Fail and Easy ratings.
 - Strength workout history with immutable completed-workout snapshots.
 - Read-only HealthKit matching for Apple Watch strength workouts, including active energy, exercise time, heart rate, effort, and METs when available.
@@ -91,6 +92,43 @@ CompletedWorkout
 ```
 
 Route locations are fetched lazily from HealthKit. Lightweight row derivations are persisted on the `Run` model, while full routes stay in a bounded in-memory cache for detail views.
+
+## Flow Coach Workflow
+
+Flow Coach is a local-first manual loop for discussing routines in ChatGPT without giving ChatGPT direct app or HealthKit access.
+
+1. Open Strength -> Flow Coach.
+2. Optionally add short coach notes.
+3. Copy the coach context JSON and paste it into ChatGPT.
+4. Ask ChatGPT to return a `FlowRoutinePatch` JSON object.
+5. Paste the patch into Flow Coach and preview the diff.
+6. Apply only after reviewing the before/after list.
+
+Coach context includes routine structure, current phases, stable routine hashes, recent strength summaries, and derived cardio summaries. It does not include raw HealthKit routes, route samples, cached route points, per-sample heart-rate data, HealthKit workout IDs, or full HealthKit objects.
+
+Routine patches are typed operations against one routine and must include:
+
+```json
+{
+  "schemaVersion": 1,
+  "routineId": "ROUTINE-UUID",
+  "baseRoutineHash": "hash-from-coach-context",
+  "exportedAt": "2026-06-18T21:30:00Z",
+  "rationale": "Why this edit is useful.",
+  "operations": [
+    {
+      "kind": "replaceExerciseReps",
+      "exerciseId": "EXERCISE-UUID",
+      "expectedIntValue": 8,
+      "newIntValue": 10
+    }
+  ]
+}
+```
+
+Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, and `replacePhaseOverride`.
+
+Flow rejects malformed, stale, mismatched, or semantically invalid patches before anything is saved. Applying a patch stores the previous routine state so the Flow Coach sheet can restore it immediately. A future local MCP bridge can build on the same coach context and patch contract.
 
 ## Tech
 
