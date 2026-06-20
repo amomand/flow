@@ -220,9 +220,6 @@ enum FlowRoutinePatcher {
             }
             try expectInt(operation.expectedIntValue, actual: current, field: "\(exercise.name) durationSeconds")
             let before = "\(exercise.name): \(current)s"
-            if exercise.reps == current {
-                exercise.reps = value
-            }
             exercise.durationSeconds = value
             routine.sections[location.sectionIndex].exercises[location.exerciseIndex] = exercise
             return FlowRoutinePatchDiff(

@@ -35,6 +35,8 @@ struct FlowCoachContext: Codable {
             .prefix(cardioLimit)
             .map(FlowCoachCardioSummary.init)
 
+        let constraints = FlowCoachConstraints(notes: constraintsNotes)
+
         return FlowCoachContext(
             schemaVersion: 1,
             generatedAt: generatedAt,
@@ -44,7 +46,7 @@ struct FlowCoachContext: Codable {
             routineHashByRoutineId: routineHashByRoutineId,
             recentStrengthSummary: Array(strength),
             recentCardioSummary: Array(cardio),
-            constraints: FlowCoachConstraints(notes: constraintsNotes)
+            constraints: constraints.isEmpty ? nil : constraints
         )
     }
 
@@ -61,6 +63,10 @@ struct FlowCoachConstraints: Codable, Equatable {
     init(notes: String?) {
         let trimmed = notes?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.notes = trimmed?.isEmpty == false ? trimmed : nil
+    }
+
+    var isEmpty: Bool {
+        notes == nil
     }
 }
 

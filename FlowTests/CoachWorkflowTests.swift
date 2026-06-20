@@ -49,6 +49,18 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertFalse(json.contains("-12.654321"))
     }
 
+    func testCoachContextOmitsEmptyConstraints() throws {
+        let context = FlowCoachContext.make(
+            routines: [],
+            strengthWorkouts: [],
+            cardioWorkouts: [],
+            constraintsNotes: "   "
+        )
+        let json = try XCTUnwrap(context.jsonString())
+
+        XCTAssertFalse(json.contains("\"constraints\""))
+    }
+
     func testPatchPreviewAppliesToCopyBeforeStoreMutation() throws {
         let exerciseId = UUID()
         let routine = Routine(
@@ -81,6 +93,39 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(preview.originalRoutine.sections[0].exercises[0].reps, 8)
         XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
         XCTAssertEqual(preview.diffs.first?.before, "Press: 8 reps")
+    }
+
+    func testTimedDurationPatchDoesNotInflateHiddenReps() throws {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Core", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Plank", sets: 2, reps: 30, durationSeconds: 30)
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 1,
+            routineId: routine.id,
+            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            exportedAt: nil,
+            rationale: "Extend the hold.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceTimedDuration,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 30,
+                    newIntValue: 180
+                )
+            ]
+        )
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        let exercise = preview.updatedRoutine.sections[0].exercises[0]
+        XCTAssertEqual(exercise.durationSeconds, 180)
+        XCTAssertEqual(exercise.reps, 30)
     }
 
     func testStoreAppliesPatchWithRestorableBackup() throws {
