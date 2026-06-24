@@ -214,6 +214,58 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
     }
 
+    func testSanitizedPatchJSONStripsCodeFences() {
+        let fenced = "```json\n{\"schemaVersion\":1}\n```"
+        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: fenced), "{\"schemaVersion\":1}")
+    }
+
+    func testSanitizedPatchJSONStripsSurroundingProse() {
+        let chatty = "Sure! Here is the patch you asked for:\n{\"schemaVersion\":1}\nLet me know if you want changes."
+        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: chatty), "{\"schemaVersion\":1}")
+    }
+
+    func testSanitizedPatchJSONLeavesCleanJSONUnchanged() {
+        let clean = "{\"schemaVersion\":1}"
+        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: clean), clean)
+        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: "  \(clean)\n"), clean)
+    }
+
+    func testSanitizedPatchJSONWithoutBracesIsTrimmedFallback() {
+        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: "  no json here \n"), "no json here")
+    }
+
+    func testPreviewParsesFencedPatchFromChatAssistant() throws {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 1,
+            routineId: routine.id,
+            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+        let wrapped = "Here you go:\n```json\n\(try patchJSON(patch))\n```\nApply when ready."
+
+        let preview = try FlowRoutinePatcher.preview(json: wrapped, routines: [routine])
+
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
+    }
+
     private func patchJSON(_ patch: FlowRoutinePatch) throws -> String {
         let data = try FlowCoachCoding.encoder().encode(patch)
         return try XCTUnwrap(String(data: data, encoding: .utf8))

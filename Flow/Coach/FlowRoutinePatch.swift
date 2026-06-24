@@ -117,7 +117,8 @@ enum FlowRoutineRevision {
 
 enum FlowRoutinePatcher {
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
-        guard let data = json.data(using: .utf8) else {
+        let cleaned = sanitizedPatchJSON(from: json)
+        guard let data = cleaned.data(using: .utf8) else {
             throw FlowRoutinePatchError.invalidJSON("Patch text is not valid UTF-8.")
         }
 
@@ -129,6 +130,24 @@ enum FlowRoutinePatcher {
         }
 
         return try preview(patch: patch, routines: routines)
+    }
+
+    /// Extracts the patch JSON object from pasted text that may be wrapped in
+    /// Markdown code fences (```json … ```) or surrounded by assistant prose,
+    /// which chat models routinely add. Strips to the outermost `{ … }` span.
+    /// Already-clean JSON is returned unchanged (only trimmed).
+    ///
+    /// Note: this is a deliberately simple outermost-brace extraction. It does
+    /// not parse multiple JSON blocks or braces embedded in surrounding prose;
+    /// a malformed remainder still fails in `decode` with the original error path.
+    static func sanitizedPatchJSON(from raw: String) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let firstBrace = trimmed.firstIndex(of: "{"),
+              let lastBrace = trimmed.lastIndex(of: "}"),
+              firstBrace < lastBrace else {
+            return trimmed
+        }
+        return String(trimmed[firstBrace...lastBrace])
     }
 
     static func preview(patch: FlowRoutinePatch, routines: [Routine]) throws -> FlowRoutinePatchPreview {
