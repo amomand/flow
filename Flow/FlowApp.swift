@@ -96,7 +96,13 @@ struct FlowRootView: View {
     }
 
     private var strengthView: some View {
-        RoutineListView(store: routineStore, historyStore: historyStore, settings: runSettings, coordinator: syncCoordinator)
+        RoutineListView(
+            store: routineStore,
+            historyStore: historyStore,
+            runs: workouts,
+            settings: runSettings,
+            coordinator: syncCoordinator
+        )
     }
 
     private var visibleActivities: [CardioActivity] {

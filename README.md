@@ -32,6 +32,7 @@ The project, target, scheme, installed app, and bundle identifier use `Flow` or 
 - Phase-driven workout theming, including the light Deload palette.
 - Routine editor with sections, exercises, timed work, split rests, notes, per-side flags, and per-phase overrides.
 - JSON import/export for strength routines.
+- Flow Coach export and patch workflow for ChatGPT-assisted routine edits.
 - Automatic strength progression based on Fail and Easy ratings.
 - Strength workout history with immutable completed-workout snapshots.
 - Read-only HealthKit matching for Apple Watch strength workouts, including active energy, exercise time, heart rate, effort, and METs when available.
@@ -91,6 +92,47 @@ CompletedWorkout
 ```
 
 Route locations are fetched lazily from HealthKit. Lightweight row derivations are persisted on the `Run` model, while full routes stay in a bounded in-memory cache for detail views.
+
+## Flow Coach Workflow
+
+Flow Coach is the first manual transport for a broader routine exchange contract. The target direction is that a future ChatGPT app or connector can see Flow routine context and propose routine edits, while Flow remains responsible for validation, preview, confirmation, persistence, and rollback.
+
+This first version deliberately uses copy/paste JSON to prove the contract and trust boundary before adding a live bridge. It reuses `RoutineStore` and the existing `routines.json` persistence path when a patch is applied, but it does not reuse whole-routine import because that path duplicates routines with fresh IDs. Coach patches edit an existing routine and therefore need their own validation and preview flow.
+
+1. Open Strength -> Flow Coach.
+2. Optionally add short coach notes.
+3. Copy the coach context JSON and paste it into ChatGPT.
+4. Ask ChatGPT to return a `FlowRoutinePatch` JSON object.
+5. Paste the patch into Flow Coach and preview the diff.
+6. Apply only after reviewing the before/after list.
+
+Coach context includes routine structure, current phases, stable routine hashes, recent strength summaries, and derived cardio summaries. It does not include raw HealthKit routes, route samples, cached route points, per-sample heart-rate data, HealthKit workout IDs, or full HealthKit objects.
+
+Routine patches are typed operations against one routine. They must include `schemaVersion`, `routineId`, `baseRoutineHash`, `rationale`, and `operations`. They may include `exportedAt` for traceability.
+
+```json
+{
+  "schemaVersion": 1,
+  "routineId": "ROUTINE-UUID",
+  "baseRoutineHash": "hash-from-coach-context",
+  "exportedAt": "2026-06-18T21:30:00Z",
+  "rationale": "Why this edit is useful.",
+  "operations": [
+    {
+      "kind": "replaceExerciseReps",
+      "exerciseId": "EXERCISE-UUID",
+      "expectedIntValue": 8,
+      "newIntValue": 10
+    }
+  ]
+}
+```
+
+Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, and `replacePhaseOverride`.
+
+Flow rejects malformed, stale, mismatched, or semantically invalid patches before anything is saved. Applying a patch stores the previous routine state so the Flow Coach sheet can restore it immediately. A future managed or serverless remote MCP bridge can build on the same coach context and patch contract without making the bridge the routine source of truth.
+
+Future routine import/export work should avoid creating parallel JSON dialects. Whole-routine import/export and coach patch exchange should continue to share model encoding conventions, validation helpers, backup behavior, and user-facing error language where their product semantics overlap.
 
 ## Tech
 

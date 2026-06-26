@@ -3,6 +3,7 @@ import SwiftUI
 struct RoutineListView: View {
     @Bindable var store: RoutineStore
     let historyStore: StrengthHistoryStore
+    let runs: [Run]
     let settings: AppSettings
     let coordinator: SyncCoordinator
 
@@ -10,6 +11,7 @@ struct RoutineListView: View {
     @State private var editingRoutine: Routine?
     @State private var showingNewRoutine = false
     @State private var showingImport = false
+    @State private var showingCoach = false
     @State private var showingHealthSync = false
     @State private var showingHistory = false
     @State private var exportedJSON: String?
@@ -33,6 +35,9 @@ struct RoutineListView: View {
                             Menu {
                                 Button("Workout History") {
                                     showingHistory = true
+                                }
+                                Button("Flow Coach") {
+                                    showingCoach = true
                                 }
                                 Button("Health Sync") {
                                     showingHealthSync = true
@@ -111,6 +116,9 @@ struct RoutineListView: View {
             }
             .sheet(isPresented: $showingImport) {
                 ImportRoutineSheet(store: store)
+            }
+            .sheet(isPresented: $showingCoach) {
+                CoachWorkflowSheet(store: store, historyStore: historyStore, runs: runs)
             }
             .sheet(isPresented: $showingHealthSync) {
                 HealthSyncView(settings: settings, coordinator: coordinator)

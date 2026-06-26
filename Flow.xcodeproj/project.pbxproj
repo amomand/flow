@@ -17,7 +17,10 @@
 		E00043 /* CompletedWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10047 /* CompletedWorkout.swift */; };
 		E00007 /* RoutineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10007 /* RoutineStore.swift */; };
 		E00044 /* StrengthHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10048 /* StrengthHistoryStore.swift */; };
+		E00060 /* FlowCoachContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10060 /* FlowCoachContext.swift */; };
+		E00061 /* FlowRoutinePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10061 /* FlowRoutinePatch.swift */; };
 		E00008 /* RoutineListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10008 /* RoutineListView.swift */; };
+		E00062 /* CoachWorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10062 /* CoachWorkflowSheet.swift */; };
 		E00009 /* WorkoutFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10009 /* WorkoutFlowView.swift */; };
 		E00010 /* ExerciseCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10010 /* ExerciseCardView.swift */; };
 		E00011 /* RestTimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10011 /* RestTimerView.swift */; };
@@ -42,6 +45,7 @@
 		E00050 /* WorkoutSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10051 /* WorkoutSessionTests.swift */; };
 		E00051 /* RoutineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10052 /* RoutineStoreTests.swift */; };
 		E00052 /* RunMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10053 /* RunMetricsTests.swift */; };
+		E00063 /* CoachWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10063 /* CoachWorkflowTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -65,7 +69,10 @@
 		E10047 /* CompletedWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedWorkout.swift; sourceTree = "<group>"; };
 		E10007 /* RoutineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStore.swift; sourceTree = "<group>"; };
 		E10048 /* StrengthHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrengthHistoryStore.swift; sourceTree = "<group>"; };
+		E10060 /* FlowCoachContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachContext.swift; sourceTree = "<group>"; };
+		E10061 /* FlowRoutinePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutinePatch.swift; sourceTree = "<group>"; };
 		E10008 /* RoutineListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineListView.swift; sourceTree = "<group>"; };
+		E10062 /* CoachWorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowSheet.swift; sourceTree = "<group>"; };
 		E10009 /* WorkoutFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFlowView.swift; sourceTree = "<group>"; };
 		E10010 /* ExerciseCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCardView.swift; sourceTree = "<group>"; };
 		E10011 /* RestTimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerView.swift; sourceTree = "<group>"; };
@@ -93,6 +100,7 @@
 		E10051 /* WorkoutSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSessionTests.swift; sourceTree = "<group>"; };
 		E10052 /* RoutineStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStoreTests.swift; sourceTree = "<group>"; };
 		E10053 /* RunMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetricsTests.swift; sourceTree = "<group>"; };
+		E10063 /* CoachWorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -126,6 +134,7 @@
 			isa = PBXGroup;
 			children = (
 				E10001 /* FlowApp.swift */,
+				E20060 /* Coach */,
 				E20003 /* Theme */,
 				E20004 /* Models */,
 				E20005 /* Storage */,
@@ -167,14 +176,32 @@
 			path = Storage;
 			sourceTree = "<group>";
 		};
+		E20060 /* Coach */ = {
+			isa = PBXGroup;
+			children = (
+				E10060 /* FlowCoachContext.swift */,
+				E10061 /* FlowRoutinePatch.swift */,
+			);
+			path = Coach;
+			sourceTree = "<group>";
+		};
 		E20006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
 				E10008 /* RoutineListView.swift */,
+				E20062 /* Coach */,
 				E20007 /* Workout */,
 				E20008 /* Editor */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		E20062 /* Coach */ = {
+			isa = PBXGroup;
+			children = (
+				E10062 /* CoachWorkflowSheet.swift */,
+			);
+			path = Coach;
 			sourceTree = "<group>";
 		};
 		E20007 /* Workout */ = {
@@ -257,6 +284,7 @@
 				E10051 /* WorkoutSessionTests.swift */,
 				E10052 /* RoutineStoreTests.swift */,
 				E10053 /* RunMetricsTests.swift */,
+				E10063 /* CoachWorkflowTests.swift */,
 			);
 			path = FlowTests;
 			sourceTree = "<group>";
@@ -370,7 +398,10 @@
 				E00043 /* CompletedWorkout.swift in Sources */,
 				E00007 /* RoutineStore.swift in Sources */,
 				E00044 /* StrengthHistoryStore.swift in Sources */,
+				E00060 /* FlowCoachContext.swift in Sources */,
+				E00061 /* FlowRoutinePatch.swift in Sources */,
 				E00008 /* RoutineListView.swift in Sources */,
+				E00062 /* CoachWorkflowSheet.swift in Sources */,
 				E00009 /* WorkoutFlowView.swift in Sources */,
 				E00010 /* ExerciseCardView.swift in Sources */,
 				E00011 /* RestTimerView.swift in Sources */,
@@ -401,6 +432,7 @@
 				E00050 /* WorkoutSessionTests.swift in Sources */,
 				E00051 /* RoutineStoreTests.swift in Sources */,
 				E00052 /* RunMetricsTests.swift in Sources */,
+				E00063 /* CoachWorkflowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

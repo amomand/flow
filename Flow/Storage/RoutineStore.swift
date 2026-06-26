@@ -4,6 +4,7 @@ import Foundation
 class RoutineStore {
     var routines: [Routine] = []
     var loadError: String?
+    private(set) var lastCoachPatchBackup: Routine?
     private static let seedVersion = "summer-arc-upper-core-v2"
     private static let seedVersionKey = "RoutineStore.seedVersion"
 
@@ -112,6 +113,57 @@ class RoutineStore {
         } catch {
             return .failure(.decodingFailed(error.localizedDescription))
         }
+    }
+
+    func exportCoachContextJSON(
+        strengthWorkouts: [CompletedWorkout],
+        cardioWorkouts: [Run],
+        constraintsNotes: String? = nil
+    ) -> String? {
+        FlowCoachContext
+            .make(
+                routines: routines,
+                strengthWorkouts: strengthWorkouts,
+                cardioWorkouts: cardioWorkouts,
+                constraintsNotes: constraintsNotes
+            )
+            .jsonString()
+    }
+
+    func previewRoutinePatchJSON(_ json: String) -> Result<FlowRoutinePatchPreview, FlowRoutinePatchError> {
+        do {
+            return .success(try FlowRoutinePatcher.preview(json: json, routines: routines))
+        } catch let error as FlowRoutinePatchError {
+            return .failure(error)
+        } catch {
+            return .failure(.invalidJSON(error.localizedDescription))
+        }
+    }
+
+    func applyRoutinePatchPreview(_ preview: FlowRoutinePatchPreview) -> Result<Routine, FlowRoutinePatchError> {
+        guard let index = routines.firstIndex(where: { $0.id == preview.patch.routineId }) else {
+            return .failure(.routineNotFound(preview.patch.routineId))
+        }
+
+        let current = routines[index]
+        let currentHash = FlowRoutineRevision.hash(for: current)
+        guard currentHash == preview.patch.baseRoutineHash else {
+            return .failure(.staleRoutine(expected: preview.patch.baseRoutineHash, actual: currentHash))
+        }
+
+        lastCoachPatchBackup = current
+        routines[index] = preview.updatedRoutine
+        save()
+        return .success(preview.updatedRoutine)
+    }
+
+    func restoreLastCoachPatchBackup() -> Routine? {
+        guard let backup = lastCoachPatchBackup else { return nil }
+        guard let index = routines.firstIndex(where: { $0.id == backup.id }) else { return nil }
+        routines[index] = backup
+        lastCoachPatchBackup = nil
+        save()
+        return backup
     }
 
     enum ImportError: LocalizedError {
