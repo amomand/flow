@@ -128,6 +128,55 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(exercise.reps, 30)
     }
 
+    func testRestPatchDiffsUseHumanReadableLabels() throws {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(
+                        id: exerciseId,
+                        name: "Press",
+                        sets: 3,
+                        reps: 8,
+                        restBetweenSetsSeconds: 60,
+                        restAfterExerciseSeconds: 90
+                    )
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 1,
+            routineId: routine.id,
+            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            exportedAt: nil,
+            rationale: "Tune rest periods.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceRestBetweenSets,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 60,
+                    newIntValue: 75
+                ),
+                FlowRoutinePatchOperation(
+                    kind: .replaceRestAfterExercise,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 90,
+                    newIntValue: 120
+                )
+            ]
+        )
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        XCTAssertEqual(preview.diffs[0].title, "Replace rest between sets")
+        XCTAssertEqual(preview.diffs[0].before, "Press: rest between sets 60s")
+        XCTAssertEqual(preview.diffs[0].after, "Press: rest between sets 75s")
+        XCTAssertEqual(preview.diffs[1].title, "Replace rest after exercise")
+        XCTAssertEqual(preview.diffs[1].before, "Press: rest after exercise 90s")
+        XCTAssertEqual(preview.diffs[1].after, "Press: rest after exercise 120s")
+    }
+
     func testStoreAppliesPatchWithRestorableBackup() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)

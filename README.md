@@ -130,7 +130,7 @@ Routine patches are typed operations against one routine. They must include `sch
 
 Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, and `replacePhaseOverride`.
 
-Flow rejects malformed, stale, mismatched, or semantically invalid patches before anything is saved. Applying a patch stores the previous routine state so the Flow Coach sheet can restore it immediately. A future local MCP bridge can build on the same coach context and patch contract.
+Flow rejects malformed, stale, mismatched, or semantically invalid patches before anything is saved. Applying a patch stores the previous routine state so the Flow Coach sheet can restore it immediately. A future managed or serverless remote MCP bridge can build on the same coach context and patch contract without making the bridge the routine source of truth.
 
 Future routine import/export work should avoid creating parallel JSON dialects. Whole-routine import/export and coach patch exchange should continue to share model encoding conventions, validation helpers, backup behavior, and user-facing error language where their product semantics overlap.
 

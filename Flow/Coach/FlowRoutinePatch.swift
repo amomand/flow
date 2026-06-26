@@ -253,6 +253,8 @@ enum FlowRoutinePatcher {
                 operation,
                 operationIndex: operationIndex,
                 fieldName: "restBetweenSetsSeconds",
+                diffTitle: "Replace rest between sets",
+                displayName: "rest between sets",
                 current: { $0.restBetweenSetsSeconds },
                 set: { $0.restBetweenSetsSeconds = $1 },
                 in: &routine
@@ -263,6 +265,8 @@ enum FlowRoutinePatcher {
                 operation,
                 operationIndex: operationIndex,
                 fieldName: "restAfterExerciseSeconds",
+                diffTitle: "Replace rest after exercise",
+                displayName: "rest after exercise",
                 current: { $0.restAfterExerciseSeconds },
                 set: { $0.restAfterExerciseSeconds = $1 },
                 in: &routine
@@ -398,6 +402,8 @@ enum FlowRoutinePatcher {
         _ operation: FlowRoutinePatchOperation,
         operationIndex: Int,
         fieldName: String,
+        diffTitle: String,
+        displayName: String,
         current: (ExerciseBlock) -> Int,
         set: (inout ExerciseBlock, Int) -> Void,
         in routine: inout Routine
@@ -407,14 +413,14 @@ enum FlowRoutinePatcher {
         let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
         var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
         let actual = current(exercise)
-        try expectInt(operation.expectedIntValue, actual: actual, field: "\(exercise.name) \(fieldName)")
+        try expectInt(operation.expectedIntValue, actual: actual, field: "\(exercise.name) \(displayName)")
         set(&exercise, value)
         routine.sections[location.sectionIndex].exercises[location.exerciseIndex] = exercise
         return FlowRoutinePatchDiff(
             operationIndex: operationIndex,
-            title: "Replace rest",
-            before: "\(exercise.name): \(fieldName) \(actual)s",
-            after: "\(exercise.name): \(fieldName) \(value)s"
+            title: diffTitle,
+            before: "\(exercise.name): \(displayName) \(actual)s",
+            after: "\(exercise.name): \(displayName) \(value)s"
         )
     }
 
