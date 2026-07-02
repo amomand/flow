@@ -51,6 +51,11 @@ struct FlowRoutinePatchPreview {
     let originalRoutine: Routine
     let updatedRoutine: Routine
     let diffs: [FlowRoutinePatchDiff]
+    /// The patch's stale `baseContentHash` when the routine changed after the
+    /// patch was written but every operation's expected before-value still
+    /// matched, so Flow rebased it onto the current content. `nil` when the
+    /// patch previewed against the exact content it was written for.
+    var rebasedFromHash: String? = nil
 }
 
 struct FlowRoutinePatchDiff: Identifiable, Equatable {
@@ -69,7 +74,7 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case unsupportedSchema(Int)
     case missingField(String)
     case routineNotFound(UUID)
-    case staleRoutine(expected: String, actual: String)
+    case staleConflict(operationIndex: Int, reason: String)
     case exerciseNotFound(UUID)
     case sectionNotFound(UUID)
     case duplicateExerciseId(UUID)
@@ -88,8 +93,8 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Routine patch is missing \(field)."
         case .routineNotFound(let id):
             return "No saved routine matches \(id.uuidString)."
-        case .staleRoutine(let expected, let actual):
-            return "Patch is stale. Expected routine hash \(expected), but current hash is \(actual)."
+        case .staleConflict(let operationIndex, let reason):
+            return "The routine changed after this patch was written, and operation \(operationIndex) no longer matches: \(reason) Ask the coach for a fresh patch against a new context export."
         case .exerciseNotFound(let id):
             return "No exercise matches \(id.uuidString)."
         case .sectionNotFound(let id):
@@ -161,16 +166,28 @@ enum FlowRoutinePatcher {
             throw FlowRoutinePatchError.routineNotFound(patch.routineId)
         }
 
+        // A stale content hash is not an automatic rejection. Every operation
+        // carries its expected before-value, so if all of them still match the
+        // current content the patch rebases cleanly and previews; the caller
+        // sees `rebasedFromHash` and can say so. If any operation no longer
+        // matches, the patch is genuinely conflicted and the per-operation
+        // failure is surfaced. With a current hash, an operation failure means
+        // the patch itself is wrong and the error propagates untranslated.
         let actualHash = FlowRoutineRevision.contentHash(for: routine)
-        guard actualHash == patch.baseContentHash else {
-            throw FlowRoutinePatchError.staleRoutine(expected: patch.baseContentHash, actual: actualHash)
-        }
+        let isRebasing = actualHash != patch.baseContentHash
 
         var updated = routine
         var diffs: [FlowRoutinePatchDiff] = []
         for (offset, operation) in patch.operations.enumerated() {
-            let diff = try apply(operation, operationIndex: offset + 1, to: &updated)
-            diffs.append(diff)
+            do {
+                let diff = try apply(operation, operationIndex: offset + 1, to: &updated)
+                diffs.append(diff)
+            } catch let error as FlowRoutinePatchError where isRebasing {
+                throw FlowRoutinePatchError.staleConflict(
+                    operationIndex: offset + 1,
+                    reason: error.errorDescription ?? String(describing: error)
+                )
+            }
         }
 
         guard updated.canStartWorkout else {
@@ -181,7 +198,8 @@ enum FlowRoutinePatcher {
             patch: patch,
             originalRoutine: routine,
             updatedRoutine: updated,
-            diffs: diffs
+            diffs: diffs,
+            rebasedFromHash: isRebasing ? patch.baseContentHash : nil
         )
     }
 
