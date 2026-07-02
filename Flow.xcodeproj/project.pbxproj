@@ -19,6 +19,7 @@
 		E00044 /* StrengthHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10048 /* StrengthHistoryStore.swift */; };
 		E00060 /* FlowCoachContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10060 /* FlowCoachContext.swift */; };
 		E00061 /* FlowRoutinePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10061 /* FlowRoutinePatch.swift */; };
+		E00064 /* FlowRoutineExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10064 /* FlowRoutineExchange.swift */; };
 		E00008 /* RoutineListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10008 /* RoutineListView.swift */; };
 		E00062 /* CoachWorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10062 /* CoachWorkflowSheet.swift */; };
 		E00009 /* WorkoutFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10009 /* WorkoutFlowView.swift */; };
@@ -46,6 +47,7 @@
 		E00051 /* RoutineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10052 /* RoutineStoreTests.swift */; };
 		E00052 /* RunMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10053 /* RunMetricsTests.swift */; };
 		E00063 /* CoachWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10063 /* CoachWorkflowTests.swift */; };
+		E00065 /* RoutineExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10065 /* RoutineExchangeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +73,7 @@
 		E10048 /* StrengthHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrengthHistoryStore.swift; sourceTree = "<group>"; };
 		E10060 /* FlowCoachContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachContext.swift; sourceTree = "<group>"; };
 		E10061 /* FlowRoutinePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutinePatch.swift; sourceTree = "<group>"; };
+		E10064 /* FlowRoutineExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutineExchange.swift; sourceTree = "<group>"; };
 		E10008 /* RoutineListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineListView.swift; sourceTree = "<group>"; };
 		E10062 /* CoachWorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowSheet.swift; sourceTree = "<group>"; };
 		E10009 /* WorkoutFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFlowView.swift; sourceTree = "<group>"; };
@@ -101,6 +104,7 @@
 		E10052 /* RoutineStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStoreTests.swift; sourceTree = "<group>"; };
 		E10053 /* RunMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetricsTests.swift; sourceTree = "<group>"; };
 		E10063 /* CoachWorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowTests.swift; sourceTree = "<group>"; };
+		E10065 /* RoutineExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineExchangeTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -181,6 +185,7 @@
 			children = (
 				E10060 /* FlowCoachContext.swift */,
 				E10061 /* FlowRoutinePatch.swift */,
+				E10064 /* FlowRoutineExchange.swift */,
 			);
 			path = Coach;
 			sourceTree = "<group>";
@@ -285,6 +290,7 @@
 				E10052 /* RoutineStoreTests.swift */,
 				E10053 /* RunMetricsTests.swift */,
 				E10063 /* CoachWorkflowTests.swift */,
+				E10065 /* RoutineExchangeTests.swift */,
 			);
 			path = FlowTests;
 			sourceTree = "<group>";
@@ -400,6 +406,7 @@
 				E00044 /* StrengthHistoryStore.swift in Sources */,
 				E00060 /* FlowCoachContext.swift in Sources */,
 				E00061 /* FlowRoutinePatch.swift in Sources */,
+				E00064 /* FlowRoutineExchange.swift in Sources */,
 				E00008 /* RoutineListView.swift in Sources */,
 				E00062 /* CoachWorkflowSheet.swift in Sources */,
 				E00009 /* WorkoutFlowView.swift in Sources */,
@@ -433,6 +440,7 @@
 				E00051 /* RoutineStoreTests.swift in Sources */,
 				E00052 /* RunMetricsTests.swift in Sources */,
 				E00063 /* CoachWorkflowTests.swift in Sources */,
+				E00065 /* RoutineExchangeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -87,18 +87,25 @@ class RoutineStore {
     }
 
     func exportRoutineJSON(_ routine: Routine) -> String? {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? encoder.encode(routine) else { return nil }
+        guard let data = try? FlowRoutineExchange.encoder().encode(routine) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 
     func importRoutineFromJSON(_ json: String) -> Result<Routine, ImportError> {
-        guard let data = json.data(using: .utf8) else {
+        let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
+        guard let data = cleaned.data(using: .utf8) else {
             return .failure(.invalidJSON)
         }
+        switch FlowRoutineExchange.detectPayload(in: cleaned) {
+        case .coachPatch:
+            return .failure(.looksLikeCoachPatch)
+        case .coachContext:
+            return .failure(.looksLikeCoachContext)
+        case .routine, .unknown:
+            break
+        }
         do {
-            var routine = try JSONDecoder().decode(Routine.self, from: data)
+            var routine = try FlowRoutineExchange.decoder().decode(Routine.self, from: data)
             // Assign new IDs so imports never collide with existing routines
             routine.id = UUID()
             for si in routine.sections.indices {
@@ -146,15 +153,22 @@ class RoutineStore {
         }
 
         let current = routines[index]
-        let currentHash = FlowRoutineRevision.hash(for: current)
-        guard currentHash == preview.patch.baseRoutineHash else {
-            return .failure(.staleRoutine(expected: preview.patch.baseRoutineHash, actual: currentHash))
+        let currentHash = FlowRoutineRevision.contentHash(for: current)
+        guard currentHash == preview.patch.baseContentHash else {
+            return .failure(.staleRoutine(expected: preview.patch.baseContentHash, actual: currentHash))
         }
 
         lastCoachPatchBackup = current
-        routines[index] = preview.updatedRoutine
+        // Graft the patched structure onto the current routine rather than
+        // replacing it wholesale: non-structural state such as currentPhase
+        // may have changed since the preview was built (the content hash
+        // deliberately ignores it), and applying a patch must not revert
+        // that state. Patch operations only ever edit sections.
+        var updated = current
+        updated.sections = preview.updatedRoutine.sections
+        routines[index] = updated
         save()
-        return .success(preview.updatedRoutine)
+        return .success(updated)
     }
 
     func restoreLastCoachPatchBackup() -> Routine? {
@@ -169,11 +183,17 @@ class RoutineStore {
     enum ImportError: LocalizedError {
         case invalidJSON
         case decodingFailed(String)
+        case looksLikeCoachPatch
+        case looksLikeCoachContext
 
         var errorDescription: String? {
             switch self {
             case .invalidJSON: return "Clipboard does not contain valid text."
             case .decodingFailed(let msg): return "Could not parse routine: \(msg)"
+            case .looksLikeCoachPatch:
+                return "This looks like a Flow Coach routine patch. Open Flow Coach to preview and apply it instead."
+            case .looksLikeCoachContext:
+                return "This is the coach context export, not a routine. Paste a single routine's JSON instead."
             }
         }
     }

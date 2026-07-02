@@ -72,9 +72,9 @@ final class CoachWorkflowTests: XCTestCase {
             ]
         )
         let patch = FlowRoutinePatch(
-            schemaVersion: 1,
+            schemaVersion: 2,
             routineId: routine.id,
-            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
             exportedAt: Date(timeIntervalSince1970: 10),
             rationale: "Progress pressing volume.",
             operations: [
@@ -106,9 +106,9 @@ final class CoachWorkflowTests: XCTestCase {
             ]
         )
         let patch = FlowRoutinePatch(
-            schemaVersion: 1,
+            schemaVersion: 2,
             routineId: routine.id,
-            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
             exportedAt: nil,
             rationale: "Extend the hold.",
             operations: [
@@ -146,9 +146,9 @@ final class CoachWorkflowTests: XCTestCase {
             ]
         )
         let patch = FlowRoutinePatch(
-            schemaVersion: 1,
+            schemaVersion: 2,
             routineId: routine.id,
-            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
             exportedAt: nil,
             rationale: "Tune rest periods.",
             operations: [
@@ -192,9 +192,9 @@ final class CoachWorkflowTests: XCTestCase {
         )
         store.addRoutine(routine)
         let patch = FlowRoutinePatch(
-            schemaVersion: 1,
+            schemaVersion: 2,
             routineId: routine.id,
-            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
             exportedAt: nil,
             rationale: "Progress pressing volume.",
             operations: [
@@ -240,9 +240,9 @@ final class CoachWorkflowTests: XCTestCase {
         )
         store.addRoutine(routine)
         let patch = FlowRoutinePatch(
-            schemaVersion: 1,
+            schemaVersion: 2,
             routineId: routine.id,
-            baseRoutineHash: "stale",
+            baseContentHash: "stale",
             exportedAt: nil,
             rationale: "Progress pressing volume.",
             operations: [
@@ -263,24 +263,201 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
     }
 
-    func testSanitizedPatchJSONStripsCodeFences() {
-        let fenced = "```json\n{\"schemaVersion\":1}\n```"
-        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: fenced), "{\"schemaVersion\":1}")
+    func testPhaseChangeAloneDoesNotStalePatch() throws {
+        let exerciseId = UUID()
+        var routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ],
+            currentPhase: .base
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        // The phase toggles after the patch was created; the content is unchanged.
+        routine.currentPhase = .peak
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
     }
 
-    func testSanitizedPatchJSONStripsSurroundingProse() {
-        let chatty = "Sure! Here is the patch you asked for:\n{\"schemaVersion\":1}\nLet me know if you want changes."
-        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: chatty), "{\"schemaVersion\":1}")
+    func testContentChangeStillStalesPatch() throws {
+        let exerciseId = UUID()
+        var routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        routine.sections[0].exercises[0].sets = 4
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.staleRoutine = error else {
+                return XCTFail("Expected staleRoutine, got \(error)")
+            }
+        }
     }
 
-    func testSanitizedPatchJSONLeavesCleanJSONUnchanged() {
-        let clean = "{\"schemaVersion\":1}"
-        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: clean), clean)
-        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: "  \(clean)\n"), clean)
+    func testApplyAfterPhaseTogglePreservesToggledPhase() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ],
+            currentPhase: .base
+        )
+        store.addRoutine(routine)
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+        let previewResult = store.previewRoutinePatchJSON(try patchJSON(patch))
+        guard case .success(let preview) = previewResult else {
+            return XCTFail("Expected patch preview to succeed")
+        }
+
+        // The user toggles the phase between preview and apply. Applying must
+        // graft the patched sections without reverting the phase.
+        var toggled = store.routines[0]
+        toggled.currentPhase = .peak
+        store.updateRoutine(toggled)
+
+        let applyResult = store.applyRoutinePatchPreview(preview)
+        guard case .success(let applied) = applyResult else {
+            return XCTFail("Expected patch apply to succeed")
+        }
+        XCTAssertEqual(applied.currentPhase, .peak)
+        XCTAssertEqual(applied.sections[0].exercises[0].reps, 10)
+        XCTAssertEqual(store.routines[0].currentPhase, .peak)
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 10)
     }
 
-    func testSanitizedPatchJSONWithoutBracesIsTrimmedFallback() {
-        XCTAssertEqual(FlowRoutinePatcher.sanitizedPatchJSON(from: "  no json here \n"), "no json here")
+    func testSchemaVersion1PatchIsRejectedWithActionableError() throws {
+        let routine = Routine(name: "Coach", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let v1JSON = """
+        {
+          "schemaVersion": 1,
+          "routineId": "\(routine.id.uuidString)",
+          "baseRoutineHash": "0011223344556677",
+          "rationale": "Old-style patch.",
+          "operations": [{ "kind": "replaceExerciseReps" }]
+        }
+        """
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(json: v1JSON, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.unsupportedSchema(1) = error else {
+                return XCTFail("Expected unsupportedSchema(1), got \(error)")
+            }
+            XCTAssertTrue(
+                (error as? FlowRoutinePatchError)?.errorDescription?.contains("schemaVersion 2") == true
+            )
+        }
+    }
+
+    func testPastingWholeRoutineIntoPatchPreviewGivesHelpfulError() throws {
+        let routine = Routine(name: "Coach", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let data = try FlowRoutineExchange.encoder().encode(routine)
+        let routineJSON = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(json: routineJSON, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidJSON(let message) = error else {
+                return XCTFail("Expected invalidJSON, got \(error)")
+            }
+            XCTAssertTrue(message.contains("full routine export"))
+        }
+    }
+
+    func testPastingCoachContextIntoPatchPreviewGivesHelpfulError() throws {
+        let routine = Routine(name: "Coach", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let context = FlowCoachContext.make(routines: [routine], strengthWorkouts: [], cardioWorkouts: [])
+        let contextJSON = try XCTUnwrap(context.jsonString())
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(json: contextJSON, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidJSON(let message) = error else {
+                return XCTFail("Expected invalidJSON, got \(error)")
+            }
+            XCTAssertTrue(message.contains("coach context"))
+        }
+    }
+
+    func testCoachContextExportsSplitRevisionHashes() throws {
+        let routine = Routine(
+            name: "Coach",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])],
+            currentPhase: .peak
+        )
+        let context = FlowCoachContext.make(routines: [routine], strengthWorkouts: [], cardioWorkouts: [])
+        let json = try XCTUnwrap(context.jsonString())
+
+        XCTAssertEqual(context.schemaVersion, 2)
+        XCTAssertTrue(json.contains("routineContentHashByRoutineId"))
+        XCTAssertTrue(json.contains("routineStateHashByRoutineId"))
+        XCTAssertEqual(
+            context.routineContentHashByRoutineId[routine.id.uuidString],
+            FlowRoutineRevision.contentHash(for: routine)
+        )
+        XCTAssertEqual(
+            context.routineStateHashByRoutineId[routine.id.uuidString],
+            FlowRoutineRevision.stateHash(for: routine)
+        )
     }
 
     func testPreviewParsesFencedPatchFromChatAssistant() throws {
@@ -294,9 +471,9 @@ final class CoachWorkflowTests: XCTestCase {
             ]
         )
         let patch = FlowRoutinePatch(
-            schemaVersion: 1,
+            schemaVersion: 2,
             routineId: routine.id,
-            baseRoutineHash: FlowRoutineRevision.hash(for: routine),
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
             exportedAt: nil,
             rationale: "Progress pressing volume.",
             operations: [
@@ -316,7 +493,7 @@ final class CoachWorkflowTests: XCTestCase {
     }
 
     private func patchJSON(_ patch: FlowRoutinePatch) throws -> String {
-        let data = try FlowCoachCoding.encoder().encode(patch)
+        let data = try FlowRoutineExchange.encoder().encode(patch)
         return try XCTUnwrap(String(data: data, encoding: .utf8))
     }
 
