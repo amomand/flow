@@ -225,7 +225,7 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
     }
 
-    func testStoreRejectsStalePatchWithoutMutatingRoutine() throws {
+    func testStalePatchWithMatchingExpectedValuesRebasesInPreview() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
         let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
@@ -255,11 +255,16 @@ final class CoachWorkflowTests: XCTestCase {
             ]
         )
 
+        // The hash is stale but the operation's expected before-value still
+        // matches the current routine, so Flow rebases instead of rejecting.
         let result = store.previewRoutinePatchJSON(try patchJSON(patch))
 
-        guard case .failure(.staleRoutine(_, _)) = result else {
-            return XCTFail("Expected stale patch rejection")
+        guard case .success(let preview) = result else {
+            return XCTFail("Expected stale patch to rebase, got \(result)")
         }
+        XCTAssertEqual(preview.rebasedFromHash, "stale")
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
+        // Preview never mutates the saved routine.
         XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
     }
 
@@ -298,7 +303,46 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
     }
 
-    func testContentChangeStillStalesPatch() throws {
+    func testContentChangeUnrelatedToOperationsRebasesCleanly() throws {
+        let exerciseId = UUID()
+        var routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ]
+        )
+        let staleHash = FlowRoutineRevision.contentHash(for: routine)
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: staleHash,
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        // Sets changed after the patch was written, so the content hash is
+        // stale, but the patched field (reps) still matches its expected
+        // before-value: the patch rebases and previews.
+        routine.sections[0].exercises[0].sets = 4
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        XCTAssertEqual(preview.rebasedFromHash, staleHash)
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].sets, 4)
+    }
+
+    func testContentChangeConflictingWithOperationSurfacesPerOperationConflict() throws {
         let exerciseId = UUID()
         var routine = Routine(
             name: "Coach",
@@ -324,13 +368,149 @@ final class CoachWorkflowTests: XCTestCase {
             ]
         )
 
-        routine.sections[0].exercises[0].sets = 4
+        // The very value the operation edits changed after the patch was
+        // written: a genuine conflict, surfaced per operation.
+        routine.sections[0].exercises[0].reps = 9
 
         XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
-            guard case FlowRoutinePatchError.staleRoutine = error else {
-                return XCTFail("Expected staleRoutine, got \(error)")
+            guard case FlowRoutinePatchError.staleConflict(let operationIndex, let reason) = error else {
+                return XCTFail("Expected staleConflict, got \(error)")
+            }
+            XCTAssertEqual(operationIndex, 1)
+            XCTAssertTrue(reason.contains("Expected 8"))
+            XCTAssertTrue(reason.contains("found 9"))
+        }
+    }
+
+    func testHashMatchedPatchWithWrongExpectedValueFailsWithoutRebaseTranslation() throws {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 12,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        // The hash is current, so a wrong expected value means the patch
+        // itself is wrong; it must not be dressed up as a stale conflict.
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.beforeValueMismatch = error else {
+                return XCTFail("Expected beforeValueMismatch, got \(error)")
             }
         }
+    }
+
+    func testApplyRevalidatesAgainstRoutineChangedAfterPreview() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let pressId = UUID()
+        let rowId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: pressId, name: "Press", sets: 3, reps: 8),
+                    ExerciseBlock(id: rowId, name: "Row", sets: 3, reps: 10),
+                ])
+            ]
+        )
+        store.addRoutine(routine)
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: pressId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(patch)) else {
+            return XCTFail("Expected preview to succeed")
+        }
+
+        // The other exercise changes between preview and apply. Apply must
+        // revalidate: the patch still rebases cleanly, and the apply result
+        // keeps the newer Row edit rather than clobbering it.
+        var edited = store.routines[0]
+        edited.sections[0].exercises[1].reps = 12
+        store.updateRoutine(edited)
+
+        guard case .success(let applied) = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected apply to rebase and succeed")
+        }
+        XCTAssertEqual(applied.sections[0].exercises[0].reps, 10)
+        XCTAssertEqual(applied.sections[0].exercises[1].reps, 12)
+    }
+
+    func testApplyFailsWhenRoutineChangeConflictsAfterPreview() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+                ])
+            ]
+        )
+        store.addRoutine(routine)
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(patch)) else {
+            return XCTFail("Expected preview to succeed")
+        }
+
+        // The patched value itself changes between preview and apply.
+        var edited = store.routines[0]
+        edited.sections[0].exercises[0].reps = 9
+        store.updateRoutine(edited)
+
+        guard case .failure(.staleConflict(let operationIndex, _)) = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected apply to fail with a stale conflict")
+        }
+        XCTAssertEqual(operationIndex, 1)
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 9)
     }
 
     func testApplyAfterPhaseTogglePreservesToggledPhase() throws {

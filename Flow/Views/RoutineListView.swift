@@ -6,12 +6,12 @@ struct RoutineListView: View {
     let runs: [Run]
     let settings: AppSettings
     let coordinator: SyncCoordinator
+    let coachInbox: CoachPatchInbox
 
     @State private var selectedRoutine: Routine?
     @State private var editingRoutine: Routine?
     @State private var showingNewRoutine = false
     @State private var showingImport = false
-    @State private var showingCoach = false
     @State private var showingHealthSync = false
     @State private var showingHistory = false
     @State private var exportedJSON: String?
@@ -37,7 +37,9 @@ struct RoutineListView: View {
                                     showingHistory = true
                                 }
                                 Button("Flow Coach") {
-                                    showingCoach = true
+                                    // Presented from the app root so the same
+                                    // sheet serves deep links and file opens.
+                                    coachInbox.presentCoach = true
                                 }
                                 Button("Health Sync") {
                                     showingHealthSync = true
@@ -116,9 +118,6 @@ struct RoutineListView: View {
             }
             .sheet(isPresented: $showingImport) {
                 ImportRoutineSheet(store: store)
-            }
-            .sheet(isPresented: $showingCoach) {
-                CoachWorkflowSheet(store: store, historyStore: historyStore, runs: runs)
             }
             .sheet(isPresented: $showingHealthSync) {
                 HealthSyncView(settings: settings, coordinator: coordinator)

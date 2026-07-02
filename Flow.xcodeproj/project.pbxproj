@@ -20,6 +20,8 @@
 		E00060 /* FlowCoachContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10060 /* FlowCoachContext.swift */; };
 		E00061 /* FlowRoutinePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10061 /* FlowRoutinePatch.swift */; };
 		E00064 /* FlowRoutineExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10064 /* FlowRoutineExchange.swift */; };
+		E00066 /* CoachPatchInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10066 /* CoachPatchInbox.swift */; };
+		E00067 /* FlowCoachDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10067 /* FlowCoachDeepLink.swift */; };
 		E00008 /* RoutineListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10008 /* RoutineListView.swift */; };
 		E00062 /* CoachWorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10062 /* CoachWorkflowSheet.swift */; };
 		E00009 /* WorkoutFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10009 /* WorkoutFlowView.swift */; };
@@ -48,6 +50,7 @@
 		E00052 /* RunMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10053 /* RunMetricsTests.swift */; };
 		E00063 /* CoachWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10063 /* CoachWorkflowTests.swift */; };
 		E00065 /* RoutineExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10065 /* RoutineExchangeTests.swift */; };
+		E00068 /* CoachPatchInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10068 /* CoachPatchInboxTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -74,6 +77,9 @@
 		E10060 /* FlowCoachContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachContext.swift; sourceTree = "<group>"; };
 		E10061 /* FlowRoutinePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutinePatch.swift; sourceTree = "<group>"; };
 		E10064 /* FlowRoutineExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutineExchange.swift; sourceTree = "<group>"; };
+		E10066 /* CoachPatchInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInbox.swift; sourceTree = "<group>"; };
+		E10067 /* FlowCoachDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachDeepLink.swift; sourceTree = "<group>"; };
+		E10069 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E10008 /* RoutineListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineListView.swift; sourceTree = "<group>"; };
 		E10062 /* CoachWorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowSheet.swift; sourceTree = "<group>"; };
 		E10009 /* WorkoutFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFlowView.swift; sourceTree = "<group>"; };
@@ -105,6 +111,7 @@
 		E10053 /* RunMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetricsTests.swift; sourceTree = "<group>"; };
 		E10063 /* CoachWorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowTests.swift; sourceTree = "<group>"; };
 		E10065 /* RoutineExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineExchangeTests.swift; sourceTree = "<group>"; };
+		E10068 /* CoachPatchInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInboxTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -146,6 +153,7 @@
 				E20030 /* Runs */,
 				E10015 /* Assets.xcassets */,
 				E10043 /* Flow.entitlements */,
+				E10069 /* Info.plist */,
 			);
 			path = Flow;
 			sourceTree = "<group>";
@@ -186,6 +194,8 @@
 				E10060 /* FlowCoachContext.swift */,
 				E10061 /* FlowRoutinePatch.swift */,
 				E10064 /* FlowRoutineExchange.swift */,
+				E10066 /* CoachPatchInbox.swift */,
+				E10067 /* FlowCoachDeepLink.swift */,
 			);
 			path = Coach;
 			sourceTree = "<group>";
@@ -291,6 +301,7 @@
 				E10053 /* RunMetricsTests.swift */,
 				E10063 /* CoachWorkflowTests.swift */,
 				E10065 /* RoutineExchangeTests.swift */,
+				E10068 /* CoachPatchInboxTests.swift */,
 			);
 			path = FlowTests;
 			sourceTree = "<group>";
@@ -407,6 +418,8 @@
 				E00060 /* FlowCoachContext.swift in Sources */,
 				E00061 /* FlowRoutinePatch.swift in Sources */,
 				E00064 /* FlowRoutineExchange.swift in Sources */,
+				E00066 /* CoachPatchInbox.swift in Sources */,
+				E00067 /* FlowCoachDeepLink.swift in Sources */,
 				E00008 /* RoutineListView.swift in Sources */,
 				E00062 /* CoachWorkflowSheet.swift in Sources */,
 				E00009 /* WorkoutFlowView.swift in Sources */,
@@ -441,6 +454,7 @@
 				E00052 /* RunMetricsTests.swift in Sources */,
 				E00063 /* CoachWorkflowTests.swift in Sources */,
 				E00065 /* RoutineExchangeTests.swift in Sources */,
+				E00068 /* CoachPatchInboxTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -582,6 +596,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = B4YXM5RCS4;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Flow/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Flow;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Flow reads your running and cycling workouts from Apple Health to display past workouts.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -614,6 +629,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = B4YXM5RCS4;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Flow/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Flow;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Flow reads your running and cycling workouts from Apple Health to display past workouts.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
