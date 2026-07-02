@@ -1,12 +1,19 @@
 import Foundation
 
 struct FlowCoachContext: Codable {
+    /// Schema 2 splits routine revision identity: `routineContentHashByRoutineId`
+    /// covers the editable structure a patch pins to (`baseContentHash`), and
+    /// `routineStateHashByRoutineId` covers non-structural state such as the
+    /// current phase. Schema 1 exported a single whole-routine hash.
+    static let currentSchemaVersion = 2
+
     let schemaVersion: Int
     let generatedAt: Date
     let app: String
     let routines: [Routine]
     let currentPhaseByRoutineId: [String: String]
-    let routineHashByRoutineId: [String: String]
+    let routineContentHashByRoutineId: [String: String]
+    let routineStateHashByRoutineId: [String: String]
     let recentStrengthSummary: [FlowCoachStrengthSummary]
     let recentCardioSummary: [FlowCoachCardioSummary]
     let constraints: FlowCoachConstraints?
@@ -23,8 +30,11 @@ struct FlowCoachContext: Codable {
         let currentPhaseByRoutineId = Dictionary(
             uniqueKeysWithValues: routines.map { ($0.id.uuidString, $0.currentPhase.rawValue) }
         )
-        let routineHashByRoutineId = Dictionary(
-            uniqueKeysWithValues: routines.map { ($0.id.uuidString, FlowRoutineRevision.hash(for: $0)) }
+        let routineContentHashByRoutineId = Dictionary(
+            uniqueKeysWithValues: routines.map { ($0.id.uuidString, FlowRoutineRevision.contentHash(for: $0)) }
+        )
+        let routineStateHashByRoutineId = Dictionary(
+            uniqueKeysWithValues: routines.map { ($0.id.uuidString, FlowRoutineRevision.stateHash(for: $0)) }
         )
         let strength = strengthWorkouts
             .sorted { $0.endedAt > $1.endedAt }
@@ -38,12 +48,13 @@ struct FlowCoachContext: Codable {
         let constraints = FlowCoachConstraints(notes: constraintsNotes)
 
         return FlowCoachContext(
-            schemaVersion: 1,
+            schemaVersion: currentSchemaVersion,
             generatedAt: generatedAt,
             app: "Flow",
             routines: routines,
             currentPhaseByRoutineId: currentPhaseByRoutineId,
-            routineHashByRoutineId: routineHashByRoutineId,
+            routineContentHashByRoutineId: routineContentHashByRoutineId,
+            routineStateHashByRoutineId: routineStateHashByRoutineId,
             recentStrengthSummary: Array(strength),
             recentCardioSummary: Array(cardio),
             constraints: constraints.isEmpty ? nil : constraints
@@ -51,7 +62,7 @@ struct FlowCoachContext: Codable {
     }
 
     func jsonString() -> String? {
-        let encoder = FlowCoachCoding.encoder()
+        let encoder = FlowRoutineExchange.encoder()
         guard let data = try? encoder.encode(self) else { return nil }
         return String(data: data, encoding: .utf8)
     }
@@ -178,17 +189,3 @@ struct FlowCoachCardioSummary: Codable, Equatable {
     }
 }
 
-enum FlowCoachCoding {
-    static func encoder() -> JSONEncoder {
-        let encoder = JSONEncoder()
-        encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        return encoder
-    }
-
-    static func decoder() -> JSONDecoder {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        return decoder
-    }
-}

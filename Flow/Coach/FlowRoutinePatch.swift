@@ -1,9 +1,16 @@
 import Foundation
 
 struct FlowRoutinePatch: Codable, Equatable {
+    /// Schema 2 pins patches to the routine content hash (`c1-…`), so
+    /// non-structural state changes such as a phase toggle no longer stale a
+    /// patch. Schema 1 pinned `baseRoutineHash` over the whole routine and is
+    /// no longer accepted; nothing persists patches yet, so a v1 patch can
+    /// only come from a stale chat and the fix is a fresh context export.
+    static let currentSchemaVersion = 2
+
     let schemaVersion: Int
     let routineId: UUID
-    let baseRoutineHash: String
+    let baseContentHash: String
     let exportedAt: Date?
     let rationale: String
     let operations: [FlowRoutinePatchOperation]
@@ -76,7 +83,7 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
         case .invalidJSON(let message):
             return "Could not parse routine patch: \(message)"
         case .unsupportedSchema(let version):
-            return "Unsupported routine patch schema version \(version)."
+            return "Unsupported routine patch schema version \(version). Copy a fresh coach context and ask for a schemaVersion \(FlowRoutinePatch.currentSchemaVersion) patch."
         case .missingField(let field):
             return "Routine patch is missing \(field)."
         case .routineNotFound(let id):
@@ -101,30 +108,41 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     }
 }
 
-enum FlowRoutineRevision {
-    static func hash(for routine: Routine) -> String {
-        let encoder = FlowCoachCoding.encoder()
-        guard let data = try? encoder.encode(routine) else { return "unhashable" }
-        var hash: UInt64 = 14_695_981_039_346_656_037
-        let prime: UInt64 = 1_099_511_628_211
-        for byte in data {
-            hash ^= UInt64(byte)
-            hash &*= prime
-        }
-        return String(format: "%016llx", hash)
-    }
-}
-
 enum FlowRoutinePatcher {
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
-        let cleaned = sanitizedPatchJSON(from: json)
+        let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
         guard let data = cleaned.data(using: .utf8) else {
             throw FlowRoutinePatchError.invalidJSON("Patch text is not valid UTF-8.")
         }
 
+        switch FlowRoutineExchange.detectPayload(in: cleaned) {
+        case .routine:
+            throw FlowRoutinePatchError.invalidJSON(
+                "This looks like a full routine export, not a routine patch. Import it from the Routines screen instead."
+            )
+        case .coachContext:
+            throw FlowRoutinePatchError.invalidJSON(
+                "This is the coach context export, not a routine patch. Paste the patch the assistant produced."
+            )
+        case .coachPatch, .unknown:
+            break
+        }
+
+        // Check the schema version before strict decoding so a stale-schema
+        // patch fails with an actionable message instead of a missing-key
+        // decode error.
+        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let version = object["schemaVersion"] as? Int, version != FlowRoutinePatch.currentSchemaVersion {
+                throw FlowRoutinePatchError.unsupportedSchema(version)
+            }
+            if object["baseContentHash"] == nil {
+                throw FlowRoutinePatchError.missingField("baseContentHash")
+            }
+        }
+
         let patch: FlowRoutinePatch
         do {
-            patch = try FlowCoachCoding.decoder().decode(FlowRoutinePatch.self, from: data)
+            patch = try FlowRoutineExchange.decoder().decode(FlowRoutinePatch.self, from: data)
         } catch {
             throw FlowRoutinePatchError.invalidJSON(error.localizedDescription)
         }
@@ -132,26 +150,8 @@ enum FlowRoutinePatcher {
         return try preview(patch: patch, routines: routines)
     }
 
-    /// Extracts the patch JSON object from pasted text that may be wrapped in
-    /// Markdown code fences (```json … ```) or surrounded by assistant prose,
-    /// which chat models routinely add. Strips to the outermost `{ … }` span.
-    /// Already-clean JSON is returned unchanged (only trimmed).
-    ///
-    /// Note: this is a deliberately simple outermost-brace extraction. It does
-    /// not parse multiple JSON blocks or braces embedded in surrounding prose;
-    /// a malformed remainder still fails in `decode` with the original error path.
-    static func sanitizedPatchJSON(from raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let firstBrace = trimmed.firstIndex(of: "{"),
-              let lastBrace = trimmed.lastIndex(of: "}"),
-              firstBrace < lastBrace else {
-            return trimmed
-        }
-        return String(trimmed[firstBrace...lastBrace])
-    }
-
     static func preview(patch: FlowRoutinePatch, routines: [Routine]) throws -> FlowRoutinePatchPreview {
-        guard patch.schemaVersion == 1 else {
+        guard patch.schemaVersion == FlowRoutinePatch.currentSchemaVersion else {
             throw FlowRoutinePatchError.unsupportedSchema(patch.schemaVersion)
         }
         guard !patch.operations.isEmpty else {
@@ -161,9 +161,9 @@ enum FlowRoutinePatcher {
             throw FlowRoutinePatchError.routineNotFound(patch.routineId)
         }
 
-        let actualHash = FlowRoutineRevision.hash(for: routine)
-        guard actualHash == patch.baseRoutineHash else {
-            throw FlowRoutinePatchError.staleRoutine(expected: patch.baseRoutineHash, actual: actualHash)
+        let actualHash = FlowRoutineRevision.contentHash(for: routine)
+        guard actualHash == patch.baseContentHash else {
+            throw FlowRoutinePatchError.staleRoutine(expected: patch.baseContentHash, actual: actualHash)
         }
 
         var updated = routine

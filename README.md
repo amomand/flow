@@ -106,16 +106,23 @@ This first version deliberately uses copy/paste JSON to prove the contract and t
 5. Paste the patch into Flow Coach and preview the diff.
 6. Apply only after reviewing the before/after list.
 
-Coach context includes routine structure, current phases, stable routine hashes, recent strength summaries, and derived cardio summaries. It does not include raw HealthKit routes, route samples, cached route points, per-sample heart-rate data, HealthKit workout IDs, or full HealthKit objects.
+Coach context includes routine structure, current phases, split routine revision hashes, recent strength summaries, and derived cardio summaries. It does not include raw HealthKit routes, route samples, cached route points, per-sample heart-rate data, HealthKit workout IDs, or full HealthKit objects.
 
-Routine patches are typed operations against one routine. They must include `schemaVersion`, `routineId`, `baseRoutineHash`, `rationale`, and `operations`. They may include `exportedAt` for traceability.
+Routine revision identity is split in two, so unrelated state changes do not stale a patch:
+
+- `routineContentHashByRoutineId` (`c1-...`) covers the editable structure a patch operates on: the ordered sections and exercises. Patches pin to this hash.
+- `routineStateHashByRoutineId` (`s1-...`) covers non-structural state, currently the routine's phase.
+
+Toggling a routine's phase between Base, Peak, and Deload changes only the state hash, so a patch whose edited exercises are unchanged still previews and applies. Editing the routine's content changes the content hash and stales any patch built against the old structure. Hashes are revision identifiers only, never an auth or integrity mechanism.
+
+Routine patches are typed operations against one routine. They must include `schemaVersion` (currently 2), `routineId`, `baseContentHash` (copied from `routineContentHashByRoutineId` in the coach context), `rationale`, and `operations`. They may include `exportedAt` for traceability.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "routineId": "ROUTINE-UUID",
-  "baseRoutineHash": "hash-from-coach-context",
-  "exportedAt": "2026-06-18T21:30:00Z",
+  "baseContentHash": "c1-hash-from-coach-context",
+  "exportedAt": "2026-07-02T21:30:00Z",
   "rationale": "Why this edit is useful.",
   "operations": [
     {
@@ -132,7 +139,7 @@ Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `rep
 
 Flow rejects malformed, stale, mismatched, or semantically invalid patches before anything is saved. Applying a patch stores the previous routine state so the Flow Coach sheet can restore it immediately. A future managed or serverless remote MCP bridge can build on the same coach context and patch contract without making the bridge the routine source of truth.
 
-Future routine import/export work should avoid creating parallel JSON dialects. Whole-routine import/export and coach patch exchange should continue to share model encoding conventions, validation helpers, backup behavior, and user-facing error language where their product semantics overlap.
+Whole-routine import/export and coach patch exchange share one boundary, `FlowRoutineExchange`: the JSON encoding conventions, the sanitiser that tolerates code fences and assistant prose, payload detection (pasting a patch into routine import, or a routine or coach context into patch preview, gets a helpful pointer instead of a decode error), and the split revision hashing in `FlowRoutineRevision`. This is the routine exchange foundation the assistant bridge phases build on. The two paths keep their different product semantics: whole-routine import duplicates with fresh routine/section/exercise IDs and can never overwrite an existing routine, while coach patches target an existing routine and apply only through preview and explicit confirmation. `RoutineStore` remains the only authority for mutating and saving `routines.json`.
 
 ## Tech
 
@@ -160,10 +167,15 @@ Flow/
 |   |-- Routine.swift
 |   |-- SetRating.swift
 |   `-- WorkoutSession.swift
+|-- Coach/
+|   |-- FlowCoachContext.swift
+|   |-- FlowRoutinePatch.swift
+|   `-- FlowRoutineExchange.swift
 |-- Storage/
 |   `-- RoutineStore.swift
 |-- Views/
 |   |-- RoutineListView.swift
+|   |-- Coach/
 |   |-- Workout/
 |   `-- Editor/
 `-- Runs/

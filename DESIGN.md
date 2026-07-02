@@ -65,6 +65,24 @@ Routine (Codable, stored as JSON in app documents dir)
 
 `Routine.buildSteps()` resolves phase overrides and flattens the routine into one `WorkoutStep` per set. `WorkoutSession` tracks current step, timers, ratings, summary output, and computed routine adjustments.
 
+## Routine Exchange
+
+`FlowRoutineExchange` is the shared boundary for routine JSON that crosses the app edge. It is the routine exchange foundation for future assistant integration (the Flow Coach bridge phases): one JSON dialect, one sanitiser for pasted assistant text, one payload detector, and one revision-identity scheme.
+
+Two exchange products share it but keep different semantics:
+
+- Whole-routine import/export duplicates a routine. Import always assigns fresh routine/section/exercise IDs and can never overwrite an existing routine.
+- Flow Coach patches edit an existing routine. A patch validates against the routine's current revision, previews as a diff, and applies only after explicit confirmation.
+
+Routine revision identity is split (`FlowRoutineRevision`):
+
+- `contentHash` (`c1-...`) covers the editable structure a patch operates on: the ordered sections and exercises. Coach patches pin to this via `baseContentHash`.
+- `stateHash` (`s1-...`) covers non-structural state, currently `currentPhase`.
+
+Toggling a routine's phase changes only the state hash, so a pending coach patch stays valid. Applying a previewed patch grafts the patched sections onto the current routine rather than replacing it wholesale, so state changed after preview (such as a phase toggle) is preserved. Hashes are revision identifiers only, never an auth or integrity mechanism.
+
+`RoutineStore` remains the sole authority for mutating and saving `routines.json`. The exchange layer classifies, decodes, and hashes; it never persists.
+
 ## Runs Model
 
 ```text
