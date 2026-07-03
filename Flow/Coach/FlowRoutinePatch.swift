@@ -58,7 +58,7 @@ struct FlowRoutinePatchPreview {
     var rebasedFromHash: String? = nil
 }
 
-struct FlowRoutinePatchDiff: Identifiable, Equatable {
+struct FlowRoutinePatchDiff: Identifiable, Equatable, Codable {
     let operationIndex: Int
     let title: String
     let before: String

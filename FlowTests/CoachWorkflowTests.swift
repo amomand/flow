@@ -180,7 +180,10 @@ final class CoachWorkflowTests: XCTestCase {
     func testStoreAppliesPatchWithRestorableBackup() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
-        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
         let exerciseId = UUID()
         let routine = Routine(
             name: "Coach",
@@ -220,8 +223,11 @@ final class CoachWorkflowTests: XCTestCase {
         }
         XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 10)
 
-        let restored = store.restoreLastCoachPatchBackup()
-        XCTAssertEqual(restored?.id, routine.id)
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .success(let restored) = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected restore to succeed")
+        }
+        XCTAssertEqual(restored.id, routine.id)
         XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
     }
 

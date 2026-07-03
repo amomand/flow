@@ -14,6 +14,7 @@ struct CoachWorkflowSheet: View {
     @State private var errorMessage: String?
     @State private var statusMessage: String?
     @State private var showingImporter = false
+    @State private var showingHistory = false
     @State private var shareFile: ShareFile?
 
     var body: some View {
@@ -59,6 +60,9 @@ struct CoachWorkflowSheet: View {
         }
         .sheet(item: $shareFile) { file in
             ActivityShareSheet(url: file.url)
+        }
+        .sheet(isPresented: $showingHistory) {
+            CoachEditHistorySheet(store: store)
         }
     }
 
@@ -335,13 +339,13 @@ struct CoachWorkflowSheet: View {
             .opacity(selectedPatchId == nil ? 0.45 : 1)
 
             Button {
-                restorePreviousRoutine()
+                showingHistory = true
             } label: {
-                Text("[ RESTORE PREVIOUS ]")
+                Text("[ HISTORY ]")
             }
             .buttonStyle(TerminalButtonStyle(color: TN.yellow))
-            .disabled(store.lastCoachPatchBackup == nil)
-            .opacity(store.lastCoachPatchBackup == nil ? 0.45 : 1)
+            .disabled(store.editHistory == nil)
+            .opacity(store.editHistory == nil ? 0.45 : 1)
         }
     }
 
@@ -429,7 +433,16 @@ struct CoachWorkflowSheet: View {
     private func applySelectedPatch() {
         clearMessages()
         guard let preview, let selectedPatchId else { return }
-        switch store.applyRoutinePatchPreview(preview) {
+        let selected = inbox.pending.first { $0.id == selectedPatchId }
+        let provenance = selected.map {
+            CoachEditProvenance(
+                sourcePatchId: $0.id,
+                contextId: nil,
+                assistantProvider: $0.assistantProvider,
+                source: $0.source
+            )
+        }
+        switch store.applyRoutinePatchPreview(preview, provenance: provenance) {
         case .success(let routine):
             inbox.markApplied(selectedPatchId)
             clearSelection()
@@ -448,16 +461,6 @@ struct CoachWorkflowSheet: View {
         inbox.markRejected(selectedPatchId)
         clearSelection()
         statusMessage = "Patch rejected."
-    }
-
-    private func restorePreviousRoutine() {
-        clearMessages()
-        if let routine = store.restoreLastCoachPatchBackup() {
-            clearSelection()
-            statusMessage = "Restored \(routine.name)."
-        } else {
-            errorMessage = "No previous coach patch state is available."
-        }
     }
 
     private func autoSelectIfNeeded() {
