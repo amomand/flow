@@ -8,6 +8,7 @@ struct FlowApp: App {
     @State private var historyStore = StrengthHistoryStore()
     @State private var runSettings = AppSettings.shared
     @State private var syncCoordinator: SyncCoordinator
+    @State private var coachInbox = CoachPatchInbox()
 
     init() {
         runContainer = Self.makeRunContainer()
@@ -20,7 +21,8 @@ struct FlowApp: App {
                 routineStore: routineStore,
                 historyStore: historyStore,
                 runSettings: runSettings,
-                syncCoordinator: syncCoordinator
+                syncCoordinator: syncCoordinator,
+                coachInbox: coachInbox
             )
                 .preferredColorScheme(.dark)
                 .modelContainer(runContainer)
@@ -64,8 +66,10 @@ struct FlowRootView: View {
     let historyStore: StrengthHistoryStore
     let runSettings: AppSettings
     let syncCoordinator: SyncCoordinator
+    let coachInbox: CoachPatchInbox
 
     var body: some View {
+        @Bindable var coachInbox = coachInbox
         let activities = visibleActivities
 
         Group {
@@ -93,6 +97,20 @@ struct FlowRootView: View {
             guard newPhase == .active else { return }
             Task { await syncIfNeeded() }
         }
+        // The coach sheet presents from the root, not from the strength tab,
+        // so a deep link or shared file can surface its patch no matter where
+        // the user is in the app.
+        .sheet(isPresented: $coachInbox.presentCoach) {
+            CoachWorkflowSheet(
+                store: routineStore,
+                historyStore: historyStore,
+                runs: workouts,
+                inbox: coachInbox
+            )
+        }
+        .onOpenURL { url in
+            coachInbox.handleIncomingURL(url)
+        }
     }
 
     private var strengthView: some View {
@@ -101,7 +119,8 @@ struct FlowRootView: View {
             historyStore: historyStore,
             runs: workouts,
             settings: runSettings,
-            coordinator: syncCoordinator
+            coordinator: syncCoordinator,
+            coachInbox: coachInbox
         )
     }
 

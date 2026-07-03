@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Merged with the generated Info.plist (GENERATE_INFOPLIST_FILE stays
+	     YES); only keys that build settings cannot express live here. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.alexomand.flow.coach</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>flow</string>
+			</array>
+		</dict>
+	</array>
+	<!-- Lets Mail/Files/share sheets offer "Flow" for JSON files, so a patch
+	     saved from an assistant chat can be handed straight to the inbox.
+	     Files are copied in and read once, never edited in place. -->
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>JSON</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.json</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

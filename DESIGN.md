@@ -81,6 +81,10 @@ Routine revision identity is split (`FlowRoutineRevision`):
 
 Toggling a routine's phase changes only the state hash, so a pending coach patch stays valid. Applying a previewed patch grafts the patched sections onto the current routine rather than replacing it wholesale, so state changed after preview (such as a phase toggle) is preserved. Hashes are revision identifiers only, never an auth or integrity mechanism.
 
+A stale content hash triggers a Flow-owned rebase rather than a rejection: operations carry expected before-values, so when all of them still match the current content the patch previews with a rebased marker, and when one no longer matches the specific operation conflict is surfaced and a fresh patch requested. Apply always revalidates against current state (revalidate-then-graft), so the preview-to-apply window can never smuggle a conflicting patch through.
+
+Received patches land in `CoachPatchInbox`, a durable transport-agnostic store (`coach-inbox.json`). Paste, file import, and `flow://coach/patch` deep links (parsed by `FlowCoachDeepLink`) all enqueue the same record shape, and the phase 8 bridge sync client is expected to feed the same inbox with a reserved `bridge` source rather than introduce a second pending-patch model. The inbox never mutates routines: entries leave the pending state only through an explicit apply (via `RoutineStore`) or reject.
+
 `RoutineStore` remains the sole authority for mutating and saving `routines.json`. The exchange layer classifies, decodes, and hashes; it never persists.
 
 ## Runs Model

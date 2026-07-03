@@ -148,16 +148,25 @@ class RoutineStore {
     }
 
     func applyRoutinePatchPreview(_ preview: FlowRoutinePatchPreview) -> Result<Routine, FlowRoutinePatchError> {
-        guard let index = routines.firstIndex(where: { $0.id == preview.patch.routineId }) else {
-            return .failure(.routineNotFound(preview.patch.routineId))
+        // Re-run the preview against the routines as they are at apply time.
+        // The routine may have changed since the preview was built (including
+        // a clean rebase), so apply is always revalidate-then-graft; a patch
+        // whose operations no longer match fails here instead of clobbering
+        // the newer content.
+        let fresh: FlowRoutinePatchPreview
+        do {
+            fresh = try FlowRoutinePatcher.preview(patch: preview.patch, routines: routines)
+        } catch let error as FlowRoutinePatchError {
+            return .failure(error)
+        } catch {
+            return .failure(.invalidJSON(error.localizedDescription))
+        }
+
+        guard let index = routines.firstIndex(where: { $0.id == fresh.patch.routineId }) else {
+            return .failure(.routineNotFound(fresh.patch.routineId))
         }
 
         let current = routines[index]
-        let currentHash = FlowRoutineRevision.contentHash(for: current)
-        guard currentHash == preview.patch.baseContentHash else {
-            return .failure(.staleRoutine(expected: preview.patch.baseContentHash, actual: currentHash))
-        }
-
         lastCoachPatchBackup = current
         // Graft the patched structure onto the current routine rather than
         // replacing it wholesale: non-structural state such as currentPhase
@@ -165,7 +174,7 @@ class RoutineStore {
         // deliberately ignores it), and applying a patch must not revert
         // that state. Patch operations only ever edit sections.
         var updated = current
-        updated.sections = preview.updatedRoutine.sections
+        updated.sections = fresh.updatedRoutine.sections
         routines[index] = updated
         save()
         return .success(updated)
