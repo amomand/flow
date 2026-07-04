@@ -4,7 +4,7 @@ import SwiftData
 @main
 struct FlowApp: App {
     let runContainer: ModelContainer
-    @State private var routineStore = RoutineStore()
+    @State private var routineStore: RoutineStore
     @State private var historyStore = StrengthHistoryStore()
     @State private var runSettings = AppSettings.shared
     @State private var syncCoordinator: SyncCoordinator
@@ -13,6 +13,8 @@ struct FlowApp: App {
     init() {
         runContainer = Self.makeRunContainer()
         _syncCoordinator = State(initialValue: SyncCoordinator(modelContainer: runContainer))
+        // Every coach patch apply audits into the durable edit history.
+        _routineStore = State(initialValue: RoutineStore(editHistory: CoachEditHistoryStore()))
     }
 
     var body: some Scene {

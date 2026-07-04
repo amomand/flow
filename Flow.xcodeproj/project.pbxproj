@@ -22,6 +22,8 @@
 		E00064 /* FlowRoutineExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10064 /* FlowRoutineExchange.swift */; };
 		E00066 /* CoachPatchInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10066 /* CoachPatchInbox.swift */; };
 		E00067 /* FlowCoachDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10067 /* FlowCoachDeepLink.swift */; };
+		E00069 /* CoachEditHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10070 /* CoachEditHistoryStore.swift */; };
+		E00070 /* CoachEditHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10071 /* CoachEditHistorySheet.swift */; };
 		E00008 /* RoutineListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10008 /* RoutineListView.swift */; };
 		E00062 /* CoachWorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10062 /* CoachWorkflowSheet.swift */; };
 		E00009 /* WorkoutFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10009 /* WorkoutFlowView.swift */; };
@@ -51,6 +53,7 @@
 		E00063 /* CoachWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10063 /* CoachWorkflowTests.swift */; };
 		E00065 /* RoutineExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10065 /* RoutineExchangeTests.swift */; };
 		E00068 /* CoachPatchInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10068 /* CoachPatchInboxTests.swift */; };
+		E00071 /* CoachEditHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10072 /* CoachEditHistoryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -79,6 +82,8 @@
 		E10064 /* FlowRoutineExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutineExchange.swift; sourceTree = "<group>"; };
 		E10066 /* CoachPatchInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInbox.swift; sourceTree = "<group>"; };
 		E10067 /* FlowCoachDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachDeepLink.swift; sourceTree = "<group>"; };
+		E10070 /* CoachEditHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistoryStore.swift; sourceTree = "<group>"; };
+		E10071 /* CoachEditHistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistorySheet.swift; sourceTree = "<group>"; };
 		E10069 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E10008 /* RoutineListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineListView.swift; sourceTree = "<group>"; };
 		E10062 /* CoachWorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowSheet.swift; sourceTree = "<group>"; };
@@ -112,6 +117,7 @@
 		E10063 /* CoachWorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowTests.swift; sourceTree = "<group>"; };
 		E10065 /* RoutineExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineExchangeTests.swift; sourceTree = "<group>"; };
 		E10068 /* CoachPatchInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInboxTests.swift; sourceTree = "<group>"; };
+		E10072 /* CoachEditHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistoryTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -196,6 +202,7 @@
 				E10064 /* FlowRoutineExchange.swift */,
 				E10066 /* CoachPatchInbox.swift */,
 				E10067 /* FlowCoachDeepLink.swift */,
+				E10070 /* CoachEditHistoryStore.swift */,
 			);
 			path = Coach;
 			sourceTree = "<group>";
@@ -215,6 +222,7 @@
 			isa = PBXGroup;
 			children = (
 				E10062 /* CoachWorkflowSheet.swift */,
+				E10071 /* CoachEditHistorySheet.swift */,
 			);
 			path = Coach;
 			sourceTree = "<group>";
@@ -302,6 +310,7 @@
 				E10063 /* CoachWorkflowTests.swift */,
 				E10065 /* RoutineExchangeTests.swift */,
 				E10068 /* CoachPatchInboxTests.swift */,
+				E10072 /* CoachEditHistoryTests.swift */,
 			);
 			path = FlowTests;
 			sourceTree = "<group>";
@@ -420,6 +429,8 @@
 				E00064 /* FlowRoutineExchange.swift in Sources */,
 				E00066 /* CoachPatchInbox.swift in Sources */,
 				E00067 /* FlowCoachDeepLink.swift in Sources */,
+				E00069 /* CoachEditHistoryStore.swift in Sources */,
+				E00070 /* CoachEditHistorySheet.swift in Sources */,
 				E00008 /* RoutineListView.swift in Sources */,
 				E00062 /* CoachWorkflowSheet.swift in Sources */,
 				E00009 /* WorkoutFlowView.swift in Sources */,
@@ -455,6 +466,7 @@
 				E00063 /* CoachWorkflowTests.swift in Sources */,
 				E00065 /* RoutineExchangeTests.swift in Sources */,
 				E00068 /* CoachPatchInboxTests.swift in Sources */,
+				E00071 /* CoachEditHistoryTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

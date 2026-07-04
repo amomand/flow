@@ -147,7 +147,13 @@ Routine patches are typed operations against one routine. They must include `sch
 
 Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, and `replacePhaseOverride`.
 
-Flow rejects malformed, conflicting, mismatched, or semantically invalid patches before anything is saved; they sit in the inbox with an explicit reason and cannot mutate saved routines. Applying a patch stores the previous routine state so the Flow Coach sheet can restore it immediately. A future managed or serverless remote MCP bridge can build on the same coach context and patch contract without making the bridge the routine source of truth.
+Flow rejects malformed, conflicting, mismatched, or semantically invalid patches before anything is saved; they sit in the inbox with an explicit reason and cannot mutate saved routines. A future managed or serverless remote MCP bridge can build on the same coach context and patch contract without making the bridge the routine source of truth.
+
+### Edit history and rollback
+
+Every applied coach patch writes a durable audit entry to `coach-edit-history.json`: when it applied, which routine, the hash it pinned to and the hash it actually applied from (these differ when it was rebased), the resulting hash, the rationale, the operation diffs, provenance (inbox patch id, transport, assistant provider, with a context id slot for bridge-delivered patches), and the routine sections as they were before the edit. The history holds the last 20 edits and contains no HealthKit or route data.
+
+The coach sheet's `HISTORY` button lists recent edits, newest first. Any entry still in the applied state can be restored: restore grafts the recorded pre-edit sections back onto the routine through the normal `RoutineStore` save path, leaves non-structural state such as the current phase alone, and flips the entry to restored. If the routine changed after the edit, restore first refuses with a warning and requires an explicit second tap, so later manual edits are never silently overwritten. Rollback works across app relaunch; a corrupt or missing history file only costs history (a backup of the corrupt file is kept) and can never touch `routines.json`.
 
 Whole-routine import/export and coach patch exchange share one boundary, `FlowRoutineExchange`: the JSON encoding conventions, the sanitiser that tolerates code fences and assistant prose, payload detection (pasting a patch into routine import, or a routine or coach context into patch preview, gets a helpful pointer instead of a decode error), and the split revision hashing in `FlowRoutineRevision`. This is the routine exchange foundation the assistant bridge phases build on. The two paths keep their different product semantics: whole-routine import duplicates with fresh routine/section/exercise IDs and can never overwrite an existing routine, while coach patches target an existing routine and apply only through preview and explicit confirmation. `RoutineStore` remains the only authority for mutating and saving `routines.json`.
 
@@ -183,7 +189,8 @@ Flow/
 |   |-- FlowRoutinePatch.swift
 |   |-- FlowRoutineExchange.swift
 |   |-- CoachPatchInbox.swift
-|   `-- FlowCoachDeepLink.swift
+|   |-- FlowCoachDeepLink.swift
+|   `-- CoachEditHistoryStore.swift
 |-- Storage/
 |   `-- RoutineStore.swift
 |-- Views/

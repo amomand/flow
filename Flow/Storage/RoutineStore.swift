@@ -4,7 +4,9 @@ import Foundation
 class RoutineStore {
     var routines: [Routine] = []
     var loadError: String?
-    private(set) var lastCoachPatchBackup: Routine?
+    /// Audit log fed by every coach patch apply; nil only in tests that do
+    /// not exercise the coach path.
+    let editHistory: CoachEditHistoryStore?
     private static let seedVersion = "summer-arc-upper-core-v2"
     private static let seedVersionKey = "RoutineStore.seedVersion"
 
@@ -18,7 +20,7 @@ class RoutineStore {
     private let defaults: UserDefaults
     private var loadResult: LoadResult = .missing
 
-    init(fileURL: URL? = nil, defaults: UserDefaults = .standard) {
+    init(fileURL: URL? = nil, defaults: UserDefaults = .standard, editHistory: CoachEditHistoryStore? = nil) {
         if let fileURL {
             self.fileURL = fileURL
         } else {
@@ -26,6 +28,7 @@ class RoutineStore {
             self.fileURL = docs.appendingPathComponent("routines.json")
         }
         self.defaults = defaults
+        self.editHistory = editHistory
         loadResult = loadFromDisk()
         migrateSeedRoutinesIfNeeded()
     }
@@ -147,7 +150,10 @@ class RoutineStore {
         }
     }
 
-    func applyRoutinePatchPreview(_ preview: FlowRoutinePatchPreview) -> Result<Routine, FlowRoutinePatchError> {
+    func applyRoutinePatchPreview(
+        _ preview: FlowRoutinePatchPreview,
+        provenance: CoachEditProvenance? = nil
+    ) -> Result<Routine, FlowRoutinePatchError> {
         // Re-run the preview against the routines as they are at apply time.
         // The routine may have changed since the preview was built (including
         // a clean rebase), so apply is always revalidate-then-graft; a patch
@@ -167,7 +173,6 @@ class RoutineStore {
         }
 
         let current = routines[index]
-        lastCoachPatchBackup = current
         // Graft the patched structure onto the current routine rather than
         // replacing it wholesale: non-structural state such as currentPhase
         // may have changed since the preview was built (the content hash
@@ -177,16 +182,64 @@ class RoutineStore {
         updated.sections = fresh.updatedRoutine.sections
         routines[index] = updated
         save()
+        editHistory?.record(CoachEditRecord(
+            id: UUID(),
+            appliedAt: Date(),
+            routineId: updated.id,
+            routineName: updated.name,
+            baseContentHash: fresh.patch.baseContentHash,
+            appliedFromContentHash: FlowRoutineRevision.contentHash(for: current),
+            resultingContentHash: FlowRoutineRevision.contentHash(for: updated),
+            rationale: fresh.patch.rationale,
+            diffs: fresh.diffs,
+            previousSections: current.sections,
+            provenance: provenance,
+            outcome: .applied,
+            restoredAt: nil
+        ))
         return .success(updated)
     }
 
-    func restoreLastCoachPatchBackup() -> Routine? {
-        guard let backup = lastCoachPatchBackup else { return nil }
-        guard let index = routines.firstIndex(where: { $0.id == backup.id }) else { return nil }
-        routines[index] = backup
-        lastCoachPatchBackup = nil
+    enum CoachEditRestoreError: LocalizedError, Equatable {
+        case routineNotFound(String)
+        case routineChangedSinceEdit(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .routineNotFound(let name):
+                return "\(name) no longer exists, so this edit cannot be restored."
+            case .routineChangedSinceEdit(let name):
+                return "\(name) changed after this edit was applied. Restoring will overwrite those later changes."
+            }
+        }
+    }
+
+    /// Rolls a routine back to the sections recorded before a coach edit
+    /// applied. Writes through the same save path as every other mutation.
+    /// When the routine has changed since the edit, restore refuses unless
+    /// the caller explicitly allows overwriting the later changes.
+    func restoreCoachEdit(
+        _ record: CoachEditRecord,
+        allowingOverwrite: Bool = false
+    ) -> Result<Routine, CoachEditRestoreError> {
+        guard let index = routines.firstIndex(where: { $0.id == record.routineId }) else {
+            return .failure(.routineNotFound(record.routineName))
+        }
+
+        let current = routines[index]
+        if !allowingOverwrite,
+           FlowRoutineRevision.contentHash(for: current) != record.resultingContentHash {
+            return .failure(.routineChangedSinceEdit(current.name))
+        }
+
+        // Same graft rule as apply: only sections are restored, so state
+        // such as the current phase keeps whatever it is now.
+        var restored = current
+        restored.sections = record.previousSections
+        routines[index] = restored
         save()
-        return backup
+        editHistory?.markRestored(record.id)
+        return .success(restored)
     }
 
     enum ImportError: LocalizedError {

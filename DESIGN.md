@@ -85,6 +85,8 @@ A stale content hash triggers a Flow-owned rebase rather than a rejection: opera
 
 Received patches land in `CoachPatchInbox`, a durable transport-agnostic store (`coach-inbox.json`). Paste, file import, and `flow://coach/patch` deep links (parsed by `FlowCoachDeepLink`) all enqueue the same record shape, and the phase 8 bridge sync client is expected to feed the same inbox with a reserved `bridge` source rather than introduce a second pending-patch model. The inbox never mutates routines: entries leave the pending state only through an explicit apply (via `RoutineStore`) or reject.
 
+The inbox's after-apply counterpart is `CoachEditHistoryStore` (`coach-edit-history.json`): every coach patch apply records an audit entry carrying the patch metadata, provenance mirroring the bridge lifecycle fields (source patch id, transport, assistant provider, context id slot), both content hashes (pinned and applied-from, which differ on a rebase), and the pre-edit sections. Restore is `RoutineStore.restoreCoachEdit`: the same graft rule as apply (sections only, non-structural state untouched), refusing when the routine changed after the edit unless overwrite is explicit, and flipping the entry's outcome to restored rather than deleting it. Storage is a JSON sidecar rather than SwiftData deliberately: it matches the `routines.json`/`coach-inbox.json` pattern, keeps the whole coach exchange inspectable as plain files, and a corrupt history file can only ever cost history, never routines. No HealthKit or route data enters the history.
+
 `RoutineStore` remains the sole authority for mutating and saving `routines.json`. The exchange layer classifies, decodes, and hashes; it never persists.
 
 ## Runs Model
