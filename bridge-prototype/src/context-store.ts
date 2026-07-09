@@ -7,12 +7,15 @@
  * and returned — full FlowCoachContext in, lean summary out — should carry
  * forward.
  */
+import { randomUUID } from "node:crypto";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import {
   flowCoachContextSchema,
   type FlowCoachContext,
+  type FlowCoachCardioSummary,
+  type FlowCoachStrengthSummary,
   type Routine,
 } from "./flow-types.js";
 import type { RoutineLookup } from "./patch-validation.js";
@@ -33,6 +36,8 @@ export interface RoutineSummary {
 
 /** The payload `get_flow_coach_context` returns. Deliberately lean: see README "payload size" note. */
 export interface LeanCoachContext {
+  /** Opaque identity for the snapshot the assistant is reading. */
+  contextId: string;
   generatedAt: string;
   app: string;
   routines: RoutineSummary[];
@@ -42,6 +47,17 @@ export interface LeanCoachContext {
   recentStrengthDigest: string[];
   recentCardioDigest: string[];
   constraintsNotes: string | undefined;
+}
+
+type StrengthSummaryWithoutHealthMetrics = Omit<FlowCoachStrengthSummary, "appleWatchMetrics">;
+type CardioSummaryWithoutHealthMetrics = Omit<FlowCoachCardioSummary, "averageHeartRate" | "maxHeartRate">;
+
+export interface RecentTrainingSummary {
+  contextId: string;
+  generatedAt: string;
+  includesHealthMetrics: boolean;
+  strength: Array<FlowCoachStrengthSummary | StrengthSummaryWithoutHealthMetrics>;
+  cardio: Array<FlowCoachCardioSummary | CardioSummaryWithoutHealthMetrics>;
 }
 
 function loadFixture(filename: string): FlowCoachContext {
@@ -92,22 +108,35 @@ function digestCardio(context: FlowCoachContext): string[] {
 
 export class ContextStore implements RoutineLookup {
   private context: FlowCoachContext;
+  private contextId: string;
 
-  constructor(initial: FlowCoachContext = loadInitialContext()) {
+  constructor(initial: FlowCoachContext = loadInitialContext(), contextId: string = randomUUID()) {
     this.context = initial;
+    this.contextId = contextId;
   }
 
   /** Replaces the stored context wholesale, as a future "Flow pushes latest context" call would. */
-  replaceContext(context: FlowCoachContext): void {
+  replaceContext(context: FlowCoachContext, contextId: string = randomUUID()): string {
     this.context = context;
+    this.contextId = contextId;
+    return this.contextId;
   }
 
   getFullContext(): FlowCoachContext {
     return this.context;
   }
 
+  getContextId(): string {
+    return this.contextId;
+  }
+
+  isCurrentContextId(contextId: string): boolean {
+    return this.contextId === contextId;
+  }
+
   getLeanContext(): LeanCoachContext {
     return {
+      contextId: this.contextId,
       generatedAt: this.context.generatedAt,
       app: this.context.app,
       routines: this.context.routines.map((routine) => summarizeRoutine(routine, this.context)),
@@ -121,6 +150,35 @@ export class ContextStore implements RoutineLookup {
 
   listRoutineSummaries(): RoutineSummary[] {
     return this.context.routines.map((routine) => summarizeRoutine(routine, this.context));
+  }
+
+  getRecentTrainingSummary(options: {
+    strengthLimit?: number;
+    cardioLimit?: number;
+    includeHealthMetrics?: boolean;
+  } = {}): RecentTrainingSummary {
+    const strengthLimit = Math.min(Math.max(options.strengthLimit ?? 5, 1), 10);
+    const cardioLimit = Math.min(Math.max(options.cardioLimit ?? 5, 1), 12);
+    const includeHealthMetrics = options.includeHealthMetrics === true;
+
+    const strength = this.context.recentStrengthSummary.slice(0, strengthLimit).map((entry) => {
+      if (includeHealthMetrics) return entry;
+      const { appleWatchMetrics: _healthMetrics, ...summary } = entry;
+      return summary;
+    });
+    const cardio = this.context.recentCardioSummary.slice(0, cardioLimit).map((entry) => {
+      if (includeHealthMetrics) return entry;
+      const { averageHeartRate: _averageHeartRate, maxHeartRate: _maxHeartRate, ...summary } = entry;
+      return summary;
+    });
+
+    return {
+      contextId: this.contextId,
+      generatedAt: this.context.generatedAt,
+      includesHealthMetrics: includeHealthMetrics,
+      strength,
+      cardio,
+    };
   }
 
   // --- RoutineLookup (used by patch validation) ---

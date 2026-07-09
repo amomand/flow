@@ -2,7 +2,7 @@
   "name": "flow-coach-bridge-prototype",
   "version": "0.1.0",
   "private": true,
-  "description": "Phase 5 (issue #36) prototype MCP server for the Flow Coach bridge contract.",
+  "description": "Flow Coach bridge prototype with MCP and ChatGPT Actions adapters.",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -12,6 +12,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "smoke": "tsx src/smoke.ts",
+    "smoke:actions": "tsx src/actions-smoke.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
