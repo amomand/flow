@@ -19,9 +19,17 @@ class RoutineStore {
 
     private let fileURL: URL
     private let defaults: UserDefaults
+    private let fileWriter: (Data, URL) throws -> Void
     private var loadResult: LoadResult = .missing
 
-    init(fileURL: URL? = nil, defaults: UserDefaults = .standard, editHistory: CoachEditHistoryStore? = nil) {
+    init(
+        fileURL: URL? = nil,
+        defaults: UserDefaults = .standard,
+        editHistory: CoachEditHistoryStore? = nil,
+        fileWriter: @escaping (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .atomic)
+        }
+    ) {
         if let fileURL {
             self.fileURL = fileURL
         } else {
@@ -30,6 +38,7 @@ class RoutineStore {
         }
         self.defaults = defaults
         self.editHistory = editHistory
+        self.fileWriter = fileWriter
         loadResult = loadFromDisk()
         migrateSeedRoutinesIfNeeded()
     }
@@ -49,7 +58,7 @@ class RoutineStore {
     func save() -> Result<Void, PersistenceError> {
         do {
             let data = try JSONEncoder().encode(routines)
-            try data.write(to: fileURL, options: .atomic)
+            try fileWriter(data, fileURL)
             saveError = nil
             return .success(())
         } catch {
@@ -244,6 +253,7 @@ class RoutineStore {
             let rollback = save()
             let suffix: String
             if case .failure(let rollbackError) = rollback {
+                routines[index] = updated
                 suffix = " The routine file changed, and rollback also failed: \(rollbackError.localizedDescription)"
             } else {
                 suffix = " The routine file was restored to its previous contents."
@@ -303,6 +313,7 @@ class RoutineStore {
             let rollback = save()
             let suffix: String
             if case .failure(let rollbackError) = rollback {
+                routines[index] = restored
                 suffix = " The routine file changed, and rollback also failed: \(rollbackError.localizedDescription)"
             } else {
                 suffix = " The routine file was restored to its previous contents."

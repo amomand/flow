@@ -206,7 +206,7 @@ final class CoachPatchInbox {
 
     @discardableResult
     func remove(_ id: UUID) -> Bool {
-        guard patches.contains(where: { $0.id == id }) else { return false }
+        guard patches.contains(where: { $0.id == id }) else { return true }
         return persistMutation {
             patches.removeAll { $0.id == id }
         }

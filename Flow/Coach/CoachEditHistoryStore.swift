@@ -101,14 +101,21 @@ final class CoachEditHistoryStore {
     }
 
     private let fileURL: URL
+    private let fileWriter: (Data, URL) throws -> Void
 
-    init(fileURL: URL? = nil) {
+    init(
+        fileURL: URL? = nil,
+        fileWriter: @escaping (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .atomic)
+        }
+    ) {
         if let fileURL {
             self.fileURL = fileURL
         } else {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             self.fileURL = docs.appendingPathComponent("coach-edit-history.json")
         }
+        self.fileWriter = fileWriter
         load()
     }
 
@@ -156,7 +163,7 @@ final class CoachEditHistoryStore {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(HistoryFile(schemaVersion: Self.historySchemaVersion, records: records))
-            try data.write(to: fileURL, options: .atomic)
+            try fileWriter(data, fileURL)
             persistenceError = nil
             return .success(())
         } catch {

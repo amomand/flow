@@ -78,6 +78,13 @@ final class CoachPatchInboxTests: XCTestCase {
         XCTAssertTrue(inbox.patches.isEmpty)
     }
 
+    func testRemoveIsIdempotentWhenPatchIsAlreadyGone() throws {
+        let inbox = CoachPatchInbox(fileURL: try makeInboxFileURL())
+
+        XCTAssertTrue(inbox.remove(UUID()))
+        XCTAssertNil(inbox.persistenceError)
+    }
+
     func testCorruptInboxFileStartsEmptyAndPreservesBackup() throws {
         let fileURL = try makeInboxFileURL()
         try "not json".write(to: fileURL, atomically: true, encoding: .utf8)
