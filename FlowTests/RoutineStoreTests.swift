@@ -134,6 +134,66 @@ final class RoutineStoreTests: XCTestCase {
         XCTAssertEqual(store.routines.count, 1)
     }
 
+    func testSaveFailureIsReportedAndDoesNotLeaveUnsavedMutationInMemory() throws {
+        let fixture = try makeFixture()
+        let unwritableURL = fixture.directory
+            .appendingPathComponent("missing", isDirectory: true)
+            .appendingPathComponent("routines.json")
+        let store = RoutineStore(fileURL: unwritableURL, defaults: fixture.defaults)
+        store.routines = []
+        let routine = Routine(
+            name: "Unsaved",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])]
+        )
+
+        let result = store.addRoutine(routine)
+
+        guard case .failure = result else {
+            return XCTFail("Expected the write to fail")
+        }
+        XCTAssertTrue(store.routines.isEmpty)
+        XCTAssertNotNil(store.saveError)
+    }
+
+    func testCoachApplyDoesNotReportSuccessWhenRoutineWriteFails() throws {
+        let fixture = try makeFixture()
+        let unwritableURL = fixture.directory
+            .appendingPathComponent("missing", isDirectory: true)
+            .appendingPathComponent("routines.json")
+        let history = CoachEditHistoryStore(fileURL: fixture.directory.appendingPathComponent("history.json"))
+        let store = RoutineStore(fileURL: unwritableURL, defaults: fixture.defaults, editHistory: history)
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])]
+        )
+        store.routines = [routine]
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Test disk failure.",
+            operations: [FlowRoutinePatchOperation(
+                kind: .replaceExerciseReps,
+                exerciseId: exerciseId,
+                expectedIntValue: 8,
+                newIntValue: 10
+            )]
+        )
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: store.routines)
+
+        let result = store.applyRoutinePatchPreview(preview)
+
+        guard case .failure(.persistenceFailed) = result else {
+            return XCTFail("Expected a persistence failure, got \(result)")
+        }
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
+        XCTAssertTrue(history.records.isEmpty)
+    }
+
     private func makeFixture() throws -> (directory: URL, fileURL: URL, defaults: UserDefaults) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("FlowTests-\(UUID().uuidString)", isDirectory: true)

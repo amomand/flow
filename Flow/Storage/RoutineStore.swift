@@ -4,6 +4,7 @@ import Foundation
 class RoutineStore {
     var routines: [Routine] = []
     var loadError: String?
+    private(set) var saveError: String?
     /// Audit log fed by every coach patch apply; nil only in tests that do
     /// not exercise the coach path.
     let editHistory: CoachEditHistoryStore?
@@ -33,12 +34,28 @@ class RoutineStore {
         migrateSeedRoutinesIfNeeded()
     }
 
-    func save() {
+    enum PersistenceError: LocalizedError, Equatable {
+        case writeFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .writeFailed(let message):
+                return message
+            }
+        }
+    }
+
+    @discardableResult
+    func save() -> Result<Void, PersistenceError> {
         do {
             let data = try JSONEncoder().encode(routines)
             try data.write(to: fileURL, options: .atomic)
+            saveError = nil
+            return .success(())
         } catch {
+            saveError = error.localizedDescription
             print("Failed to save routines: \(error)")
+            return .failure(.writeFailed(error.localizedDescription))
         }
     }
 
@@ -72,21 +89,39 @@ class RoutineStore {
         }
     }
 
-    func addRoutine(_ routine: Routine) {
+    @discardableResult
+    func addRoutine(_ routine: Routine) -> Result<Void, PersistenceError> {
         routines.append(routine)
-        save()
-    }
-
-    func updateRoutine(_ routine: Routine) {
-        if let idx = routines.firstIndex(where: { $0.id == routine.id }) {
-            routines[idx] = routine
-            save()
+        let result = save()
+        if case .failure = result {
+            routines.removeLast()
         }
+        return result
     }
 
-    func deleteRoutine(at offsets: IndexSet) {
+    @discardableResult
+    func updateRoutine(_ routine: Routine) -> Result<Void, PersistenceError> {
+        if let idx = routines.firstIndex(where: { $0.id == routine.id }) {
+            let previous = routines[idx]
+            routines[idx] = routine
+            let result = save()
+            if case .failure = result {
+                routines[idx] = previous
+            }
+            return result
+        }
+        return .success(())
+    }
+
+    @discardableResult
+    func deleteRoutine(at offsets: IndexSet) -> Result<Void, PersistenceError> {
+        let previous = routines
         routines.remove(atOffsets: offsets)
-        save()
+        let result = save()
+        if case .failure = result {
+            routines = previous
+        }
+        return result
     }
 
     func exportRoutineJSON(_ routine: Routine) -> String? {
@@ -118,7 +153,10 @@ class RoutineStore {
                 }
             }
             routines.append(routine)
-            save()
+            if case .failure(let error) = save() {
+                routines.removeLast()
+                return .failure(.persistenceFailed(error.localizedDescription))
+            }
             return .success(routine)
         } catch {
             return .failure(.decodingFailed(error.localizedDescription))
@@ -181,8 +219,11 @@ class RoutineStore {
         var updated = current
         updated.sections = fresh.updatedRoutine.sections
         routines[index] = updated
-        save()
-        editHistory?.record(CoachEditRecord(
+        if case .failure(let error) = save() {
+            routines[index] = current
+            return .failure(.persistenceFailed(error.localizedDescription))
+        }
+        let historyResult = editHistory?.record(CoachEditRecord(
             id: UUID(),
             appliedAt: Date(),
             routineId: updated.id,
@@ -197,12 +238,25 @@ class RoutineStore {
             outcome: .applied,
             restoredAt: nil
         ))
+        if let historyResult,
+           case .failure(let error) = historyResult {
+            routines[index] = current
+            let rollback = save()
+            let suffix: String
+            if case .failure(let rollbackError) = rollback {
+                suffix = " The routine file changed, and rollback also failed: \(rollbackError.localizedDescription)"
+            } else {
+                suffix = " The routine file was restored to its previous contents."
+            }
+            return .failure(.persistenceFailed("Could not write coach edit history: \(error.localizedDescription).\(suffix)"))
+        }
         return .success(updated)
     }
 
     enum CoachEditRestoreError: LocalizedError, Equatable {
         case routineNotFound(String)
         case routineChangedSinceEdit(String)
+        case persistenceFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -210,6 +264,8 @@ class RoutineStore {
                 return "\(name) no longer exists, so this edit cannot be restored."
             case .routineChangedSinceEdit(let name):
                 return "\(name) changed after this edit was applied. Restoring will overwrite those later changes."
+            case .persistenceFailed(let message):
+                return "The restore was not saved: \(message)"
             }
         }
     }
@@ -237,8 +293,22 @@ class RoutineStore {
         var restored = current
         restored.sections = record.previousSections
         routines[index] = restored
-        save()
-        editHistory?.markRestored(record.id)
+        if case .failure(let error) = save() {
+            routines[index] = current
+            return .failure(.persistenceFailed(error.localizedDescription))
+        }
+        if let editHistory,
+           case .failure(let error) = editHistory.markRestored(record.id) {
+            routines[index] = current
+            let rollback = save()
+            let suffix: String
+            if case .failure(let rollbackError) = rollback {
+                suffix = " The routine file changed, and rollback also failed: \(rollbackError.localizedDescription)"
+            } else {
+                suffix = " The routine file was restored to its previous contents."
+            }
+            return .failure(.persistenceFailed("Could not update coach edit history: \(error.localizedDescription).\(suffix)"))
+        }
         return .success(restored)
     }
 
@@ -247,6 +317,7 @@ class RoutineStore {
         case decodingFailed(String)
         case looksLikeCoachPatch
         case looksLikeCoachContext
+        case persistenceFailed(String)
 
         var errorDescription: String? {
             switch self {
@@ -256,6 +327,8 @@ class RoutineStore {
                 return "This looks like a Flow Coach routine patch. Open Flow Coach to preview and apply it instead."
             case .looksLikeCoachContext:
                 return "This is the coach context export, not a routine. Paste a single routine's JSON instead."
+            case .persistenceFailed(let message):
+                return "The imported routine was not saved: \(message)"
             }
         }
     }

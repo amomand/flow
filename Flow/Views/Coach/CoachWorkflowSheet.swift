@@ -294,7 +294,9 @@ struct CoachWorkflowSheet: View {
                         .foregroundColor(TN.comment)
                     Spacer()
                     Button {
-                        inbox.clearResolved()
+                        if !inbox.clearResolved() {
+                            errorMessage = inbox.persistenceError ?? "Could not clear coach history."
+                        }
                     } label: {
                         Text("[ CLEAR ]")
                             .terminalFont(12)
@@ -424,7 +426,10 @@ struct CoachWorkflowSheet: View {
     }
 
     private func removePatch(_ patch: PendingCoachPatch) {
-        inbox.remove(patch.id)
+        guard inbox.remove(patch.id) else {
+            errorMessage = inbox.persistenceError ?? "Could not remove the patch."
+            return
+        }
         if selectedPatchId == patch.id {
             clearSelection()
         }
@@ -437,14 +442,19 @@ struct CoachWorkflowSheet: View {
         let provenance = selected.map {
             CoachEditProvenance(
                 sourcePatchId: $0.id,
-                contextId: nil,
+                bridgePatchId: $0.remoteProvenance?.bridgePatchId,
+                contextId: $0.remoteProvenance?.contextId,
                 assistantProvider: $0.assistantProvider,
                 source: $0.source
             )
         }
         switch store.applyRoutinePatchPreview(preview, provenance: provenance) {
         case .success(let routine):
-            inbox.markApplied(selectedPatchId)
+            guard inbox.markApplied(selectedPatchId) else {
+                let detail = inbox.persistenceError ?? "The inbox write failed."
+                errorMessage = "The routine was applied, but the coach inbox could not record it. \(detail)"
+                return
+            }
             clearSelection()
             statusMessage = "Applied patch to \(routine.name)."
         case .failure(let error):
@@ -458,7 +468,10 @@ struct CoachWorkflowSheet: View {
     private func rejectSelectedPatch() {
         clearMessages()
         guard let selectedPatchId else { return }
-        inbox.markRejected(selectedPatchId)
+        guard inbox.markRejected(selectedPatchId) else {
+            errorMessage = inbox.persistenceError ?? "Could not record the rejection."
+            return
+        }
         clearSelection()
         statusMessage = "Patch rejected."
     }

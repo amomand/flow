@@ -1,5 +1,107 @@
 import Foundation
 
+/// The categories a user has explicitly chosen to put in a coach snapshot.
+///
+/// These are intentionally coarse product choices rather than a mirror of
+/// every context field. Health metrics augment whichever history categories
+/// are also selected; they never cause history to be shared on their own.
+enum FlowCoachDataTier: String, Codable, CaseIterable {
+    case routines
+    case strengthHistory
+    case cardioHistory
+    case healthMetrics
+}
+
+struct FlowCoachSharingProfile: Codable, Equatable {
+    static let currentSchemaVersion = 1
+
+    /// The proposed privacy-preserving starting point: routine definitions
+    /// and Flow's own derived strength history, without HealthKit metrics.
+    static let recommended = FlowCoachSharingProfile(dataTiers: [.routines, .strengthHistory])
+
+    /// Preserves the pre-envelope context export for local/manual uses.
+    static let allAvailable = FlowCoachSharingProfile(dataTiers: FlowCoachDataTier.allCases)
+
+    let schemaVersion: Int
+    let dataTiers: [FlowCoachDataTier]
+
+    init(
+        schemaVersion: Int = FlowCoachSharingProfile.currentSchemaVersion,
+        dataTiers: [FlowCoachDataTier]
+    ) {
+        self.schemaVersion = schemaVersion
+        let selected = Set(dataTiers)
+        self.dataTiers = FlowCoachDataTier.allCases.filter(selected.contains)
+    }
+
+    func includes(_ tier: FlowCoachDataTier) -> Bool {
+        dataTiers.contains(tier)
+    }
+}
+
+/// A short-lived, explicitly scoped copy of Flow's coach context.
+///
+/// Every construction gets a new identity. `contextId` correlates later
+/// proposals with exactly the snapshot the assistant read; it is not an
+/// authentication credential.
+struct FlowCoachSnapshotEnvelope: Codable {
+    static let defaultLifetime: TimeInterval = 24 * 60 * 60
+
+    let contextId: UUID
+    let createdAt: Date
+    let expiresAt: Date
+    let sharingProfile: FlowCoachSharingProfile
+    let context: FlowCoachContext
+
+    private init(
+        contextId: UUID,
+        createdAt: Date,
+        expiresAt: Date,
+        sharingProfile: FlowCoachSharingProfile,
+        context: FlowCoachContext
+    ) {
+        self.contextId = contextId
+        self.createdAt = createdAt
+        self.expiresAt = expiresAt
+        self.sharingProfile = sharingProfile
+        self.context = context
+    }
+
+    static func make(
+        routines: [Routine],
+        strengthWorkouts: [CompletedWorkout],
+        cardioWorkouts: [Run],
+        sharingProfile: FlowCoachSharingProfile = .recommended,
+        createdAt: Date = Date(),
+        constraintsNotes: String? = nil,
+        strengthLimit: Int = 10,
+        cardioLimit: Int = 12
+    ) -> FlowCoachSnapshotEnvelope {
+        FlowCoachSnapshotEnvelope(
+            contextId: UUID(),
+            createdAt: createdAt,
+            expiresAt: createdAt.addingTimeInterval(defaultLifetime),
+            sharingProfile: sharingProfile,
+            context: FlowCoachContext.make(
+                routines: routines,
+                strengthWorkouts: strengthWorkouts,
+                cardioWorkouts: cardioWorkouts,
+                generatedAt: createdAt,
+                constraintsNotes: constraintsNotes,
+                strengthLimit: strengthLimit,
+                cardioLimit: cardioLimit,
+                sharingProfile: sharingProfile
+            )
+        )
+    }
+
+    func jsonString() -> String? {
+        let encoder = FlowRoutineExchange.encoder()
+        guard let data = try? encoder.encode(self) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+}
+
 struct FlowCoachContext: Codable {
     /// Schema 2 splits routine revision identity: `routineContentHashByRoutineId`
     /// covers the editable structure a patch pins to (`baseContentHash`), and
@@ -25,25 +127,39 @@ struct FlowCoachContext: Codable {
         generatedAt: Date = Date(),
         constraintsNotes: String? = nil,
         strengthLimit: Int = 10,
-        cardioLimit: Int = 12
+        cardioLimit: Int = 12,
+        sharingProfile: FlowCoachSharingProfile = .allAvailable
     ) -> FlowCoachContext {
+        let includesRoutines = sharingProfile.includes(.routines)
+        let includesStrength = sharingProfile.includes(.strengthHistory)
+        let includesCardio = sharingProfile.includes(.cardioHistory)
+        let includesHealthMetrics = sharingProfile.includes(.healthMetrics)
+        let sharedRoutines = includesRoutines ? routines : []
         let currentPhaseByRoutineId = Dictionary(
-            uniqueKeysWithValues: routines.map { ($0.id.uuidString, $0.currentPhase.rawValue) }
+            uniqueKeysWithValues: sharedRoutines.map { ($0.id.uuidString, $0.currentPhase.rawValue) }
         )
         let routineContentHashByRoutineId = Dictionary(
-            uniqueKeysWithValues: routines.map { ($0.id.uuidString, FlowRoutineRevision.contentHash(for: $0)) }
+            uniqueKeysWithValues: sharedRoutines.map { ($0.id.uuidString, FlowRoutineRevision.contentHash(for: $0)) }
         )
         let routineStateHashByRoutineId = Dictionary(
-            uniqueKeysWithValues: routines.map { ($0.id.uuidString, FlowRoutineRevision.stateHash(for: $0)) }
+            uniqueKeysWithValues: sharedRoutines.map { ($0.id.uuidString, FlowRoutineRevision.stateHash(for: $0)) }
         )
-        let strength = strengthWorkouts
-            .sorted { $0.endedAt > $1.endedAt }
-            .prefix(strengthLimit)
-            .map(FlowCoachStrengthSummary.init)
-        let cardio = cardioWorkouts
-            .sorted { $0.startDate > $1.startDate }
-            .prefix(cardioLimit)
-            .map(FlowCoachCardioSummary.init)
+        let strength: [FlowCoachStrengthSummary] = if includesStrength {
+            strengthWorkouts
+                .sorted { $0.endedAt > $1.endedAt }
+                .prefix(strengthLimit)
+                .map { FlowCoachStrengthSummary(workout: $0, includesHealthMetrics: includesHealthMetrics) }
+        } else {
+            []
+        }
+        let cardio: [FlowCoachCardioSummary] = if includesCardio {
+            cardioWorkouts
+                .sorted { $0.startDate > $1.startDate }
+                .prefix(cardioLimit)
+                .map { FlowCoachCardioSummary(run: $0, includesHealthMetrics: includesHealthMetrics) }
+        } else {
+            []
+        }
 
         let constraints = FlowCoachConstraints(notes: constraintsNotes)
 
@@ -51,7 +167,7 @@ struct FlowCoachContext: Codable {
             schemaVersion: currentSchemaVersion,
             generatedAt: generatedAt,
             app: "Flow",
-            routines: routines,
+            routines: sharedRoutines,
             currentPhaseByRoutineId: currentPhaseByRoutineId,
             routineContentHashByRoutineId: routineContentHashByRoutineId,
             routineStateHashByRoutineId: routineStateHashByRoutineId,
@@ -95,7 +211,7 @@ struct FlowCoachStrengthSummary: Codable {
     let notableEasySets: [FlowCoachSetNote]
     let appleWatchMetrics: FlowCoachStrengthMetrics?
 
-    init(workout: CompletedWorkout) {
+    init(workout: CompletedWorkout, includesHealthMetrics: Bool = true) {
         let setResults = workout.setResults
         date = workout.endedAt
         routineId = workout.routineId
@@ -114,7 +230,7 @@ struct FlowCoachStrengthSummary: Codable {
             .filter { $0.rating == .tooEasy }
             .prefix(8)
             .map(FlowCoachSetNote.init)
-        appleWatchMetrics = FlowCoachStrengthMetrics(workout: workout)
+        appleWatchMetrics = includesHealthMetrics ? FlowCoachStrengthMetrics(workout: workout) : nil
     }
 }
 
@@ -178,14 +294,13 @@ struct FlowCoachCardioSummary: Codable, Equatable {
     let averageHeartRate: Double?
     let maxHeartRate: Double?
 
-    init(run: Run) {
+    init(run: Run, includesHealthMetrics: Bool = true) {
         date = run.startDate
         activity = run.activity.rawValue
         distanceMetres = run.distanceMetres
         durationSeconds = run.durationSeconds
         elevationGainMetres = run.elevationGainMetres
-        averageHeartRate = run.avgHeartRate
-        maxHeartRate = run.maxHeartRate
+        averageHeartRate = includesHealthMetrics ? run.avgHeartRate : nil
+        maxHeartRate = includesHealthMetrics ? run.maxHeartRate : nil
     }
 }
-

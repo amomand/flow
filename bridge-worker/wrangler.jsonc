@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "flow-coach-bridge",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-10",
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+      "head_sampling_rate": 1
+    }
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "FLOW_COACH",
+        "class_name": "FlowCoachMailbox"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FlowCoachMailbox"]
+    }
+  ]
+}

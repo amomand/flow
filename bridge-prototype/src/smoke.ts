@@ -102,6 +102,11 @@ async function main(): Promise<void> {
   ok("create_pending_routine_patch has destructiveHint: false", createTool?.annotations?.destructiveHint === false);
   ok("create_pending_routine_patch has idempotentHint: true", createTool?.annotations?.idempotentHint === true);
   ok(
+    "create_pending_routine_patch description states identical retries are idempotent",
+    (createTool?.description ?? "").toLowerCase().includes("identical retries") &&
+      (createTool?.description ?? "").toLowerCase().includes("idempotent")
+  );
+  ok(
     "create_pending_routine_patch description states it only stores a draft",
     (createTool?.description ?? "").toLowerCase().includes("does not modify"),
     createTool?.description

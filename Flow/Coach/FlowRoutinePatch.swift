@@ -82,6 +82,7 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case invalidValue(field: String, message: String)
     case noOperations
     case wouldEmptyRoutine
+    case persistenceFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -109,6 +110,8 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Routine patch does not include any operations."
         case .wouldEmptyRoutine:
             return "Routine patch would leave the routine empty."
+        case .persistenceFailed(let message):
+            return "The routine patch was not saved: \(message)"
         }
     }
 }

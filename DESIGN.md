@@ -89,6 +89,8 @@ The inbox's after-apply counterpart is `CoachEditHistoryStore` (`coach-edit-hist
 
 `RoutineStore` remains the sole authority for mutating and saving `routines.json`. The exchange layer classifies, decodes, and hashes; it never persists.
 
+The provisional managed bridge shape is documented in `docs/flow-coach-bridge-architecture.md`: one EU-jurisdiction SQLite Durable Object behind separate Actions, Flow device, and optional MCP adapters. The decision remains provisional until the private-GPT desktop/iOS capability test and the named human privacy/platform choices are complete.
+
 ## Runs Model
 
 ```text

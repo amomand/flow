@@ -17,6 +17,80 @@ final class CoachWorkflowTests: XCTestCase {
         try super.tearDownWithError()
     }
 
+    func testSnapshotEnvelopeEncodesExplicitDataTiersAndFreshIdentity() throws {
+        let routine = Routine(name: "Shared", sections: [])
+        let run = Run(
+            id: UUID(),
+            activity: .running,
+            startDate: Date(timeIntervalSince1970: 1_000),
+            endDate: Date(timeIntervalSince1970: 2_000),
+            distanceMetres: 5_000,
+            durationSeconds: 1_500,
+            elevationGainMetres: 42,
+            avgHeartRate: 141,
+            maxHeartRate: 168
+        )
+        let createdAt = Date(timeIntervalSince1970: 3_000)
+        let cardioOnly = FlowCoachSharingProfile(dataTiers: [.cardioHistory, .routines, .cardioHistory])
+
+        let first = FlowCoachSnapshotEnvelope.make(
+            routines: [routine],
+            strengthWorkouts: [],
+            cardioWorkouts: [run],
+            sharingProfile: cardioOnly,
+            createdAt: createdAt
+        )
+        let second = FlowCoachSnapshotEnvelope.make(
+            routines: [routine],
+            strengthWorkouts: [],
+            cardioWorkouts: [run],
+            sharingProfile: cardioOnly,
+            createdAt: createdAt
+        )
+
+        XCTAssertNotEqual(first.contextId, second.contextId)
+        XCTAssertEqual(first.createdAt, createdAt)
+        XCTAssertEqual(first.expiresAt.timeIntervalSince(first.createdAt), 24 * 60 * 60, accuracy: 0.001)
+        XCTAssertEqual(first.sharingProfile.schemaVersion, 1)
+        XCTAssertEqual(first.sharingProfile.dataTiers, [.routines, .cardioHistory])
+        XCTAssertEqual(first.context.routines.map(\.id), [routine.id])
+        XCTAssertTrue(first.context.recentStrengthSummary.isEmpty)
+        XCTAssertEqual(first.context.recentCardioSummary.count, 1)
+        XCTAssertNil(first.context.recentCardioSummary[0].averageHeartRate)
+        XCTAssertNil(first.context.recentCardioSummary[0].maxHeartRate)
+
+        let json = try XCTUnwrap(first.jsonString())
+        XCTAssertTrue(json.contains("\"sharingProfile\""))
+        XCTAssertTrue(json.contains("\"dataTiers\""))
+        XCTAssertTrue(json.contains("\"routines\""))
+        XCTAssertTrue(json.contains("\"cardioHistory\""))
+        XCTAssertFalse(json.contains("\"healthMetrics\""))
+    }
+
+    func testSnapshotHealthMetricsRequireTheirOwnTier() {
+        let run = Run(
+            id: UUID(),
+            activity: .running,
+            startDate: Date(timeIntervalSince1970: 1_000),
+            endDate: Date(timeIntervalSince1970: 2_000),
+            distanceMetres: 5_000,
+            durationSeconds: 1_500,
+            avgHeartRate: 141,
+            maxHeartRate: 168
+        )
+        let profile = FlowCoachSharingProfile(dataTiers: [.routines, .cardioHistory, .healthMetrics])
+
+        let envelope = FlowCoachSnapshotEnvelope.make(
+            routines: [],
+            strengthWorkouts: [],
+            cardioWorkouts: [run],
+            sharingProfile: profile
+        )
+
+        XCTAssertEqual(envelope.context.recentCardioSummary[0].averageHeartRate, 141)
+        XCTAssertEqual(envelope.context.recentCardioSummary[0].maxHeartRate, 168)
+    }
+
     func testCoachContextOmitsRouteDataAndHealthKitIdsFromCardioSummary() throws {
         let runId = UUID()
         let run = Run(
