@@ -100,7 +100,7 @@ async function main(): Promise<void> {
   }
   const createTool = byName.get("create_pending_routine_patch");
   ok("create_pending_routine_patch has destructiveHint: false", createTool?.annotations?.destructiveHint === false);
-  ok("create_pending_routine_patch has idempotentHint: false", createTool?.annotations?.idempotentHint === false);
+  ok("create_pending_routine_patch has idempotentHint: true", createTool?.annotations?.idempotentHint === true);
   ok(
     "create_pending_routine_patch description states it only stores a draft",
     (createTool?.description ?? "").toLowerCase().includes("does not modify"),
@@ -110,11 +110,13 @@ async function main(): Promise<void> {
   section("get_flow_coach_context");
   const contextResult = (await client.callTool({ name: "get_flow_coach_context", arguments: {} })) as ToolTextResult;
   const contextPayload = JSON.parse(firstText(contextResult)) as {
+    contextId: string;
     routines: Array<{ id: string; name: string; contentHash: string }>;
     recentStrengthSummaryCount: number;
     recentCardioSummaryCount: number;
   };
   ok("get_flow_coach_context returns 2 routine summaries", contextPayload.routines.length === 2);
+  ok("get_flow_coach_context returns an opaque contextId", typeof contextPayload.contextId === "string");
   ok(
     "get_flow_coach_context returns strength/cardio counts, not full arrays",
     typeof contextPayload.recentStrengthSummaryCount === "number" &&
@@ -209,17 +211,31 @@ async function main(): Promise<void> {
   section("create_pending_routine_patch — valid create");
   const createGoodResult = (await client.callTool({
     name: "create_pending_routine_patch",
-    arguments: { patch: validPatch, assistantProvider: "claude" },
+    arguments: { patch: validPatch },
   })) as ToolTextResult;
   ok("create_pending_routine_patch (valid) does not report isError", createGoodResult.isError !== true);
   const createGoodStructured = createGoodResult.structuredContent as { stored: boolean; patch?: { patchId: string; status: string } } | undefined;
   ok("create_pending_routine_patch (valid) stores a draft with status pending", createGoodStructured?.stored === true && createGoodStructured?.patch?.status === "pending");
   console.log(`  Stored patchId: ${createGoodStructured?.patch?.patchId}`);
 
+  const createDuplicateResult = (await client.callTool({
+    name: "create_pending_routine_patch",
+    arguments: { patch: validPatch },
+  })) as ToolTextResult;
+  const createDuplicateStructured = createDuplicateResult.structuredContent as {
+    duplicate: boolean;
+    patch?: { patchId: string };
+  } | undefined;
+  ok("repeated create returns the existing draft", createDuplicateStructured?.duplicate === true);
+  ok(
+    "repeated create returns the same patchId",
+    createDuplicateStructured?.patch?.patchId === createGoodStructured?.patch?.patchId
+  );
+
   section("create_pending_routine_patch — stale/garbage hash gets rejected");
   const createStaleResult = (await client.callTool({
     name: "create_pending_routine_patch",
-    arguments: { patch: staleHashPatch, assistantProvider: "claude" },
+    arguments: { patch: staleHashPatch },
   })) as ToolTextResult;
   ok("create_pending_routine_patch (stale hash) reports isError", createStaleResult.isError === true);
   const createStaleStructured = createStaleResult.structuredContent as { stored: boolean } | undefined;
@@ -228,7 +244,7 @@ async function main(): Promise<void> {
   section("create_pending_routine_patch — unknown routine gets rejected");
   const createUnknownResult = (await client.callTool({
     name: "create_pending_routine_patch",
-    arguments: { patch: unknownRoutinePatch, assistantProvider: "chatgpt" },
+    arguments: { patch: unknownRoutinePatch },
   })) as ToolTextResult;
   ok("create_pending_routine_patch (unknown routine) reports isError", createUnknownResult.isError === true);
   const createUnknownStructured = createUnknownResult.structuredContent as { stored: boolean } | undefined;
@@ -239,14 +255,14 @@ async function main(): Promise<void> {
   const pendingList = JSON.parse(firstText(listPendingResult)) as Array<{ patchId: string; status: string; assistantProvider: string }>;
   ok(
     "list_pending_patches shows exactly the one successfully created patch",
-    pendingList.length === 1 && pendingList[0]?.status === "pending" && pendingList[0]?.assistantProvider === "claude"
+    pendingList.length === 1 && pendingList[0]?.status === "pending" && pendingList[0]?.assistantProvider === "mcp"
   );
 
   section("Summary");
   console.log(`  ${passCount} passed, ${failCount} failed`);
 
   await client.close();
-  httpServer.emit("close");
+  httpServer.close();
   process.exit(failCount === 0 ? 0 : 1);
 }
 

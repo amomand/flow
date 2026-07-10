@@ -19,10 +19,12 @@
  *   list_pending_patches.
  */
 import { randomUUID } from "node:crypto";
+import type { Server as HTTPServer } from "node:http";
 import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
+import { registerActionsApi } from "./actions-api.js";
 import { ContextStore } from "./context-store.js";
 import { PendingPatchStore } from "./pending-patch-store.js";
 import { validateFlowRoutinePatch } from "./patch-validation.js";
@@ -48,10 +50,7 @@ Trust boundary — read this before calling create_pending_routine_patch:
   full history or full routine bodies). Use list_routines and get_routine
   to drill into routine structure before proposing a patch.`;
 
-const contextStore = new ContextStore();
-const pendingPatchStore = new PendingPatchStore();
-
-function server(): McpServer {
+function server(contextStore: ContextStore, pendingPatchStore: PendingPatchStore): McpServer {
   const mcp = new McpServer(
     {
       name: "flow-coach-bridge-prototype",
@@ -202,19 +201,15 @@ function server(): McpServer {
         "(not destructive).",
       inputSchema: {
         patch: z.unknown().describe("The candidate FlowRoutinePatch JSON object, schema version 2."),
-        assistantProvider: z
-          .string()
-          .min(1)
-          .describe('Which assistant is proposing this, e.g. "claude" or "chatgpt".'),
       },
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: false,
+        idempotentHint: true,
         openWorldHint: false,
       },
     },
-    async ({ patch, assistantProvider }) => {
+    async ({ patch }) => {
       const result = validateFlowRoutinePatch(patch, contextStore);
       if (!result.valid || !result.patch) {
         return {
@@ -231,24 +226,25 @@ function server(): McpServer {
         };
       }
 
-      const contextId = contextStore.getFullContext().generatedAt;
-      const record = pendingPatchStore.create({
+      const contextId = contextStore.getContextId();
+      const outcome = pendingPatchStore.createOrGet({
         contextId,
         patch: result.patch,
-        assistantProvider,
+        assistantProvider: "mcp",
       });
+      const record = outcome.record;
 
       return {
         content: [
           {
             type: "text",
             text:
-              `Stored pending patch ${record.patchId} for routine ${record.routineId} ` +
+              `${outcome.created ? "Stored" : "Reused"} pending patch ${record.patchId} for routine ${record.routineId} ` +
               `(status: ${record.status}, expires ${record.expiresAt}). ` +
               "Flow has NOT applied this yet — open Flow Coach to preview and confirm it.",
           },
         ],
-        structuredContent: { stored: true, patch: record } as unknown as Record<string, unknown>,
+        structuredContent: { stored: true, duplicate: !outcome.created, patch: record } as unknown as Record<string, unknown>,
       };
     }
   );
@@ -290,9 +286,22 @@ function server(): McpServer {
  * the SDK's documented stateful pattern (session id issued on initialize,
  * reused for subsequent requests).
  */
-export function startServer(port: number): ReturnType<typeof express> {
+export interface BridgeServerOptions {
+  contextStore?: ContextStore;
+  pendingPatchStore?: PendingPatchStore;
+  actionsApiKey?: string;
+}
+
+export function createApp(options: BridgeServerOptions = {}): ReturnType<typeof express> {
+  const contextStore = options.contextStore ?? new ContextStore();
+  const pendingPatchStore = options.pendingPatchStore ?? new PendingPatchStore();
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: "100kb" }));
+  registerActionsApi(app, {
+    contextStore,
+    pendingPatchStore,
+    apiKey: options.actionsApiKey,
+  });
 
   const transports = new Map<string, StreamableHTTPServerTransport>();
 
@@ -312,7 +321,7 @@ export function startServer(port: number): ReturnType<typeof express> {
           transports.delete(transport!.sessionId);
         }
       };
-      const mcp = server();
+      const mcp = server(contextStore, pendingPatchStore);
       await mcp.connect(transport);
     }
 
@@ -339,15 +348,19 @@ export function startServer(port: number): ReturnType<typeof express> {
     await transport.handleRequest(req, res);
   });
 
-  app.listen(port, () => {
-    console.log(`Flow Coach bridge prototype listening on http://localhost:${port}/mcp`);
-  });
-
   return app;
+}
+
+export function startServer(port: number, options: BridgeServerOptions = {}): HTTPServer {
+  const app = createApp(options);
+  return app.listen(port, () => {
+    console.log(`Flow Coach bridge prototype listening on http://localhost:${port}/mcp`);
+    console.log(`Flow Coach Actions facade listening on http://localhost:${port}/actions`);
+  });
 }
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
   const port = Number(process.env.PORT ?? 3939);
-  startServer(port);
+  startServer(port, { actionsApiKey: process.env.FLOW_COACH_ACTIONS_API_KEY });
 }
