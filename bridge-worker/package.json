@@ -1,0 +1,24 @@
+{
+  "name": "flow-coach-bridge-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "dev": "wrangler dev",
+    "deploy:dry-run": "npm run deploy:dry-run:primary && npm run deploy:dry-run:partner",
+    "deploy:dry-run:primary": "wrangler deploy --env primary --dry-run --outdir dist/primary",
+    "deploy:dry-run:partner": "wrangler deploy --env partner --dry-run --outdir dist/partner"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@cloudflare/workers-types": "^5.20260710.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.50.0"
+  }
+}

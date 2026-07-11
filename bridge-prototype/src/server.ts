@@ -196,8 +196,8 @@ function server(contextStore: ContextStore, pendingPatchStore: PendingPatchStore
         "as validate_flow_routine_patch first and rejects garbage (bad schema " +
         "version, unknown routine, stale or malformed baseContentHash, out-of-range " +
         "values) before storing anything; Flow remains the sole authority for " +
-        "semantic validation, preview, and apply. Each call creates a new pending " +
-        "patch record (not idempotent) but never deletes or overwrites routine data " +
+        "semantic validation, preview, and apply. Identical retries reuse the same " +
+        "pending patch record (idempotent) and never delete or overwrite routine data " +
         "(not destructive).",
       inputSchema: {
         patch: z.unknown().describe("The candidate FlowRoutinePatch JSON object, schema version 2."),

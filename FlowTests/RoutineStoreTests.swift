@@ -2,6 +2,10 @@ import XCTest
 @testable import Flow
 
 final class RoutineStoreTests: XCTestCase {
+    private enum SimulatedWriteError: Error {
+        case failed
+    }
+
     private var createdDirectories: [URL] = []
     private var defaultsSuiteNames: [String] = []
 
@@ -132,6 +136,181 @@ final class RoutineStoreTests: XCTestCase {
             return XCTFail("Expected looksLikeCoachPatch, got \(error)")
         }
         XCTAssertEqual(store.routines.count, 1)
+    }
+
+    func testSaveFailureIsReportedAndDoesNotLeaveUnsavedMutationInMemory() throws {
+        let fixture = try makeFixture()
+        let unwritableURL = fixture.directory
+            .appendingPathComponent("missing", isDirectory: true)
+            .appendingPathComponent("routines.json")
+        let store = RoutineStore(fileURL: unwritableURL, defaults: fixture.defaults)
+        store.routines = []
+        let routine = Routine(
+            name: "Unsaved",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])]
+        )
+
+        let result = store.addRoutine(routine)
+
+        guard case .failure = result else {
+            return XCTFail("Expected the write to fail")
+        }
+        XCTAssertTrue(store.routines.isEmpty)
+        XCTAssertNotNil(store.saveError)
+    }
+
+    func testCoachApplyDoesNotReportSuccessWhenRoutineWriteFails() throws {
+        let fixture = try makeFixture()
+        let unwritableURL = fixture.directory
+            .appendingPathComponent("missing", isDirectory: true)
+            .appendingPathComponent("routines.json")
+        let history = CoachEditHistoryStore(fileURL: fixture.directory.appendingPathComponent("history.json"))
+        let store = RoutineStore(fileURL: unwritableURL, defaults: fixture.defaults, editHistory: history)
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])]
+        )
+        store.routines = [routine]
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Test disk failure.",
+            operations: [FlowRoutinePatchOperation(
+                kind: .replaceExerciseReps,
+                exerciseId: exerciseId,
+                expectedIntValue: 8,
+                newIntValue: 10
+            )]
+        )
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: store.routines)
+
+        let result = store.applyRoutinePatchPreview(preview)
+
+        guard case .failure(.persistenceFailed) = result else {
+            return XCTFail("Expected a persistence failure, got \(result)")
+        }
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
+        XCTAssertTrue(history.records.isEmpty)
+    }
+
+    func testApplyRollbackFailureKeepsMemoryAlignedWithUpdatedDisk() throws {
+        let fixture = try makeFixture()
+        let exerciseId = UUID()
+        let current = Routine(
+            name: "Coach",
+            sections: [Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])]
+        )
+        try JSONEncoder().encode([current]).write(to: fixture.fileURL)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory
+                .appendingPathComponent("missing", isDirectory: true)
+                .appendingPathComponent("history.json")
+        )
+        var routineWriteCount = 0
+        let store = RoutineStore(
+            fileURL: fixture.fileURL,
+            defaults: fixture.defaults,
+            editHistory: history,
+            fileWriter: { data, url in
+                routineWriteCount += 1
+                guard routineWriteCount == 1 else { throw SimulatedWriteError.failed }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: current.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: current),
+            exportedAt: nil,
+            rationale: "Exercise rollback failure.",
+            operations: [FlowRoutinePatchOperation(
+                kind: .replaceExerciseReps,
+                exerciseId: exerciseId,
+                expectedIntValue: 8,
+                newIntValue: 10
+            )]
+        )
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: store.routines)
+
+        let result = store.applyRoutinePatchPreview(preview)
+
+        guard case .failure(.persistenceFailed) = result else {
+            return XCTFail("Expected a persistence failure, got \(result)")
+        }
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 10)
+        let disk = try JSONDecoder().decode([Routine].self, from: Data(contentsOf: fixture.fileURL))
+        XCTAssertEqual(disk[0].sections[0].exercises[0].reps, 10)
+    }
+
+    func testRestoreRollbackFailureKeepsMemoryAlignedWithRestoredDisk() throws {
+        let fixture = try makeFixture()
+        let exerciseId = UUID()
+        let original = Routine(
+            name: "Coach",
+            sections: [Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])]
+        )
+        var edited = original
+        edited.sections[0].exercises[0].reps = 10
+        try JSONEncoder().encode([edited]).write(to: fixture.fileURL)
+
+        var historyWriteCount = 0
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("history.json"),
+            fileWriter: { data, url in
+                historyWriteCount += 1
+                guard historyWriteCount == 1 else { throw SimulatedWriteError.failed }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        let record = CoachEditRecord(
+            id: UUID(),
+            appliedAt: Date(timeIntervalSince1970: 1_000),
+            routineId: edited.id,
+            routineName: edited.name,
+            baseContentHash: FlowRoutineRevision.contentHash(for: original),
+            appliedFromContentHash: FlowRoutineRevision.contentHash(for: original),
+            resultingContentHash: FlowRoutineRevision.contentHash(for: edited),
+            rationale: "Exercise restore rollback failure.",
+            diffs: [],
+            previousSections: original.sections,
+            provenance: nil,
+            outcome: .applied,
+            restoredAt: nil
+        )
+        guard case .success = history.record(record) else {
+            return XCTFail("Expected history fixture to persist")
+        }
+
+        var routineWriteCount = 0
+        let store = RoutineStore(
+            fileURL: fixture.fileURL,
+            defaults: fixture.defaults,
+            editHistory: history,
+            fileWriter: { data, url in
+                routineWriteCount += 1
+                guard routineWriteCount == 1 else { throw SimulatedWriteError.failed }
+                try data.write(to: url, options: .atomic)
+            }
+        )
+
+        let result = store.restoreCoachEdit(record)
+
+        guard case .failure(.persistenceFailed) = result else {
+            return XCTFail("Expected a persistence failure, got \(result)")
+        }
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
+        let disk = try JSONDecoder().decode([Routine].self, from: Data(contentsOf: fixture.fileURL))
+        XCTAssertEqual(disk[0].sections[0].exercises[0].reps, 8)
+        XCTAssertEqual(history.records.first?.outcome, .applied)
     }
 
     private func makeFixture() throws -> (directory: URL, fileURL: URL, defaults: UserDefaults) {

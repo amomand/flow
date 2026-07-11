@@ -78,6 +78,13 @@ final class CoachPatchInboxTests: XCTestCase {
         XCTAssertTrue(inbox.patches.isEmpty)
     }
 
+    func testRemoveIsIdempotentWhenPatchIsAlreadyGone() throws {
+        let inbox = CoachPatchInbox(fileURL: try makeInboxFileURL())
+
+        XCTAssertTrue(inbox.remove(UUID()))
+        XCTAssertNil(inbox.persistenceError)
+    }
+
     func testCorruptInboxFileStartsEmptyAndPreservesBackup() throws {
         let fileURL = try makeInboxFileURL()
         try "not json".write(to: fileURL, atomically: true, encoding: .utf8)
@@ -109,6 +116,107 @@ final class CoachPatchInboxTests: XCTestCase {
         }
         XCTAssertEqual(existing.id, first.id)
         XCTAssertEqual(inbox.pending.count, 1)
+    }
+
+    func testBridgeEnqueueDeduplicatesByRemoteIdentityBeforePayload() throws {
+        let inbox = CoachPatchInbox(fileURL: try makeInboxFileURL())
+        guard case .added(let first) = inbox.enqueueBridge(
+            rawJSON: "{\"routineId\":\"first\"}",
+            bridgePatchId: "bridge-patch-1",
+            contextId: "context-1",
+            assistantProvider: "chatgpt-actions"
+        ) else {
+            return XCTFail("Expected bridge patch to be added")
+        }
+
+        let repeatedPull = inbox.enqueueBridge(
+            rawJSON: "{\"routineId\":\"changed-payload\"}",
+            bridgePatchId: "bridge-patch-1",
+            contextId: "context-2",
+            assistantProvider: "chatgpt-actions"
+        )
+
+        guard case .duplicate(let existing) = repeatedPull else {
+            return XCTFail("Expected repeated bridge identity to deduplicate")
+        }
+        XCTAssertEqual(existing.id, first.id)
+        XCTAssertNotEqual(existing.id.uuidString, existing.remoteProvenance?.bridgePatchId)
+        XCTAssertEqual(existing.remoteProvenance?.bridgePatchId, "bridge-patch-1")
+        XCTAssertEqual(existing.remoteProvenance?.contextId, "context-1")
+        XCTAssertEqual(existing.source, .bridge)
+        XCTAssertEqual(inbox.patches.count, 1)
+    }
+
+    func testSchemaOneInboxDecodesAndMigratesRemoteProvenanceAsNil() throws {
+        let fileURL = try makeInboxFileURL()
+        let localId = UUID()
+        let legacy: [String: Any] = [
+            "schemaVersion": 1,
+            "patches": [[
+                "id": localId.uuidString,
+                "receivedAt": "1970-01-01T00:00:01Z",
+                "source": "paste",
+                "rawJSON": "{\"routineId\":\"legacy\"}",
+                "status": "pending",
+            ]],
+        ]
+        try JSONSerialization.data(withJSONObject: legacy).write(to: fileURL)
+
+        let inbox = CoachPatchInbox(fileURL: fileURL)
+
+        XCTAssertEqual(inbox.pending.first?.id, localId)
+        XCTAssertNil(inbox.pending.first?.remoteProvenance)
+        XCTAssertNil(inbox.persistenceError)
+        let migrated = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any]
+        )
+        XCTAssertEqual(migrated["schemaVersion"] as? Int, 2)
+    }
+
+    func testFailedEnqueueRollsBackAndReportsRejection() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CoachPatchInboxTests-missing-\(UUID().uuidString)", isDirectory: true)
+        createdDirectories.append(directory)
+        let inbox = CoachPatchInbox(fileURL: directory.appendingPathComponent("coach-inbox.json"))
+
+        let outcome = inbox.enqueue(rawJSON: "{\"a\":1}", source: .paste)
+
+        guard case .rejected(let reason) = outcome else {
+            return XCTFail("Expected persistence failure to reject enqueue")
+        }
+        XCTAssertTrue(inbox.patches.isEmpty)
+        XCTAssertNotNil(inbox.persistenceError)
+        XCTAssertTrue(reason.contains("Could not save the coach inbox"))
+    }
+
+    func testFailedResolveAndRemoveRollBackInMemoryMutation() throws {
+        let fileURL = try makeInboxFileURL()
+        let inbox = CoachPatchInbox(fileURL: fileURL)
+        guard case .added(let patch) = inbox.enqueue(rawJSON: "{\"a\":1}", source: .paste) else {
+            return XCTFail("Expected patch to be added")
+        }
+        try blockInboxDirectory(containing: fileURL)
+
+        XCTAssertFalse(inbox.markApplied(patch.id))
+        XCTAssertEqual(inbox.patches.first?.status, .pending)
+        XCTAssertNil(inbox.patches.first?.resolvedAt)
+        XCTAssertFalse(inbox.remove(patch.id))
+        XCTAssertEqual(inbox.patches.map(\.id), [patch.id])
+        XCTAssertNotNil(inbox.persistenceError)
+    }
+
+    func testFailedClearResolvedRollsBackInMemoryMutation() throws {
+        let fileURL = try makeInboxFileURL()
+        let inbox = CoachPatchInbox(fileURL: fileURL)
+        guard case .added(let patch) = inbox.enqueue(rawJSON: "{\"a\":1}", source: .paste) else {
+            return XCTFail("Expected patch to be added")
+        }
+        XCTAssertTrue(inbox.markRejected(patch.id))
+        try blockInboxDirectory(containing: fileURL)
+
+        XCTAssertFalse(inbox.clearResolved())
+        XCTAssertEqual(inbox.resolved.map(\.id), [patch.id])
+        XCTAssertNotNil(inbox.persistenceError)
     }
 
     func testEnqueueRejectsEmptyAndOversizedPayloads() throws {
@@ -301,5 +409,11 @@ final class CoachPatchInboxTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         createdDirectories.append(directory)
         return directory.appendingPathComponent("coach-inbox.json")
+    }
+
+    private func blockInboxDirectory(containing fileURL: URL) throws {
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.removeItem(at: directory)
+        try Data("not a directory".utf8).write(to: directory)
     }
 }

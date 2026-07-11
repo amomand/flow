@@ -42,13 +42,28 @@ struct CoachEditRecord: Codable, Equatable, Identifiable {
 
 /// Where an applied patch came from, mirroring the lifecycle fields the
 /// bridge uses (#38/#39). Manual transports fill what they know: the inbox
-/// record id and, for deep links, the assistant provider. `contextId` stays
-/// nil until bridge-delivered patches carry one.
+/// record id and, for deep links, the assistant provider. Bridge-delivered
+/// patches also preserve the distinct remote patch and snapshot identities.
 struct CoachEditProvenance: Codable, Equatable {
     let sourcePatchId: UUID?
+    let bridgePatchId: String?
     let contextId: String?
     let assistantProvider: String?
     let source: PendingCoachPatch.Source?
+
+    init(
+        sourcePatchId: UUID?,
+        bridgePatchId: String? = nil,
+        contextId: String?,
+        assistantProvider: String?,
+        source: PendingCoachPatch.Source?
+    ) {
+        self.sourcePatchId = sourcePatchId
+        self.bridgePatchId = bridgePatchId
+        self.contextId = contextId
+        self.assistantProvider = assistantProvider
+        self.source = source
+    }
 }
 
 /// Durable audit log for applied coach patches (`coach-edit-history.json`).
@@ -61,6 +76,18 @@ struct CoachEditProvenance: Codable, Equatable {
 @Observable
 final class CoachEditHistoryStore {
     private(set) var records: [CoachEditRecord] = []
+    private(set) var persistenceError: String?
+
+    enum PersistenceError: LocalizedError, Equatable {
+        case writeFailed(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .writeFailed(let message):
+                return message
+            }
+        }
+    }
 
     /// Oldest entries are pruned beyond this. Twenty applied edits of a
     /// personal routine set is far more undo depth than the product needs.
@@ -74,14 +101,21 @@ final class CoachEditHistoryStore {
     }
 
     private let fileURL: URL
+    private let fileWriter: (Data, URL) throws -> Void
 
-    init(fileURL: URL? = nil) {
+    init(
+        fileURL: URL? = nil,
+        fileWriter: @escaping (Data, URL) throws -> Void = { data, url in
+            try data.write(to: url, options: .atomic)
+        }
+    ) {
         if let fileURL {
             self.fileURL = fileURL
         } else {
             let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
             self.fileURL = docs.appendingPathComponent("coach-edit-history.json")
         }
+        self.fileWriter = fileWriter
         load()
     }
 
@@ -94,32 +128,48 @@ final class CoachEditHistoryStore {
         newestFirst.first { $0.outcome == .applied }
     }
 
-    func record(_ entry: CoachEditRecord) {
+    @discardableResult
+    func record(_ entry: CoachEditRecord) -> Result<Void, PersistenceError> {
+        let previous = records
         records.append(entry)
         if records.count > Self.maxRecords {
             records.sort { $0.appliedAt < $1.appliedAt }
             records.removeFirst(records.count - Self.maxRecords)
         }
-        save()
+        let result = save()
+        if case .failure = result {
+            records = previous
+        }
+        return result
     }
 
-    func markRestored(_ id: UUID) {
-        guard let index = records.firstIndex(where: { $0.id == id }) else { return }
+    @discardableResult
+    func markRestored(_ id: UUID) -> Result<Void, PersistenceError> {
+        guard let index = records.firstIndex(where: { $0.id == id }) else { return .success(()) }
+        let previous = records[index]
         records[index].outcome = .restored
         records[index].restoredAt = Date()
-        save()
+        let result = save()
+        if case .failure = result {
+            records[index] = previous
+        }
+        return result
     }
 
     // MARK: - Persistence
 
-    private func save() {
+    private func save() -> Result<Void, PersistenceError> {
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(HistoryFile(schemaVersion: Self.historySchemaVersion, records: records))
-            try data.write(to: fileURL, options: .atomic)
+            try fileWriter(data, fileURL)
+            persistenceError = nil
+            return .success(())
         } catch {
+            persistenceError = error.localizedDescription
             print("Failed to save coach edit history: \(error)")
+            return .failure(.writeFailed(error.localizedDescription))
         }
     }
 

@@ -246,6 +246,25 @@ final class CoachEditHistoryTests: XCTestCase {
         XCTAssertEqual(history.newestFirst.last?.routineName, "Routine 3")
     }
 
+    func testHistoryWriteFailureIsVisibleAndRollsBackInMemoryRecord() throws {
+        let fixture = try makeFixture()
+        let unwritableURL = fixture.directory
+            .appendingPathComponent("missing", isDirectory: true)
+            .appendingPathComponent("coach-edit-history.json")
+        let history = CoachEditHistoryStore(fileURL: unwritableURL)
+
+        let result = history.record(makeSyntheticRecord(
+            appliedAt: Date(timeIntervalSince1970: 1_000),
+            routineName: "Unsaved"
+        ))
+
+        guard case .failure = result else {
+            return XCTFail("Expected the write to fail")
+        }
+        XCTAssertTrue(history.records.isEmpty)
+        XCTAssertNotNil(history.persistenceError)
+    }
+
     // MARK: - Helpers
 
     private struct Fixture {

@@ -8,6 +8,14 @@ import Foundation
 /// validation always runs against the routines as they are now, never against
 /// anything cached at arrival time.
 struct PendingCoachPatch: Codable, Equatable, Identifiable {
+    struct RemoteProvenance: Codable, Equatable {
+        /// The bridge record identity. This is distinct from the local inbox
+        /// `PendingCoachPatch.id` and is the retry/deduplication key.
+        let bridgePatchId: String
+        /// The exact snapshot against which the remote patch was proposed.
+        let contextId: String
+    }
+
     enum Source: String, Codable {
         case paste
         case file
@@ -28,6 +36,9 @@ struct PendingCoachPatch: Codable, Equatable, Identifiable {
     /// Which assistant produced the patch, when the transport can say
     /// (deep links may carry `provider=`; the bridge will always know).
     let assistantProvider: String?
+    /// Present only for bridge-delivered patches. Optional so schema 1 inbox
+    /// files continue to decode without a migration shim per record.
+    let remoteProvenance: RemoteProvenance?
     let rawJSON: String
     var status: Status
     var resolvedAt: Date?
@@ -69,13 +80,16 @@ final class CoachPatchInbox {
     /// One-line transport feedback (patch received, link unreadable, ...)
     /// shown inside the coach sheet.
     var notice: String?
+    /// The most recent load/write failure, retained for UI and sync code until
+    /// a later successful write clears it.
+    private(set) var persistenceError: String?
 
     /// Patches above this size are rejected before they touch the inbox.
     /// Real patches are a few KB; this only guards against pasting something
     /// wildly wrong, like a workout export or a whole chat transcript.
     static let maxPatchBytes = 512 * 1024
 
-    private static let inboxSchemaVersion = 1
+    private static let inboxSchemaVersion = 2
 
     private struct InboxFile: Codable {
         let schemaVersion: Int
@@ -110,6 +124,44 @@ final class CoachPatchInbox {
 
     @discardableResult
     func enqueue(rawJSON: String, source: PendingCoachPatch.Source, assistantProvider: String? = nil) -> EnqueueOutcome {
+        enqueue(
+            rawJSON: rawJSON,
+            source: source,
+            assistantProvider: assistantProvider,
+            remoteProvenance: nil
+        )
+    }
+
+    /// Retry-safe entry point for patches pulled from the remote bridge.
+    /// Identity deduplication intentionally precedes payload deduplication: a
+    /// repeated pull of a resolved bridge record must not become a new patch.
+    @discardableResult
+    func enqueueBridge(
+        rawJSON: String,
+        bridgePatchId: String,
+        contextId: String,
+        assistantProvider: String? = nil
+    ) -> EnqueueOutcome {
+        if let existing = patches.first(where: { $0.remoteProvenance?.bridgePatchId == bridgePatchId }) {
+            return .duplicate(existing)
+        }
+        return enqueue(
+            rawJSON: rawJSON,
+            source: .bridge,
+            assistantProvider: assistantProvider,
+            remoteProvenance: PendingCoachPatch.RemoteProvenance(
+                bridgePatchId: bridgePatchId,
+                contextId: contextId
+            )
+        )
+    }
+
+    private func enqueue(
+        rawJSON: String,
+        source: PendingCoachPatch.Source,
+        assistantProvider: String?,
+        remoteProvenance: PendingCoachPatch.RemoteProvenance?
+    ) -> EnqueueOutcome {
         let trimmed = rawJSON.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return .rejected("There was no patch text to import.")
@@ -129,31 +181,42 @@ final class CoachPatchInbox {
             receivedAt: Date(),
             source: source,
             assistantProvider: assistantProvider,
+            remoteProvenance: remoteProvenance,
             rawJSON: trimmed,
             status: .pending,
             resolvedAt: nil
         )
         patches.append(patch)
-        save()
+        guard save() else {
+            patches.removeAll { $0.id == patch.id }
+            return .rejected(persistenceError ?? "Could not save the coach inbox.")
+        }
         return .added(patch)
     }
 
-    func markApplied(_ id: UUID) {
+    @discardableResult
+    func markApplied(_ id: UUID) -> Bool {
         resolve(id, as: .applied)
     }
 
-    func markRejected(_ id: UUID) {
+    @discardableResult
+    func markRejected(_ id: UUID) -> Bool {
         resolve(id, as: .rejected)
     }
 
-    func remove(_ id: UUID) {
-        patches.removeAll { $0.id == id }
-        save()
+    @discardableResult
+    func remove(_ id: UUID) -> Bool {
+        guard patches.contains(where: { $0.id == id }) else { return true }
+        return persistMutation {
+            patches.removeAll { $0.id == id }
+        }
     }
 
-    func clearResolved() {
-        patches.removeAll { $0.status != .pending }
-        save()
+    @discardableResult
+    func clearResolved() -> Bool {
+        persistMutation {
+            patches.removeAll { $0.status != .pending }
+        }
     }
 
     /// Full-preview classification of a pending patch against the current
@@ -258,23 +321,39 @@ final class CoachPatchInbox {
         }
     }
 
-    private func resolve(_ id: UUID, as status: PendingCoachPatch.Status) {
-        guard let index = patches.firstIndex(where: { $0.id == id }) else { return }
-        patches[index].status = status
-        patches[index].resolvedAt = Date()
-        save()
+    private func resolve(_ id: UUID, as status: PendingCoachPatch.Status) -> Bool {
+        guard let index = patches.firstIndex(where: { $0.id == id }) else { return false }
+        return persistMutation {
+            patches[index].status = status
+            patches[index].resolvedAt = Date()
+        }
     }
 
     // MARK: - Persistence
 
-    private func save() {
+    private func persistMutation(_ mutation: () -> Void) -> Bool {
+        let previous = patches
+        mutation()
+        guard save() else {
+            patches = previous
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
+    private func save() -> Bool {
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(InboxFile(schemaVersion: Self.inboxSchemaVersion, patches: patches))
             try data.write(to: fileURL, options: .atomic)
+            persistenceError = nil
+            return true
         } catch {
+            persistenceError = "Could not save the coach inbox: \(error.localizedDescription)"
             print("Failed to save coach inbox: \(error)")
+            return false
         }
     }
 
@@ -284,9 +363,16 @@ final class CoachPatchInbox {
             let data = try Data(contentsOf: fileURL)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            patches = try decoder.decode(InboxFile.self, from: data).patches
+            let inboxFile = try decoder.decode(InboxFile.self, from: data)
+            patches = inboxFile.patches
+            if inboxFile.schemaVersion < Self.inboxSchemaVersion {
+                _ = save()
+            } else {
+                persistenceError = nil
+            }
         } catch {
             preserveCorruptFile()
+            persistenceError = "Could not load the coach inbox: \(error.localizedDescription)"
             print("Failed to load coach inbox: \(error)")
         }
     }
