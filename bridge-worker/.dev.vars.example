@@ -1,3 +1,6 @@
 FLOW_COACH_MAILBOX_ID="local-person"
 FLOW_COACH_ACTIONS_SECRET="replace-with-a-long-random-actions-secret"
 FLOW_COACH_DEVICE_SECRET="replace-with-a-different-long-random-device-secret"
+# workerd cannot emulate jurisdiction-restricted Durable Object namespaces.
+# Never set this binding in a deployed Wrangler environment.
+FLOW_COACH_LOCAL_TEST="true"
