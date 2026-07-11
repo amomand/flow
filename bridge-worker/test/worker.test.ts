@@ -101,6 +101,18 @@ describe("Flow Coach bridge Worker", () => {
     expect((await upload(envelope)).status).toBe(201);
   });
 
+  it("rejects duplicate sharing tiers", async () => {
+    const envelope = snapshot();
+    envelope.sharingProfile.dataTiers = ["routines", "strengthHistory", "routines"];
+
+    const response = await upload(envelope);
+    expect(response.status).toBe(422);
+    expect((await json(response)).problems).toContainEqual({
+      path: "sharingProfile.dataTiers",
+      message: "data tiers must not contain duplicates",
+    });
+  });
+
   it("keeps differently configured mailbox objects isolated", async () => {
     const mailboxA = env.FLOW_COACH.get(env.FLOW_COACH.idFromName(`mailbox-a-${crypto.randomUUID()}`));
     const mailboxB = env.FLOW_COACH.get(env.FLOW_COACH.idFromName(`mailbox-b-${crypto.randomUUID()}`));

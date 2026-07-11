@@ -105,14 +105,20 @@ export const coachContextSchema = z.object({
   constraints: z.object({ notes: z.string().max(2000).optional() }).strict().optional(),
 }).strict();
 
+const dataTierSchema = z.enum([
+  "routines",
+  "strengthHistory",
+  "cardioHistory",
+  "healthMetrics",
+]);
+
 export const sharingProfileSchema = z.object({
   schemaVersion: z.literal(1),
-  dataTiers: z.array(z.enum([
-    "routines",
-    "strengthHistory",
-    "cardioHistory",
-    "healthMetrics",
-  ])),
+  dataTiers: z.array(dataTierSchema).max(4).superRefine((tiers, issue) => {
+    if (new Set(tiers).size !== tiers.length) {
+      issue.addIssue({ code: "custom", message: "data tiers must not contain duplicates" });
+    }
+  }),
 }).strict();
 
 export const snapshotEnvelopeSchema = z.object({
