@@ -1,5 +1,7 @@
-import type { Env } from "../src/index";
+import type { Env as FlowCoachEnv } from "../src/index";
 
-declare module "cloudflare:test" {
-  interface ProvidedEnv extends Env {}
+declare global {
+  namespace Cloudflare {
+    interface Env extends FlowCoachEnv {}
+  }
 }

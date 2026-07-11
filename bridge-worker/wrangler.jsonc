@@ -19,6 +19,34 @@
       }
     ]
   },
+  "env": {
+    "primary": {
+      "vars": {
+        "FLOW_COACH_MAILBOX_ID": "primary-v1"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "FLOW_COACH",
+            "class_name": "FlowCoachMailbox"
+          }
+        ]
+      }
+    },
+    "partner": {
+      "vars": {
+        "FLOW_COACH_MAILBOX_ID": "partner-v1"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "FLOW_COACH",
+            "class_name": "FlowCoachMailbox"
+          }
+        ]
+      }
+    }
+  },
   "migrations": [
     {
       "tag": "v1",

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { SELF } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
@@ -92,6 +92,45 @@ describe("Flow Coach bridge Worker", () => {
       headers: auth(ACTIONS_SECRET),
     });
     expect(unknown.status).toBe(404);
+  });
+
+  it("accepts Swift exercises that omit empty phase overrides", async () => {
+    const envelope = snapshot();
+    delete (envelope.context.routines[0]!.sections[0]!.exercises[0]! as { phaseOverrides?: unknown }).phaseOverrides;
+
+    expect((await upload(envelope)).status).toBe(201);
+  });
+
+  it("keeps differently configured mailbox objects isolated", async () => {
+    const mailboxA = env.FLOW_COACH.get(env.FLOW_COACH.idFromName(`mailbox-a-${crypto.randomUUID()}`));
+    const mailboxB = env.FLOW_COACH.get(env.FLOW_COACH.idFromName(`mailbox-b-${crypto.randomUUID()}`));
+    const envelope = snapshot();
+    const internalDeviceHeaders = { "x-flow-edge": "device", "content-type": "application/json" };
+    const internalActionsHeaders = { "x-flow-edge": "actions", "x-flow-principal": "actions-primary" };
+
+    const stored = await mailboxA.fetch("https://flow.test/device/snapshots", {
+      method: "PUT",
+      headers: internalDeviceHeaders,
+      body: JSON.stringify(envelope),
+    });
+    expect(stored.status).toBe(201);
+
+    const absentFromB = await mailboxB.fetch(`https://flow.test/actions/routines?contextId=${envelope.contextId}`, {
+      headers: internalActionsHeaders,
+    });
+    expect(absentFromB.status).toBe(404);
+  });
+
+  it("rejects an oversized body without relying on Content-Length", async () => {
+    const headers = new Headers(auth(DEVICE_SECRET));
+    headers.delete("content-length");
+    const response = await SELF.fetch("https://flow.test/device/snapshots", {
+      method: "PUT",
+      headers,
+      body: `{"padding":"${"x".repeat(512 * 1024)}"}`,
+    });
+
+    expect(response.status).toBe(413);
   });
 
   it("rejects an already-expired snapshot", async () => {

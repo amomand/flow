@@ -7,7 +7,6 @@ import {
 } from "./schemas";
 import type { CoachContext, SnapshotEnvelope } from "./schemas";
 
-const SINGLE_USER_OBJECT = "flow-coach-single-user";
 const MAX_REQUEST_BYTES = 512 * 1024;
 const MAX_SNAPSHOTS = 8;
 const MAX_SNAPSHOT_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -16,6 +15,7 @@ const TOMBSTONE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface Env {
   FLOW_COACH: DurableObjectNamespace<FlowCoachMailbox>;
+  FLOW_COACH_MAILBOX_ID?: string;
   FLOW_COACH_ACTIONS_SECRET?: string;
   FLOW_COACH_DEVICE_SECRET?: string;
   /** Test-only: workerd does not implement jurisdiction-restricted namespaces. */
@@ -27,13 +27,17 @@ type Edge = "actions" | "device";
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const mailboxId = configuredMailboxId(env.FLOW_COACH_MAILBOX_ID);
     if (url.pathname === "/healthz" && request.method === "GET") {
-      return json({ ok: true });
+      return mailboxId
+        ? json({ ok: true })
+        : json({ ok: false, error: "Mailbox deployment is not configured." }, 503);
     }
     const edge: Edge | undefined = url.pathname.startsWith("/actions/")
       ? "actions"
       : url.pathname.startsWith("/device/") ? "device" : undefined;
     if (!edge) return json({ error: "Not found." }, 404);
+    if (!mailboxId) return json({ error: "Mailbox deployment is not configured." }, 503);
 
     const expected = edge === "actions" ? env.FLOW_COACH_ACTIONS_SECRET : env.FLOW_COACH_DEVICE_SECRET;
     if (!expected) return json({ error: "This API edge is not configured." }, 503);
@@ -53,11 +57,20 @@ export default {
     const namespace = env.FLOW_COACH_LOCAL_TEST === "true"
       ? env.FLOW_COACH
       : env.FLOW_COACH.jurisdiction("eu");
-    const stub = namespace.get(namespace.idFromName(SINGLE_USER_OBJECT));
+    // Mailbox selection is trusted deployment configuration, never a model-
+    // or device-supplied request parameter. The first household deployment
+    // runs one separately authenticated Worker service per person.
+    const stub = namespace.get(namespace.idFromName(`flow-coach:${mailboxId}`));
     const response = await stub.fetch(forwarded);
     return withSecurityHeaders(response);
   },
 };
+
+function configuredMailboxId(value: string | undefined): string | undefined {
+  const candidate = value?.trim();
+  if (!candidate || candidate.length > 128) return undefined;
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(candidate) ? candidate : undefined;
+}
 
 function bearerToken(header: string | null): string | undefined {
   if (!header?.startsWith("Bearer ")) return undefined;
@@ -481,9 +494,30 @@ function boundedInt(raw: string | null, fallback: number, max: number, allowZero
 }
 
 async function readJson(request: Request, maxBytes: number): Promise<unknown | Response> {
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > maxBytes) return json({ error: "Request body is too large." }, 413);
-  return JSON.parse(text) as unknown;
+  const body = request.body;
+  if (!body) throw new SyntaxError("Request body is empty.");
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > maxBytes) {
+      await reader.cancel("request body exceeded endpoint limit");
+      return json({ error: "Request body is too large." }, 413);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return JSON.parse(new TextDecoder().decode(bytes)) as unknown;
 }
 
 function canonicalJson(value: unknown): string {

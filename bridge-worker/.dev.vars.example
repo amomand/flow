@@ -1,2 +1,3 @@
+FLOW_COACH_MAILBOX_ID="local-person"
 FLOW_COACH_ACTIONS_SECRET="replace-with-a-long-random-actions-secret"
 FLOW_COACH_DEVICE_SECRET="replace-with-a-different-long-random-device-secret"

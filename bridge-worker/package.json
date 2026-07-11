@@ -7,7 +7,9 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "dev": "wrangler dev",
-    "deploy:dry-run": "wrangler deploy --dry-run --outdir dist"
+    "deploy:dry-run": "npm run deploy:dry-run:primary && npm run deploy:dry-run:partner",
+    "deploy:dry-run:primary": "wrangler deploy --env primary --dry-run --outdir dist/primary",
+    "deploy:dry-run:partner": "wrangler deploy --env partner --dry-run --outdir dist/partner"
   },
   "dependencies": {
     "zod": "^4.3.6"

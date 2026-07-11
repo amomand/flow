@@ -4,7 +4,7 @@ The full contract for routine exchange between Flow and an assistant. The README
 
 Flow Coach is the first manual transport for a broader routine exchange contract. The target direction is that a future ChatGPT app or connector can see Flow routine context and propose routine edits, while Flow remains responsible for validation, preview, confirmation, persistence, and rollback.
 
-The provisional production bridge decision is recorded in [Flow Coach bridge architecture](flow-coach-bridge-architecture.md). It keeps the same contract behind separate Actions, device, and optional MCP adapters; its private-GPT, Cloudflare, and initial-sharing-tier human gates remain open.
+The provisional production bridge decision is recorded in [Flow Coach bridge architecture](flow-coach-bridge-architecture.md). It keeps the same contract behind separate Actions, device, and optional MCP adapters. Each Flow installation pairs with one isolated single-person mailbox deployment; multiple people do not share bridge credentials or remote data. Its private-GPT, Cloudflare, and initial-sharing-tier human gates remain open.
 
 The manual transport proves the contract and trust boundary before a live bridge exists. It reuses `RoutineStore` and the existing `routines.json` persistence path when a patch is applied, but it does not reuse whole-routine import because that path duplicates routines with fresh IDs. Coach patches edit an existing routine and therefore need their own validation and preview flow.
 

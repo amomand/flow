@@ -13,41 +13,69 @@ npm test
 npm run dev
 ```
 
-Use separate long random values for `FLOW_COACH_ACTIONS_SECRET` and `FLOW_COACH_DEVICE_SECRET`. `.dev.vars` is ignored. Never put a real secret, coach snapshot, routine, patch, or request header in source, an issue, a command transcript, or a log message.
+Use separate long random values for `FLOW_COACH_ACTIONS_SECRET` and `FLOW_COACH_DEVICE_SECRET`. `FLOW_COACH_MAILBOX_ID` is a non-secret deployment identifier, but it must come from trusted configuration rather than a request. `.dev.vars` is ignored. Never put a real secret, coach snapshot, routine, patch, or request header in source, an issue, a command transcript, or a log message.
+
+## Household deployment boundary
+
+The first production shape is one deployment per person, not one shared household mailbox. The checked-in Wrangler environments deploy as separate Worker services:
+
+| Environment | Worker service | Mailbox configuration |
+|---|---|---|
+| `primary` | `flow-coach-bridge-primary` | `primary-v1` |
+| `partner` | `flow-coach-bridge-partner` | `partner-v1` |
+
+Wrangler environments have non-inherited Durable Object bindings and environment-specific secrets. Do not add `script_name` pointing both environments back to the same Worker, reuse either credential, or configure both private GPTs against one hostname. The mailbox IDs are routing configuration, not person authentication; the separately scoped credentials and service boundary provide authorization.
+
+One Flow installation pairs with one device endpoint. The person operating the matching private GPT may be someone else, but proposals still land only in the paired Flow inbox for review. Give each GPT and ChatGPT conversation a clear person-specific name so conversational context does not cross the storage boundary.
 
 ## Pre-deploy gate
 
 1. Complete #46's private-GPT desktop and iOS capability test.
 2. Confirm the initial Flow sharing tier and that the Cloudflare account/billing and EU Durable Object are acceptable.
 3. Review the production OpenAPI schema and private-GPT instructions against the final hostname.
-4. Run `npm run check`, `npm test`, and `npm run deploy:dry-run`.
-5. Confirm `wrangler.jsonc` still uses `new_sqlite_classes` and the Worker calls `FLOW_COACH.jurisdiction("eu")` before constructing the singleton ID.
+4. Run `npm run check`, `npm test`, and `npm run deploy:dry-run`; the deploy script validates both `primary` and `partner` explicitly.
+5. Confirm `wrangler.jsonc` still gives each environment its own Durable Object binding and mailbox ID, uses `new_sqlite_classes`, and the Worker calls `FLOW_COACH.jurisdiction("eu")` before constructing the configured mailbox ID.
+6. Choose separate hostnames and private GPT Action configurations for the two environments.
 
 ## First deployment
 
+Authenticate Wrangler, then deploy and configure one environment at a time. Do not deploy the root `flow-coach-bridge` Worker in production.
+
 ```bash
 npx wrangler login
-npx wrangler secret put FLOW_COACH_ACTIONS_SECRET
-npx wrangler secret put FLOW_COACH_DEVICE_SECRET
-npx wrangler deploy
+npx wrangler deploy --env primary
+npx wrangler secret put FLOW_COACH_ACTIONS_SECRET --env primary
+npx wrangler secret put FLOW_COACH_DEVICE_SECRET --env primary
+npx wrangler deploy --env partner
+npx wrangler secret put FLOW_COACH_ACTIONS_SECRET --env partner
+npx wrangler secret put FLOW_COACH_DEVICE_SECRET --env partner
 ```
 
-Do not add plaintext secret bindings to `wrangler.jsonc`. The Worker returns `503` for an edge whose secret is absent and `401` for the wrong credential. The Actions credential cannot call device routes and the device credential cannot call Actions routes.
+Do not add plaintext secret bindings to `wrangler.jsonc`. The Worker returns `503` when mailbox deployment configuration or an edge secret is absent, and `401` for the wrong credential. The Actions credential cannot call device routes, the device credential cannot call Actions routes, and neither environment's credential should authenticate to the other environment.
+
+Before real data, run a two-environment isolation smoke test with fixture snapshots:
+
+1. Upload a different fixture context to each device endpoint.
+2. Verify each Actions endpoint reads only its own fixture.
+3. Verify both credentials for `primary` receive `401` from `partner`, and vice versa.
+4. Create and pull one proposal in each environment; verify neither appears in the other.
+5. Delete all data in one environment; verify the other environment is unchanged.
+6. Remove the fixtures and rotate the temporary credentials before pairing either phone.
 
 ## Rotation
 
-This foundation exposes one active secret per edge. Rotate one boundary at a time: create the replacement value, update its only client, write the corresponding Worker secret, deploy, and immediately verify both an allowed request and a rejected old credential. Rotate the other boundary separately. A dual-secret overlap can be added before production if zero-downtime rotation becomes important; do not reuse one secret across both edges.
+Each environment exposes one active secret per edge. Rotate one boundary in one environment at a time: create the replacement value, update its only client, write the corresponding environment-specific Worker secret, deploy, and immediately verify both an allowed request and a rejected old credential. Rotate the other boundary separately. A dual-secret overlap can be added before production if zero-downtime rotation becomes important; do not reuse a secret across edges or people.
 
 ## Data deletion and teardown
 
-Delete one snapshot with `DELETE /device/snapshots/{contextId}`. This also removes remote proposals derived from it. Delete all mailbox data with authenticated `DELETE /device/data` before dismantling the Worker. A remote delete cannot retract a patch already saved in Flow's local inbox.
+Delete one snapshot with `DELETE /device/snapshots/{contextId}`. This also removes remote proposals derived from it. Delete all data for one mailbox with that environment's authenticated `DELETE /device/data` before dismantling its Worker. A remote delete cannot retract a patch already saved in Flow's local inbox and must not affect the other environment.
 
 For full teardown:
 
 1. Call `DELETE /device/data` and verify it succeeds.
 2. Remove the private GPT Action and its credential.
-3. Delete both Worker secrets with Wrangler.
-4. Delete the Worker only after the mailbox is empty.
+3. Delete both Worker secrets for that environment with Wrangler.
+4. Delete that environment's Worker only after its mailbox is empty.
 5. Confirm in the Cloudflare dashboard that the Worker, Durable Object namespace/data, routes, custom domain, logs, and secrets are gone.
 
 Do not treat deleting only the Worker script as evidence that Durable Object data was removed.

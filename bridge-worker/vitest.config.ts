@@ -7,6 +7,7 @@ export default defineConfig({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
         bindings: {
+          FLOW_COACH_MAILBOX_ID: "fixture-person",
           FLOW_COACH_ACTIONS_SECRET: "fixture-actions-secret",
           FLOW_COACH_DEVICE_SECRET: "fixture-device-secret",
           FLOW_COACH_LOCAL_TEST: "true",

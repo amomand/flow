@@ -24,7 +24,8 @@ export const exerciseSchema = z.object({
   restAfterExerciseSeconds: z.number().int().min(0).max(900),
   notes: z.string().max(500),
   perSide: z.boolean(),
-  phaseOverrides: z.record(z.string(), phaseOverride),
+  // Swift omits this key when the dictionary is empty.
+  phaseOverrides: z.record(z.string(), phaseOverride).default({}),
 }).strict();
 
 export const routineSchema = z.object({
