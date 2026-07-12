@@ -1,6 +1,6 @@
 # Flow Coach bridge runbook
 
-The bridge is deliberately not deployed by this repository change. Deployment needs Alex's Cloudflare approval and fresh secrets entered out of band.
+The bridge is deliberately not deployed by this repository change. Deployment needs Alex's Cloudflare approval and fresh secrets entered out of band. A narrower primary-mailbox fixture deployment answers #46 (the Claude connector spike) before any real data or phone pairing.
 
 ## Local setup
 
@@ -15,6 +15,8 @@ npm run dev
 
 Use separate long random values for `FLOW_COACH_ACTIONS_SECRET` and `FLOW_COACH_DEVICE_SECRET`. `FLOW_COACH_MAILBOX_ID` is a non-secret deployment identifier, but it must come from trusted configuration rather than a request. `.dev.vars` is ignored. Never put a real secret, coach snapshot, routine, patch, or request header in source, an issue, a command transcript, or a log message.
 
+The example sets `FLOW_COACH_LOCAL_TEST=true` because workerd cannot emulate jurisdiction-restricted Durable Object namespaces. That binding is for local development only. Never add it to `wrangler.jsonc`, a deployed environment, or a Cloudflare secret.
+
 ## Household deployment boundary
 
 The first production shape is one deployment per person, not one shared household mailbox. The checked-in Wrangler environments deploy as separate Worker services:
@@ -24,22 +26,24 @@ The first production shape is one deployment per person, not one shared househol
 | `primary` | `flow-coach-bridge-primary` | `primary-v1` |
 | `partner` | `flow-coach-bridge-partner` | `partner-v1` |
 
-Wrangler environments have non-inherited Durable Object bindings and environment-specific secrets. Do not add `script_name` pointing both environments back to the same Worker, reuse either credential, or configure both private GPTs against one hostname. The mailbox IDs are routing configuration, not person authentication; the separately scoped credentials and service boundary provide authorization.
+Wrangler environments have non-inherited Durable Object bindings and environment-specific secrets. Do not add `script_name` pointing both environments back to the same Worker, reuse either credential, or configure both people's coach clients against one hostname. The mailbox IDs are routing configuration, not person authentication; the separately scoped credentials and service boundary provide authorization.
 
-One Flow installation pairs with one device endpoint. The person operating the matching private GPT may be someone else, but proposals still land only in the paired Flow inbox for review. Give each GPT and ChatGPT conversation a clear person-specific name so conversational context does not cross the storage boundary.
+One Flow installation pairs with one device endpoint. The person operating the matching coach client may be someone else, but proposals still land only in the paired Flow inbox for review. Give each Claude Project and conversation a clear person-specific name so conversational context does not cross the storage boundary.
 
-## Pre-deploy gate
+## Real-data pre-deploy gate
 
-1. Complete #46's private-GPT desktop and iOS capability test.
+The primary Worker may be deployed with temporary credentials and synthetic fixtures to complete #46. Before either mailbox receives real data:
+
+1. Complete #46's Claude desktop and iOS connector test, then remove its retained fixture.
 2. Confirm the initial Flow sharing tier and that the Cloudflare account/billing and EU Durable Object are acceptable.
-3. Review the production OpenAPI schema and private-GPT instructions against the final hostname.
+3. Review each person's connector configuration against the final hostname.
 4. Run `npm run check`, `npm test`, and `npm run deploy:dry-run`; the deploy script validates both `primary` and `partner` explicitly.
 5. Confirm `wrangler.jsonc` still gives each environment its own Durable Object binding and mailbox ID, uses `new_sqlite_classes`, and the Worker calls `FLOW_COACH.jurisdiction("eu")` before constructing the configured mailbox ID.
-6. Choose separate hostnames and private GPT Action configurations for the two environments.
+6. Choose separate hostnames and per-person connector configurations for the two environments.
 
-## First deployment
+## First household deployment
 
-Authenticate Wrangler, then deploy and configure one environment at a time. Do not deploy the root `flow-coach-bridge` Worker in production.
+After the primary fixture proof passes, authenticate Wrangler and deploy/configure one environment at a time. The primary environment may already exist from #46; rotate its temporary credentials before pairing Flow. Do not deploy the root `flow-coach-bridge` Worker in production.
 
 ```bash
 npx wrangler login
@@ -73,7 +77,7 @@ Delete one snapshot with `DELETE /device/snapshots/{contextId}`. This also remov
 For full teardown:
 
 1. Call `DELETE /device/data` and verify it succeeds.
-2. Remove the private GPT Action and its credential.
+2. Remove the coach connector configuration and its credential.
 3. Delete both Worker secrets for that environment with Wrangler.
 4. Delete that environment's Worker only after its mailbox is empty.
 5. Confirm in the Cloudflare dashboard that the Worker, Durable Object namespace/data, routes, custom domain, logs, and secrets are gone.

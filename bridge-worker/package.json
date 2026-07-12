@@ -7,6 +7,7 @@
     "check": "tsc --noEmit",
     "test": "vitest run",
     "dev": "wrangler dev",
+    "smoke:remote": "node scripts/remote-smoke.mjs",
     "deploy:dry-run": "npm run deploy:dry-run:primary && npm run deploy:dry-run:partner",
     "deploy:dry-run:primary": "wrangler deploy --env primary --dry-run --outdir dist/primary",
     "deploy:dry-run:partner": "wrangler deploy --env partner --dry-run --outdir dist/partner"
