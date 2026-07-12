@@ -6,12 +6,13 @@ It is a single-person mailbox Worker backed by one EU-jurisdiction, SQLite Durab
 
 - `/actions/*` reads exact coach snapshots, validates routine patches, and stores draft proposals.
 - `/device/*` uploads/deletes snapshots, pulls pending patches, and acknowledges lifecycle state.
+- `/mcp/<token>` speaks MCP (stateless Streamable HTTP) for Claude custom connectors, translating the same six coach operations onto the `/actions/*` domain routes with `claude-mcp` provenance. The unguessable token mounts it for the #46 spike; #38 decides the production auth.
 
 The Durable Object keeps multiple unexpired snapshots, correlates every proposal with the exact snapshot read, deduplicates proposal retries, expires records by alarm, and removes patch payloads at terminal states. It cannot mutate a Flow routine.
 
 `FLOW_COACH_MAILBOX_ID` is trusted deployment configuration used to select the Durable Object. It is not a secret, a display name, or an authorization mechanism, and no request may override it. Do not point two people's Flow installations or coach clients at one deployment. A future authenticated router can select among mailbox objects without changing the stored schema; the first household deployment deliberately avoids that account-system complexity.
 
-This is not deployed and does not complete either issue. A synthetic remote smoke test lives in this directory. The MCP connector edge and its Claude desktop/iOS proof (#46), the Cloudflare account/secrets, the Flow URLSession/Keychain/UI client, and OAuth remain explicit follow-up work. Per the pivot recorded on #37, MCP is the primary LLM-facing edge and uses this domain store rather than a provider-specific fork; the GPT Actions route is deferred to #49, with its artefacts archived on that issue.
+This is not deployed and does not complete either issue. A synthetic remote smoke test and the MCP connector edge live in this directory; the Claude desktop/iOS proof (#46), the Cloudflare account/secrets, the Flow URLSession/Keychain/UI client, and OAuth remain explicit follow-up work. Per the pivot recorded on #37, MCP is the primary LLM-facing edge and uses this domain store rather than a provider-specific fork; the GPT Actions route is deferred to #49, with its artefacts archived on that issue.
 
 ## Local verification
 

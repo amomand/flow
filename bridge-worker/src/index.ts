@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import { handleMcpMessage } from "./mcp";
 import {
   acknowledgementSchema,
   patchEnvelopeSchema,
@@ -18,6 +19,13 @@ export interface Env {
   FLOW_COACH_MAILBOX_ID?: string;
   FLOW_COACH_ACTIONS_SECRET?: string;
   FLOW_COACH_DEVICE_SECRET?: string;
+  /**
+   * #46 spike only: mounts the MCP edge at /mcp/<token>. The unguessable
+   * path is the whole access control until #38 adds OAuth, so the token
+   * must be at least 32 characters of fresh randomness and must be rotated
+   * or removed once the spike is done.
+   */
+  FLOW_COACH_MCP_SPIKE_TOKEN?: string;
   /** Test-only: workerd does not implement jurisdiction-restricted namespaces. */
   FLOW_COACH_LOCAL_TEST?: string;
 }
@@ -33,6 +41,9 @@ export default {
         ? json({ ok: true })
         : json({ ok: false, error: "Mailbox deployment is not configured." }, 503);
     }
+    const mcpMatch = url.pathname.match(/^\/mcp\/([^/]+)$/);
+    if (mcpMatch) return handleMcpEdge(request, env, mailboxId, decodeURIComponent(mcpMatch[1]!));
+
     const edge: Edge | undefined = url.pathname.startsWith("/actions/")
       ? "actions"
       : url.pathname.startsWith("/device/") ? "device" : undefined;
@@ -51,20 +62,64 @@ export default {
     const headers = new Headers(request.headers);
     headers.delete("authorization");
     headers.delete("cookie");
+    headers.delete("x-flow-provenance");
     headers.set("x-flow-edge", edge);
     headers.set("x-flow-principal", edge === "actions" ? "actions-primary" : "device-primary");
+    if (edge === "actions") headers.set("x-flow-provenance", "chatgpt-actions");
     const forwarded = new Request(request, { headers });
-    const namespace = env.FLOW_COACH_LOCAL_TEST === "true"
-      ? env.FLOW_COACH
-      : env.FLOW_COACH.jurisdiction("eu");
-    // Mailbox selection is trusted deployment configuration, never a model-
-    // or device-supplied request parameter. The first household deployment
-    // runs one separately authenticated Worker service per person.
-    const stub = namespace.get(namespace.idFromName(`flow-coach:${mailboxId}`));
-    const response = await stub.fetch(forwarded);
+    const response = await mailboxStub(env, mailboxId).fetch(forwarded);
     return withSecurityHeaders(response);
   },
 };
+
+function mailboxStub(env: Env, mailboxId: string): DurableObjectStub<FlowCoachMailbox> {
+  const namespace = env.FLOW_COACH_LOCAL_TEST === "true"
+    ? env.FLOW_COACH
+    : env.FLOW_COACH.jurisdiction("eu");
+  // Mailbox selection is trusted deployment configuration, never a model-
+  // or device-supplied request parameter. The first household deployment
+  // runs one separately authenticated Worker service per person.
+  return namespace.get(namespace.idFromName(`flow-coach:${mailboxId}`));
+}
+
+async function handleMcpEdge(request: Request, env: Env, mailboxId: string | undefined, supplied: string): Promise<Response> {
+  // The unguessable path is the spike's whole access control (#46): an
+  // unconfigured edge, a short configured token, and a wrong token are all
+  // indistinguishable 404s.
+  const token = env.FLOW_COACH_MCP_SPIKE_TOKEN?.trim();
+  if (!token || token.length < 32 || !(await secretEqual(supplied, token))) return json({ error: "Not found." }, 404);
+  if (!mailboxId) return json({ error: "Mailbox deployment is not configured." }, 503);
+  if (request.method !== "POST") {
+    // Stateless server: no SSE stream to GET, no session to DELETE.
+    const response = json({ error: "The MCP endpoint accepts POST only." }, 405);
+    response.headers.set("allow", "POST");
+    return response;
+  }
+  let message: unknown;
+  try {
+    message = await readJson(request, 128 * 1024);
+  } catch (caught) {
+    if (!(caught instanceof SyntaxError)) throw caught;
+    return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Request body must be valid JSON." } }, 400);
+  }
+  if (message instanceof Response) return message;
+
+  const stub = mailboxStub(env, mailboxId);
+  const outcome = await handleMcpMessage(message, ({ method, path, body, headers }) => {
+    const forwarded = new Headers(headers);
+    forwarded.set("x-flow-edge", "actions");
+    forwarded.set("x-flow-principal", "mcp-primary");
+    forwarded.set("x-flow-provenance", "claude-mcp");
+    if (body !== undefined) forwarded.set("content-type", "application/json");
+    return stub.fetch(`https://mailbox.internal${path}`, {
+      method,
+      headers: forwarded,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  });
+  if (!outcome) return withSecurityHeaders(new Response(null, { status: 202 }));
+  return json(outcome.body, outcome.status);
+}
 
 function configuredMailboxId(value: string | undefined): string | undefined {
   const candidate = value?.trim();
@@ -354,13 +409,17 @@ export class FlowCoachMailbox extends DurableObject<Env> {
 
   private async createPatch(request: Request, snapshot: SnapshotRow, patch: NonNullable<ReturnType<typeof validatePatch>["patch"]>): Promise<Response> {
     const principal = request.headers.get("x-flow-principal") ?? "actions-primary";
+    // Provenance is derived per edge by the trusted Worker layer, never from
+    // an external caller: it is stored on the row and bound into both digests
+    // so proposals cannot masquerade across adapters.
+    const provenance = request.headers.get("x-flow-provenance") ?? "chatgpt-actions";
     const idempotencyKey = request.headers.get("idempotency-key");
     if (idempotencyKey && (idempotencyKey.length > 128 || idempotencyKey.trim().length === 0)) return json({ error: "Idempotency-Key must be 1 to 128 characters." }, 400);
     const payload = canonicalJson(patch);
     const payloadDigest = await sha256(payload);
-    const proposalDigest = await sha256(`${principal}\nchatgpt-actions\n${snapshot.context_id}\n${payload}`);
+    const proposalDigest = await sha256(`${principal}\n${provenance}\n${snapshot.context_id}\n${payload}`);
     const idempotencyDigest = idempotencyKey
-      ? await sha256(`${principal}\nchatgpt-actions\n${snapshot.context_id}\n${idempotencyKey}`)
+      ? await sha256(`${principal}\n${provenance}\n${snapshot.context_id}\n${idempotencyKey}`)
       : null;
     if (idempotencyDigest) {
       const existing = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE idempotency_digest = ?", idempotencyDigest).toArray()[0];
@@ -375,9 +434,9 @@ export class FlowCoachMailbox extends DurableObject<Env> {
     const patchId = crypto.randomUUID();
     this.ctx.storage.sql.exec(
       `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status, provenance, principal_id, rationale, patch_json, idempotency_digest, proposal_digest, payload_digest)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending', 'chatgpt-actions', ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
       patchId, snapshot.context_id, patch.routineId, patch.baseContentHash, now, now + PATCH_LIFETIME_MS,
-      principal, patch.rationale, JSON.stringify(patch), idempotencyDigest, proposalDigest, payloadDigest,
+      provenance, principal, patch.rationale, JSON.stringify(patch), idempotencyDigest, proposalDigest, payloadDigest,
     );
     const row = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE patch_id = ?", patchId).one();
     return json({ stored: true, duplicate: false, patch: patchMetadata(row), message: draftMessage }, 201);

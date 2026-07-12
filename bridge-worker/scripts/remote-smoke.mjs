@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const baseUrl = (process.argv[2] ?? process.env.FLOW_COACH_BASE_URL ?? "").replace(/\/$/, "");
 const actionsSecret = process.env.FLOW_COACH_ACTIONS_SECRET;
 const deviceSecret = process.env.FLOW_COACH_DEVICE_SECRET;
+const mcpToken = process.env.FLOW_COACH_MCP_SPIKE_TOKEN;
 const keepFixture = process.env.FLOW_COACH_KEEP_FIXTURE === "true";
 
 const isLocalUrl = baseUrl.startsWith("http://127.0.0.1:") || baseUrl.startsWith("http://localhost:");
@@ -140,6 +141,42 @@ try {
   ));
   assert(pending.patches?.some((entry) => entry.patchId === created.patch.patchId), "device edge sees the fixture draft");
 
+  if (mcpToken) {
+    await expectStatus(
+      "wrong MCP token is an indistinguishable 404",
+      await fetch(`${baseUrl}/mcp/${"0".repeat(48)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+      }),
+      404,
+    );
+
+    const initialized = await mcp("initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "remote-smoke", version: "0.1.0" },
+    });
+    assert(typeof initialized.protocolVersion === "string", "MCP edge negotiates a protocol version");
+
+    const listed = await mcp("tools/list");
+    assert(listed.tools?.length === 6, "MCP edge lists six tools");
+
+    const mcpContext = await mcp("tools/call", {
+      name: "get_flow_coach_context",
+      arguments: { contextId },
+    });
+    assert(mcpContext.structuredContent?.contextId === contextId, "MCP edge reads the fixture snapshot");
+
+    const mcpCreated = await mcp("tools/call", {
+      name: "create_pending_routine_patch",
+      arguments: { contextId, patch, idempotencyKey: `remote-smoke-mcp-${contextId}` },
+    });
+    assert(mcpCreated.structuredContent?.patch?.provenance === "claude-mcp", "MCP draft provenance is claude-mcp");
+  } else {
+    console.log("SKIP  FLOW_COACH_MCP_SPIKE_TOKEN is not set; MCP edge not exercised");
+  }
+
   completed = true;
   console.log("\nRemote Flow Coach smoke test passed.");
   if (keepFixture) {
@@ -156,6 +193,19 @@ try {
     if (cleanup.status === 200) console.log("PASS  removed fixture snapshot and its draft");
     else console.error(`WARN  fixture cleanup returned ${cleanup.status}; delete context ${contextId} manually`);
   }
+}
+
+async function mcp(method, params, id = 1) {
+  const response = await fetch(`${baseUrl}/mcp/${encodeURIComponent(mcpToken)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+  });
+  if (response.status !== 200) throw new Error(`MCP ${method}: expected 200, received ${response.status}: ${await response.text()}`);
+  const body = await response.json();
+  if (body.error) throw new Error(`MCP ${method} returned an error: ${JSON.stringify(body.error)}`);
+  console.log(`PASS  MCP ${method}${params?.name ? ` ${params.name}` : ""}`);
+  return body.result;
 }
 
 async function request(path, { method = "GET", secret, body, headers = {} } = {}) {
