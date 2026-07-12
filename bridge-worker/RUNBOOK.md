@@ -1,6 +1,6 @@
 # Flow Coach bridge runbook
 
-The bridge is deliberately not deployed by this repository change. Deployment needs Alex's Cloudflare approval and fresh secrets entered out of band. A narrower primary-mailbox fixture deployment answers #46 (the Claude connector spike) before any real data or phone pairing.
+The bridge is deliberately not deployed by this repository change. Deployment needs Alex's Cloudflare approval and fresh secrets entered out of band. A narrower primary-mailbox fixture deployment answers #46 (the Claude connector spike) before any real data or phone pairing; see "Claude connector spike" below.
 
 ## Local setup
 
@@ -30,11 +30,30 @@ Wrangler environments have non-inherited Durable Object bindings and environment
 
 One Flow installation pairs with one device endpoint. The person operating the matching coach client may be someone else, but proposals still land only in the paired Flow inbox for review. Give each Claude Project and conversation a clear person-specific name so conversational context does not cross the storage boundary.
 
+## Claude connector spike (#46)
+
+The primary Worker may be deployed with temporary credentials and synthetic fixtures to answer #46. The MCP edge mounts at `/mcp/<token>` only when `FLOW_COACH_MCP_SPIKE_TOKEN` is set; the unguessable token is the whole access control for the spike, so it must be at least 32 fresh random characters (`openssl rand -hex 32`), never reused from another secret, and rotated or removed before any real data.
+
+1. Deploy the primary environment and set its secrets, including the spike token:
+
+   ```bash
+   npx wrangler deploy --env primary
+   npx wrangler secret put FLOW_COACH_ACTIONS_SECRET --env primary
+   npx wrangler secret put FLOW_COACH_DEVICE_SECRET --env primary
+   npx wrangler secret put FLOW_COACH_MCP_SPIKE_TOKEN --env primary
+   ```
+
+2. With the same values exported in the shell, run `FLOW_COACH_KEEP_FIXTURE=true npm run smoke:remote -- https://<primary-host>` so the fixture snapshot survives for the phone test. The smoke test exercises both the REST edge and the MCP edge, including the wrong-token 404.
+3. In Claude, add a custom connector (Settings, Connectors, Add custom connector): a clearly synthetic name such as `Flow Coach (fixture)`, URL `https://<primary-host>/mcp/<token>`, no OAuth fields.
+4. In one conversation on Claude desktop/web and one on iOS: read the coach context, inspect a routine, discuss a small change, and create one pending patch. Confirm the pending record exists through the device edge.
+5. Record on #46: confirmation-prompt wording, per-surface differences, plan-tier behaviour, and whether one chat continues across devices.
+6. Tear down: delete the fixture snapshot through the device edge, then rotate or remove the spike token and the temporary credentials.
+
 ## Real-data pre-deploy gate
 
 The primary Worker may be deployed with temporary credentials and synthetic fixtures to complete #46. Before either mailbox receives real data:
 
-1. Complete #46's Claude desktop and iOS connector test, then remove its retained fixture.
+1. Complete #46's Claude desktop and iOS connector test, then remove its retained fixture and rotate or remove the spike token.
 2. Confirm the initial Flow sharing tier and that the Cloudflare account/billing and EU Durable Object are acceptable.
 3. Review each person's connector configuration against the final hostname.
 4. Run `npm run check`, `npm test`, and `npm run deploy:dry-run`; the deploy script validates both `primary` and `partner` explicitly.
