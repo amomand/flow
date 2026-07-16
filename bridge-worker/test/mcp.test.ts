@@ -140,6 +140,20 @@ describe("Flow Coach bridge MCP edge", () => {
     }
   });
 
+  it("publishes the full patch shape so a client composes it without guessing", async () => {
+    const body = await json(await rpc("tools/list"));
+    const tools = body.result.tools as Array<Record<string, any>>;
+    for (const name of ["validate_flow_routine_patch", "create_pending_routine_patch"]) {
+      const patchSchema = tools.find((tool) => tool.name === name)!.inputSchema.properties.patch;
+      expect(patchSchema.required).toContain("baseContentHash");
+      const operation = patchSchema.properties.operations.items;
+      expect(operation.properties.kind.enum).toHaveLength(10);
+      expect(operation.properties.expectedIntValue.type).toBe("integer");
+      expect(operation.properties.newIntValue.type).toBe("integer");
+      expect(patchSchema.properties.operations.description).toContain("expectedIntValue");
+    }
+  });
+
   it("runs the full read-propose loop with claude-mcp provenance", async () => {
     const envelope = snapshot();
     expect((await upload(envelope)).status).toBe(201);

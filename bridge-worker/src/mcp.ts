@@ -74,6 +74,104 @@ const contextIdProperty = {
   description: "The exact contextId returned by get_flow_coach_context.",
 };
 
+// The full FlowRoutinePatch shape, mirrored from schemas.ts so the model can
+// compose a correct patch on the first call instead of reverse-engineering
+// field names from strict-schema rejections (#46 finding: an opaque
+// {type:"object"} here cost five failed guesses on fixture data).
+const uuidProperty = { type: "string", format: "uuid" };
+const phaseProperty = { type: "string", enum: ["base", "peak", "deload"] };
+const phaseOverrideProperty = {
+  type: "object",
+  properties: {
+    sets: { type: "integer", minimum: 1, maximum: 10 },
+    reps: { type: "integer", minimum: 1, maximum: 100 },
+    durationSeconds: { type: "integer", minimum: 1, maximum: 3600 },
+  },
+  additionalProperties: false,
+};
+const exerciseProperty = {
+  type: "object",
+  description: "A complete new exercise, only for addExercise. Give it a fresh UUID.",
+  properties: {
+    id: uuidProperty,
+    name: { type: "string", minLength: 1, maxLength: 200 },
+    sets: { type: "integer", minimum: 1, maximum: 10 },
+    reps: { type: "integer", minimum: 1, maximum: 100 },
+    durationSeconds: { type: "integer", minimum: 1, maximum: 3600 },
+    restBetweenSetsSeconds: { type: "integer", minimum: 0, maximum: 900 },
+    restAfterExerciseSeconds: { type: "integer", minimum: 0, maximum: 900 },
+    notes: { type: "string", maxLength: 500 },
+    perSide: { type: "boolean" },
+    phaseOverrides: { type: "object", additionalProperties: phaseOverrideProperty },
+  },
+  required: ["id", "name", "sets", "reps", "restBetweenSetsSeconds", "restAfterExerciseSeconds", "notes", "perSide"],
+  additionalProperties: false,
+};
+const patchProperty = {
+  type: "object",
+  description:
+    "A FlowRoutinePatch, schema version 2. Copy routineId and baseContentHash exactly " +
+    "from the snapshot you read; never compute or guess a hash.",
+  properties: {
+    schemaVersion: { type: "integer", enum: [2] },
+    routineId: uuidProperty,
+    baseContentHash: {
+      type: "string",
+      pattern: "^c1-[0-9a-f]{16}$",
+      description: "The contentHash for this routine from get_flow_coach_context or list_routines, copied exactly.",
+    },
+    exportedAt: { type: "string", description: "Optional ISO 8601 timestamp." },
+    rationale: { type: "string", minLength: 1, maxLength: 2000, description: "Why this change; shown to the user in Flow's preview." },
+    operations: {
+      type: "array",
+      minItems: 1,
+      maxItems: 50,
+      description:
+        "Required fields by kind: replaceExerciseReps/replaceExerciseSets/replaceTimedDuration/" +
+        "replaceRestBetweenSets/replaceRestAfterExercise need exerciseId, expectedIntValue (the current " +
+        "value), and newIntValue. updateExerciseNotes needs exerciseId, expectedStringValue, and " +
+        "newStringValue. removeExercise needs exerciseId and expectedStringValue (the exercise name). " +
+        "addExercise needs sectionId and exercise, optionally afterExerciseId. moveExercise needs " +
+        "exerciseId and targetSectionId, optionally afterExerciseId. replacePhaseOverride needs " +
+        "exerciseId, phase (peak or deload), and either newPhaseOverride or removePhaseOverride: true. " +
+        "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps.",
+      items: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: [
+              "replaceExerciseReps", "replaceExerciseSets", "replaceTimedDuration",
+              "replaceRestBetweenSets", "replaceRestAfterExercise", "updateExerciseNotes",
+              "addExercise", "removeExercise", "moveExercise", "replacePhaseOverride",
+            ],
+          },
+          exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise; must exist in the routine." },
+          sectionId: { ...uuidProperty, description: "For addExercise: the section to add into." },
+          targetSectionId: { ...uuidProperty, description: "For moveExercise: the destination section." },
+          afterExerciseId: { ...uuidProperty, description: "Optional anchor: place after this exercise." },
+          phase: { ...phaseProperty, description: "For replacePhaseOverride: peak or deload only." },
+          expectedIntValue: { type: "integer", description: "The current value as shown in the snapshot." },
+          newIntValue: {
+            type: "integer",
+            description: "The proposed value. Ranges: reps 1-100, sets 1-10, duration 1-3600, rest 0-900.",
+          },
+          expectedStringValue: { type: "string" },
+          newStringValue: { type: "string", maxLength: 500 },
+          expectedPhaseOverride: phaseOverrideProperty,
+          newPhaseOverride: phaseOverrideProperty,
+          removePhaseOverride: { type: "boolean" },
+          exercise: exerciseProperty,
+        },
+        required: ["kind"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["schemaVersion", "routineId", "baseContentHash", "rationale", "operations"],
+  additionalProperties: false,
+};
+
 const TOOLS: ReadonlyArray<ToolDefinition> = [
   {
     name: "get_flow_coach_context",
@@ -200,7 +298,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
       type: "object",
       properties: {
         contextId: contextIdProperty,
-        patch: { type: "object", description: "The candidate FlowRoutinePatch JSON object, schema version 2." },
+        patch: patchProperty,
       },
       required: ["contextId", "patch"],
       additionalProperties: false,
@@ -230,7 +328,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
       type: "object",
       properties: {
         contextId: contextIdProperty,
-        patch: { type: "object", description: "The candidate FlowRoutinePatch JSON object, schema version 2." },
+        patch: patchProperty,
         idempotencyKey: {
           type: "string",
           maxLength: 128,
