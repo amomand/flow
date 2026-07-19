@@ -6,7 +6,7 @@ It is a single-person mailbox Worker backed by one EU-jurisdiction, SQLite Durab
 
 - `/actions/*` reads exact coach snapshots, validates routine patches, and stores draft proposals.
 - `/device/*` uploads/deletes snapshots, pulls pending patches, and acknowledges lifecycle state.
-- `/mcp/<token>` speaks MCP (stateless Streamable HTTP) for Claude custom connectors, translating the same six coach operations onto the `/actions/*` domain routes with `claude-mcp` provenance. The unguessable token mounts it for the #46 spike; #38 decides the production auth.
+- `/mcp` speaks MCP (stateless Streamable HTTP) for Claude custom connectors, translating the same six coach operations onto the `/actions/*` domain routes with `claude-mcp` provenance. It is gated by OAuth 2.1 (`@cloudflare/workers-oauth-provider`: dynamic client registration, authorization code with S256 PKCE, refresh tokens in `OAUTH_KV`), with `coach:read` and `patch:propose` scopes enforced per tool. Consent at `/oauth/authorize` is granted by entering the per-person `FLOW_COACH_CONNECT_SECRET`; the #46 spike's no-auth `/mcp/<token>` mount is gone.
 
 The Durable Object keeps multiple unexpired snapshots, correlates every proposal with the exact snapshot read, deduplicates proposal retries, expires records by alarm, and removes patch payloads at terminal states. It cannot mutate a Flow routine.
 

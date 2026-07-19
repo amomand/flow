@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const baseUrl = (process.argv[2] ?? process.env.FLOW_COACH_BASE_URL ?? "").replace(/\/$/, "");
 const actionsSecret = process.env.FLOW_COACH_ACTIONS_SECRET;
 const deviceSecret = process.env.FLOW_COACH_DEVICE_SECRET;
-const mcpToken = process.env.FLOW_COACH_MCP_SPIKE_TOKEN;
+const mcpAccessToken = process.env.FLOW_COACH_MCP_ACCESS_TOKEN;
 const keepFixture = process.env.FLOW_COACH_KEEP_FIXTURE === "true";
 
 const isLocalUrl = baseUrl.startsWith("http://127.0.0.1:") || baseUrl.startsWith("http://localhost:");
@@ -141,17 +141,28 @@ try {
   ));
   assert(pending.patches?.some((entry) => entry.patchId === created.patch.patchId), "device edge sees the fixture draft");
 
-  if (mcpToken) {
-    await expectStatus(
-      "wrong MCP token is an indistinguishable 404",
-      await fetch(`${baseUrl}/mcp/${"0".repeat(48)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
-      }),
-      404,
-    );
+  const metadata = await json(await expectStatus(
+    "OAuth discovery metadata is published",
+    await fetch(`${baseUrl}/.well-known/oauth-authorization-server`),
+    200,
+  ));
+  assert(
+    Array.isArray(metadata.scopes_supported) && metadata.scopes_supported.includes("patch:propose"),
+    "OAuth metadata advertises the bridge scopes",
+  );
 
+  const unauthenticated = await fetch(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+  });
+  await expectStatus("tokenless MCP request is refused", unauthenticated, 401);
+  assert(
+    (unauthenticated.headers.get("www-authenticate") ?? "").includes("resource_metadata"),
+    "the 401 points the client at the resource metadata",
+  );
+
+  if (mcpAccessToken) {
     const initialized = await mcp("initialize", {
       protocolVersion: "2025-06-18",
       capabilities: {},
@@ -174,7 +185,8 @@ try {
     });
     assert(mcpCreated.structuredContent?.patch?.provenance === "claude-mcp", "MCP draft provenance is claude-mcp");
   } else {
-    console.log("SKIP  FLOW_COACH_MCP_SPIKE_TOKEN is not set; MCP edge not exercised");
+    console.log("SKIP  FLOW_COACH_MCP_ACCESS_TOKEN is not set; MCP tool calls not exercised.");
+    console.log("SKIP  Mint one by completing the connector OAuth flow against this deployment.");
   }
 
   completed = true;
@@ -196,9 +208,9 @@ try {
 }
 
 async function mcp(method, params, id = 1) {
-  const response = await fetch(`${baseUrl}/mcp/${encodeURIComponent(mcpToken)}`, {
+  const response = await fetch(`${baseUrl}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", authorization: `Bearer ${mcpAccessToken}` },
     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
   });
   if (response.status !== 200) throw new Error(`MCP ${method}: expected 200, received ${response.status}: ${await response.text()}`);
