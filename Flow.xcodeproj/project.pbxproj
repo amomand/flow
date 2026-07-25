@@ -20,6 +20,11 @@
 		E00060 /* FlowCoachContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10060 /* FlowCoachContext.swift */; };
 		E00061 /* FlowRoutinePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10061 /* FlowRoutinePatch.swift */; };
 		E00064 /* FlowRoutineExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10064 /* FlowRoutineExchange.swift */; };
+		E00080 /* CoachBridgePairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10080 /* CoachBridgePairing.swift */; };
+		E00081 /* CoachBridgeSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10081 /* CoachBridgeSync.swift */; };
+		E00082 /* CoachBridgeSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10082 /* CoachBridgeSyncView.swift */; };
+		E00084 /* CoachBridgeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10084 /* CoachBridgeIntegrationTests.swift */; };
+		E00083 /* CoachBridgeSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10083 /* CoachBridgeSyncTests.swift */; };
 		E00066 /* CoachPatchInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10066 /* CoachPatchInbox.swift */; };
 		E00067 /* FlowCoachDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10067 /* FlowCoachDeepLink.swift */; };
 		E00069 /* CoachEditHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10070 /* CoachEditHistoryStore.swift */; };
@@ -80,6 +85,11 @@
 		E10060 /* FlowCoachContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachContext.swift; sourceTree = "<group>"; };
 		E10061 /* FlowRoutinePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutinePatch.swift; sourceTree = "<group>"; };
 		E10064 /* FlowRoutineExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutineExchange.swift; sourceTree = "<group>"; };
+		E10080 /* CoachBridgePairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgePairing.swift; sourceTree = "<group>"; };
+		E10081 /* CoachBridgeSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSync.swift; sourceTree = "<group>"; };
+		E10082 /* CoachBridgeSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSyncView.swift; sourceTree = "<group>"; };
+		E10084 /* CoachBridgeIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeIntegrationTests.swift; sourceTree = "<group>"; };
+		E10083 /* CoachBridgeSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSyncTests.swift; sourceTree = "<group>"; };
 		E10066 /* CoachPatchInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInbox.swift; sourceTree = "<group>"; };
 		E10067 /* FlowCoachDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachDeepLink.swift; sourceTree = "<group>"; };
 		E10070 /* CoachEditHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistoryStore.swift; sourceTree = "<group>"; };
@@ -197,6 +207,8 @@
 		E20060 /* Coach */ = {
 			isa = PBXGroup;
 			children = (
+				E10080 /* CoachBridgePairing.swift */,
+				E10081 /* CoachBridgeSync.swift */,
 				E10060 /* FlowCoachContext.swift */,
 				E10061 /* FlowRoutinePatch.swift */,
 				E10064 /* FlowRoutineExchange.swift */,
@@ -221,6 +233,7 @@
 		E20062 /* Coach */ = {
 			isa = PBXGroup;
 			children = (
+				E10082 /* CoachBridgeSyncView.swift */,
 				E10062 /* CoachWorkflowSheet.swift */,
 				E10071 /* CoachEditHistorySheet.swift */,
 			);
@@ -304,6 +317,8 @@
 		E20050 /* FlowTests */ = {
 			isa = PBXGroup;
 			children = (
+				E10083 /* CoachBridgeSyncTests.swift */,
+				E10084 /* CoachBridgeIntegrationTests.swift */,
 				E10051 /* WorkoutSessionTests.swift */,
 				E10052 /* RoutineStoreTests.swift */,
 				E10053 /* RunMetricsTests.swift */,
@@ -428,6 +443,9 @@
 				E00061 /* FlowRoutinePatch.swift in Sources */,
 				E00064 /* FlowRoutineExchange.swift in Sources */,
 				E00066 /* CoachPatchInbox.swift in Sources */,
+				E00080 /* CoachBridgePairing.swift in Sources */,
+				E00081 /* CoachBridgeSync.swift in Sources */,
+				E00082 /* CoachBridgeSyncView.swift in Sources */,
 				E00067 /* FlowCoachDeepLink.swift in Sources */,
 				E00069 /* CoachEditHistoryStore.swift in Sources */,
 				E00070 /* CoachEditHistorySheet.swift in Sources */,
@@ -466,6 +484,8 @@
 				E00063 /* CoachWorkflowTests.swift in Sources */,
 				E00065 /* RoutineExchangeTests.swift in Sources */,
 				E00068 /* CoachPatchInboxTests.swift in Sources */,
+				E00083 /* CoachBridgeSyncTests.swift in Sources */,
+				E00084 /* CoachBridgeIntegrationTests.swift in Sources */,
 				E00071 /* CoachEditHistoryTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
