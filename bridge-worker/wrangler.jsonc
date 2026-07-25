@@ -24,7 +24,8 @@
   // grants cannot cross people. Create with
   //   npx wrangler kv namespace create OAUTH_KV --env primary
   //   npx wrangler kv namespace create OAUTH_KV --env partner
-  // and paste the returned ids over the placeholders before deploying.
+  // The deployed environments below each have their own namespace, so a
+  // grant issued for one person can never be read by the other's Worker.
   "kv_namespaces": [
     {
       "binding": "OAUTH_KV",
@@ -47,7 +48,7 @@
       "kv_namespaces": [
         {
           "binding": "OAUTH_KV",
-          "id": "REPLACE_WITH_PRIMARY_OAUTH_KV_ID"
+          "id": "171fb23ef85348a0b9ea414d417166d6"
         }
       ]
     },
@@ -66,7 +67,7 @@
       "kv_namespaces": [
         {
           "binding": "OAUTH_KV",
-          "id": "REPLACE_WITH_PARTNER_OAUTH_KV_ID"
+          "id": "1ff126ca240643888eb72eeff4126e6e"
         }
       ]
     }
