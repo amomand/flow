@@ -146,7 +146,11 @@ const patchProperty = {
         "addExercise needs sectionId and exercise, optionally afterExerciseId. moveExercise needs " +
         "exerciseId and targetSectionId, optionally afterExerciseId. replacePhaseOverride needs " +
         "exerciseId, phase (peak or deload), and either newPhaseOverride or removePhaseOverride: true. " +
-        "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps.",
+        "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps. " +
+        "Base-value operations (replaceExerciseReps, replaceExerciseSets, replaceTimedDuration) change the " +
+        "base value only and do not cascade into phaseOverrides: an exercise with a peak or deload override " +
+        "for that same field keeps it, which can leave a phase no longer a step up from base. To move a " +
+        "phase as well, add a replacePhaseOverride operation for it in the same patch.",
       items: {
         type: "object",
         properties: {

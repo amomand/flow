@@ -251,6 +251,218 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(preview.diffs[1].after, "Press: rest after exercise 120s")
     }
 
+    // MARK: - Phase override consequences (#61)
+
+    /// The case from the first live connector test: Sit-ups at base 2 sets with
+    /// a peak override of 3, and a patch raising base to 3. Nothing is
+    /// corrupted; peak has simply stopped being a step up on sets.
+    func testRaisingBaseToMeetAPeakOverrideIsCalledOutAsFlattened() throws {
+        let preview = try previewSetsChange(
+            baseSets: 2,
+            newSets: 3,
+            overrides: [.peak: PhaseOverride(sets: 3, reps: 15), .deload: PhaseOverride(sets: 1, reps: 10)]
+        )
+
+        let diff = try XCTUnwrap(preview.diffs.first)
+        XCTAssertEqual(diff.after, "Sit-ups: 3 sets", "the base diff itself is unchanged")
+        let peak = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .peak })
+        XCTAssertEqual(peak.relation, .matchesBase)
+        XCTAssertTrue(peak.flattensProgression)
+        XCTAssertEqual(peak.summary, "Peak: 3 sets, the same as base")
+        // The routine is still what it was: this changes what is shown.
+        XCTAssertEqual(
+            preview.updatedRoutine.sections[0].exercises[0].phaseOverrides[.peak],
+            PhaseOverride(sets: 3, reps: 15)
+        )
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].sets, 3)
+    }
+
+    func testAnOverrideLeftBelowTheNewBaseIsCalledOut() throws {
+        let preview = try previewSetsChange(
+            baseSets: 2,
+            newSets: 4,
+            overrides: [.peak: PhaseOverride(sets: 3), .deload: PhaseOverride(sets: 1)]
+        )
+
+        let diff = try XCTUnwrap(preview.diffs.first)
+        let peak = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .peak })
+        let deload = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .deload })
+        XCTAssertEqual(peak.relation, .belowBase)
+        XCTAssertEqual(peak.summary, "Peak: 3 sets, below base at 4")
+        XCTAssertEqual(deload.relation, .belowBase)
+        // Wording describes the values; it does not say the patch is wrong.
+        XCTAssertFalse(peak.summary.lowercased().contains("error"))
+        XCTAssertFalse(peak.summary.lowercased().contains("invalid"))
+    }
+
+    func testAPhaseWithoutAnOverrideForTheFieldIsNamedRatherThanOmitted() throws {
+        let preview = try previewSetsChange(
+            baseSets: 2,
+            newSets: 3,
+            overrides: [.peak: PhaseOverride(sets: 4)]
+        )
+
+        let diff = try XCTUnwrap(preview.diffs.first)
+        let deload = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .deload })
+        XCTAssertEqual(deload.relation, .inheritsBase)
+        XCTAssertEqual(deload.summary, "Deload: follows base at 3 sets")
+        let peak = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .peak })
+        XCTAssertEqual(peak.relation, .stepsUpFromBase)
+        XCTAssertFalse(peak.flattensProgression, "an override still above base is not a flattened progression")
+    }
+
+    func testAnOverrideDivergingOnAnotherFieldOnlyAddsNothing() throws {
+        // Peak overrides reps, the patch changes sets: there is nothing for the
+        // change to fall out of step with.
+        let preview = try previewSetsChange(
+            baseSets: 2,
+            newSets: 3,
+            overrides: [.peak: PhaseOverride(reps: 15)]
+        )
+
+        XCTAssertTrue(try XCTUnwrap(preview.diffs.first).phaseConsequences.isEmpty)
+    }
+
+    func testAnExerciseWithNoOverridesPreviewsExactlyAsBefore() throws {
+        let preview = try previewSetsChange(baseSets: 2, newSets: 3, overrides: [:])
+
+        let diff = try XCTUnwrap(preview.diffs.first)
+        XCTAssertTrue(diff.phaseConsequences.isEmpty, "no extra rows and no empty section")
+        XCTAssertEqual(diff.before, "Sit-ups: 2 sets")
+        XCTAssertEqual(diff.after, "Sit-ups: 3 sets")
+    }
+
+    func testRestOperationsGainNoPhaseConsequences() throws {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Main", exercises: [
+                    ExerciseBlock(
+                        id: exerciseId,
+                        name: "Press",
+                        sets: 3,
+                        reps: 8,
+                        restBetweenSetsSeconds: 60,
+                        restAfterExerciseSeconds: 90,
+                        phaseOverrides: [.peak: PhaseOverride(sets: 4, reps: 6)]
+                    )
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Longer rest.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceRestBetweenSets,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 60,
+                    newIntValue: 90
+                )
+            ]
+        )
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        // PhaseOverride has no rest fields, so there is nothing to report.
+        XCTAssertTrue(preview.diffs[0].phaseConsequences.isEmpty)
+    }
+
+    func testTimedDurationChangeReportsPhaseConsequences() throws {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Coach",
+            sections: [
+                Section(name: "Core", exercises: [
+                    ExerciseBlock(
+                        id: exerciseId,
+                        name: "Plank",
+                        sets: 2,
+                        reps: 30,
+                        durationSeconds: 30,
+                        phaseOverrides: [.peak: PhaseOverride(durationSeconds: 45)]
+                    )
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Extend the hold.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceTimedDuration,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 30,
+                    newIntValue: 45
+                )
+            ]
+        )
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        let peak = try XCTUnwrap(preview.diffs[0].phaseConsequences.first { $0.phase == .peak })
+        XCTAssertEqual(peak.relation, .matchesBase)
+        XCTAssertEqual(peak.summary, "Peak: 45 seconds, the same as base")
+    }
+
+    func testDiffRecordsWrittenBeforePhaseConsequencesStillDecode() throws {
+        let legacy = """
+        {"operationIndex":1,"title":"Replace sets","before":"Sit-ups: 2 sets","after":"Sit-ups: 3 sets"}
+        """
+
+        let decoded = try JSONDecoder().decode(FlowRoutinePatchDiff.self, from: Data(legacy.utf8))
+
+        XCTAssertEqual(decoded.title, "Replace sets")
+        XCTAssertTrue(decoded.phaseConsequences.isEmpty)
+    }
+
+    /// One exercise, one `replaceExerciseSets` operation, with whatever phase
+    /// overrides the case under test needs.
+    private func previewSetsChange(
+        baseSets: Int,
+        newSets: Int,
+        overrides: [WorkoutPhase: PhaseOverride]
+    ) throws -> FlowRoutinePatchPreview {
+        let exerciseId = UUID()
+        let routine = Routine(
+            name: "Wednesday — Upper A",
+            sections: [
+                Section(name: "Core", exercises: [
+                    ExerciseBlock(
+                        id: exerciseId,
+                        name: "Sit-ups",
+                        sets: baseSets,
+                        reps: 12,
+                        phaseOverrides: overrides
+                    )
+                ])
+            ]
+        )
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "More core volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseSets,
+                    exerciseId: exerciseId,
+                    expectedIntValue: baseSets,
+                    newIntValue: newSets
+                )
+            ]
+        )
+        return try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+    }
+
     func testStoreAppliesPatchWithRestorableBackup() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)

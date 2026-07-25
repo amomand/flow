@@ -296,6 +296,26 @@ struct CoachWorkflowSheet: View {
                         Text("+ \(diff.after)")
                             .terminalFont(12)
                             .foregroundColor(TN.green)
+
+                        // A base value moved on an exercise that overrides the
+                        // same field in another phase, so the one-number diff
+                        // above is not the whole change (#61).
+                        if !diff.phaseConsequences.isEmpty {
+                            Text("BY PHASE")
+                                .terminalFont(10, weight: .bold)
+                                .foregroundColor(TN.comment)
+                                .padding(.top, 2)
+                            ForEach(diff.phaseConsequences) { consequence in
+                                Text("  \(consequence.summary)")
+                                    .terminalFont(11)
+                                    .foregroundColor(consequence.flattensProgression ? TN.orange : TN.comment)
+                            }
+                            if diff.phaseConsequences.contains(where: \.flattensProgression) {
+                                Text("  Base operations do not change phase overrides. If a phase was meant to move too, it needs its own operation.")
+                                    .terminalFont(10)
+                                    .foregroundColor(TN.comment)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .terminalCard()

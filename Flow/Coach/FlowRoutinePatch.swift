@@ -63,9 +63,83 @@ struct FlowRoutinePatchDiff: Identifiable, Equatable, Codable {
     let title: String
     let before: String
     let after: String
+    /// Where a base value moved and the exercise carries a phase override for
+    /// the same field, the resulting per-phase state (#61). Base operations do
+    /// not cascade into overrides, so a one-number diff can hide the fact that
+    /// a phase has stopped being a step up. Empty for every other operation,
+    /// and for exercises with no override on the field being changed.
+    var phaseConsequences: [FlowRoutinePhaseConsequence] = []
 
     var id: String {
         "\(operationIndex)-\(title)-\(before)-\(after)"
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case operationIndex, title, before, after, phaseConsequences
+    }
+}
+
+extension FlowRoutinePatchDiff {
+    /// History records written before phase consequences existed have no such
+    /// key, and must keep decoding.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        operationIndex = try container.decode(Int.self, forKey: .operationIndex)
+        title = try container.decode(String.self, forKey: .title)
+        before = try container.decode(String.self, forKey: .before)
+        after = try container.decode(String.self, forKey: .after)
+        phaseConsequences = try container.decodeIfPresent(
+            [FlowRoutinePhaseConsequence].self,
+            forKey: .phaseConsequences
+        ) ?? []
+    }
+}
+
+/// What a base-value change leaves one phase doing (#61).
+///
+/// Reported, never enforced: a peak that matches base is a legitimate thing to
+/// want, and the patch is not wrong for producing it. The person approving just
+/// needs to be able to see it.
+struct FlowRoutinePhaseConsequence: Identifiable, Equatable, Codable {
+    enum Relation: String, Codable {
+        /// The override still sits above the new base value.
+        case stepsUpFromBase
+        case matchesBase
+        case belowBase
+        /// No override for this field, so the phase takes the new base value.
+        case inheritsBase
+    }
+
+    let phase: WorkoutPhase
+    /// Display unit for the field that changed: "sets", "reps", or "seconds".
+    let unit: String
+    let baseValue: Int
+    let overrideValue: Int?
+    let relation: Relation
+
+    var id: String { "\(phase.rawValue)-\(unit)" }
+
+    var value: Int { overrideValue ?? baseValue }
+
+    /// Describes the values rather than condemning the patch.
+    var summary: String {
+        switch relation {
+        case .inheritsBase:
+            return "\(phase.displayName): follows base at \(baseValue) \(unit)"
+        case .stepsUpFromBase:
+            return "\(phase.displayName): \(value) \(unit)"
+        case .matchesBase:
+            return "\(phase.displayName): \(value) \(unit), the same as base"
+        case .belowBase:
+            return "\(phase.displayName): \(value) \(unit), below base at \(baseValue)"
+        }
+    }
+
+    /// The case #61 asks to call out: an override that no longer sits above the
+    /// new base value, so the progression has flattened or reversed on this
+    /// field.
+    var flattensProgression: Bool {
+        relation == .matchesBase || relation == .belowBase
     }
 }
 
@@ -231,7 +305,8 @@ enum FlowRoutinePatcher {
                 operationIndex: operationIndex,
                 title: "Replace reps",
                 before: before,
-                after: "\(exercise.name): \(value) reps"
+                after: "\(exercise.name): \(value) reps",
+                phaseConsequences: phaseConsequences(for: exercise, field: .reps, newBase: value)
             )
 
         case .replaceExerciseSets:
@@ -247,7 +322,8 @@ enum FlowRoutinePatcher {
                 operationIndex: operationIndex,
                 title: "Replace sets",
                 before: before,
-                after: "\(exercise.name): \(value) sets"
+                after: "\(exercise.name): \(value) sets",
+                phaseConsequences: phaseConsequences(for: exercise, field: .sets, newBase: value)
             )
 
         case .replaceTimedDuration:
@@ -266,7 +342,8 @@ enum FlowRoutinePatcher {
                 operationIndex: operationIndex,
                 title: "Replace timed duration",
                 before: before,
-                after: "\(exercise.name): \(value)s"
+                after: "\(exercise.name): \(value)s",
+                phaseConsequences: phaseConsequences(for: exercise, field: .durationSeconds, newBase: value)
             )
 
         case .replaceRestBetweenSets:
@@ -415,6 +492,77 @@ enum FlowRoutinePatcher {
                 title: "Replace \(phase.displayName) override",
                 before: "\(exercise.name): \(format(current))",
                 after: "\(exercise.name): \(format(exercise.phaseOverrides[phase]))"
+            )
+        }
+    }
+
+    /// The three fields a `PhaseOverride` can diverge on. Rest has no override
+    /// field, so `replaceRestBetweenSets` and `replaceRestAfterExercise` have
+    /// nothing to fall out of step with.
+    private enum PhaseField {
+        case sets
+        case reps
+        case durationSeconds
+
+        var unit: String {
+            switch self {
+            case .sets: return "sets"
+            case .reps: return "reps"
+            case .durationSeconds: return "seconds"
+            }
+        }
+
+        func value(in override: PhaseOverride) -> Int? {
+            switch self {
+            case .sets: return override.sets
+            case .reps: return override.reps
+            case .durationSeconds: return override.durationSeconds
+            }
+        }
+    }
+
+    /// The per-phase state a base-value change leaves behind.
+    ///
+    /// Silent unless at least one phase overrides the field being changed: an
+    /// exercise with no override on that field previews exactly as it always
+    /// has, with no extra rows and no empty section.
+    private static func phaseConsequences(
+        for exercise: ExerciseBlock,
+        field: PhaseField,
+        newBase: Int
+    ) -> [FlowRoutinePhaseConsequence] {
+        let phases = WorkoutPhase.allCases.filter { $0 != .base }
+        let overridden = phases.compactMap { phase in
+            exercise.phaseOverrides[phase].flatMap { field.value(in: $0) }
+        }
+        guard !overridden.isEmpty else { return [] }
+
+        return phases.map { phase in
+            guard let value = exercise.phaseOverrides[phase].flatMap({ field.value(in: $0) }) else {
+                // Said out loud rather than left silent, so a phase missing
+                // from the list is not read as a phase with no override.
+                return FlowRoutinePhaseConsequence(
+                    phase: phase,
+                    unit: field.unit,
+                    baseValue: newBase,
+                    overrideValue: nil,
+                    relation: .inheritsBase
+                )
+            }
+            let relation: FlowRoutinePhaseConsequence.Relation
+            if value == newBase {
+                relation = .matchesBase
+            } else if value < newBase {
+                relation = .belowBase
+            } else {
+                relation = .stepsUpFromBase
+            }
+            return FlowRoutinePhaseConsequence(
+                phase: phase,
+                unit: field.unit,
+                baseValue: newBase,
+                overrideValue: value,
+                relation: relation
             )
         }
     }
