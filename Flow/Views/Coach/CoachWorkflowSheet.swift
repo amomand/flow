@@ -6,6 +6,7 @@ struct CoachWorkflowSheet: View {
     let historyStore: StrengthHistoryStore
     let runs: [Run]
     let inbox: CoachPatchInbox
+    let bridge: CoachBridgeSync
 
     @Environment(\.dismiss) private var dismiss
     @State private var notes = ""
@@ -27,6 +28,13 @@ struct CoachWorkflowSheet: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         contextSection
+                        CoachBridgeSyncView(
+                            sync: bridge,
+                            routines: store.routines,
+                            strengthWorkouts: historyStore.workouts,
+                            cardioWorkouts: runs,
+                            constraintsNotes: notes
+                        )
                         inboxSection
                         previewSection
                         resolvedSection
@@ -41,6 +49,13 @@ struct CoachWorkflowSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .onAppear { autoSelectIfNeeded() }
+        .task {
+            // Opening Flow Coach is a natural refresh point. Anything owed to
+            // the mailbox from a previous session is retried at the same time.
+            guard bridge.isPaired else { return }
+            await bridge.flushAcknowledgements()
+            await bridge.pullPendingPatches()
+        }
         .onChange(of: inbox.pending.map(\.id)) { _, _ in autoSelectIfNeeded() }
         .fileImporter(
             isPresented: $showingImporter,
@@ -148,6 +163,11 @@ struct CoachWorkflowSheet: View {
                     .terminalFont(12)
                     .foregroundColor(TN.comment)
             } else {
+                if !competingRoutineNames.isEmpty {
+                    Text("More than one draft is waiting for \(competingRoutineNames.joined(separator: ", ")). Applying one will make the others stale, and you can clear those with REJECT.")
+                        .terminalFont(11)
+                        .foregroundColor(TN.yellow)
+                }
                 ForEach(inbox.pending) { patch in
                     pendingRow(patch)
                 }
@@ -455,6 +475,9 @@ struct CoachWorkflowSheet: View {
                 errorMessage = "The routine was applied, but the coach inbox could not record it. \(detail)"
                 return
             }
+            // The bridge is told only now: the routine is persisted, the edit
+            // history entry is written, and the inbox has recorded the outcome.
+            acknowledgeToBridge(selected, status: .applied)
             clearSelection()
             statusMessage = "Applied patch to \(routine.name)."
         case .failure(let error):
@@ -468,12 +491,40 @@ struct CoachWorkflowSheet: View {
     private func rejectSelectedPatch() {
         clearMessages()
         guard let selectedPatchId else { return }
+        let selected = inbox.pending.first { $0.id == selectedPatchId }
+        // A draft that no longer matches the routine is reported as stale
+        // rather than rejected, so the mailbox records why it went away.
+        let isStale: Bool = selected.map { patch in
+            switch inbox.summary(for: patch, routines: store.routines).readiness {
+            case .conflict, .invalid: return true
+            case .ready, .rebase: return false
+            }
+        } ?? false
         guard inbox.markRejected(selectedPatchId) else {
             errorMessage = inbox.persistenceError ?? "Could not record the rejection."
             return
         }
+        acknowledgeToBridge(selected, status: isStale ? .stale : .rejected)
         clearSelection()
-        statusMessage = "Patch rejected."
+        statusMessage = isStale ? "Patch cleared as stale." : "Patch rejected."
+    }
+
+    /// Reports a resolved bridge draft to its mailbox. Local-only patches
+    /// (paste, file, link) have nothing to report.
+    private func acknowledgeToBridge(
+        _ patch: PendingCoachPatch?,
+        status: PendingBridgeAcknowledgement.Status
+    ) {
+        guard let bridgePatchId = patch?.remoteProvenance?.bridgePatchId else { return }
+        Task { await bridge.recordDecision(bridgePatchId: bridgePatchId, status: status) }
+    }
+
+    /// Routines with more than one draft waiting, which is the case the person
+    /// needs warning about: applying one stales the rest.
+    private var competingRoutineNames: [String] {
+        let names = inbox.pending.compactMap { inbox.summary(for: $0, routines: store.routines).routineName }
+        let counts = Dictionary(names.map { ($0, 1) }, uniquingKeysWith: +)
+        return counts.filter { $0.value > 1 }.keys.sorted()
     }
 
     private func autoSelectIfNeeded() {

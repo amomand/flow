@@ -8,13 +8,17 @@ struct FlowApp: App {
     @State private var historyStore = StrengthHistoryStore()
     @State private var runSettings = AppSettings.shared
     @State private var syncCoordinator: SyncCoordinator
-    @State private var coachInbox = CoachPatchInbox()
+    @State private var coachInbox: CoachPatchInbox
+    @State private var coachBridge: CoachBridgeSync
 
     init() {
         runContainer = Self.makeRunContainer()
         _syncCoordinator = State(initialValue: SyncCoordinator(modelContainer: runContainer))
         // Every coach patch apply audits into the durable edit history.
         _routineStore = State(initialValue: RoutineStore(editHistory: CoachEditHistoryStore()))
+        let inbox = CoachPatchInbox()
+        _coachInbox = State(initialValue: inbox)
+        _coachBridge = State(initialValue: CoachBridgeSync(inbox: inbox))
     }
 
     var body: some Scene {
@@ -24,7 +28,8 @@ struct FlowApp: App {
                 historyStore: historyStore,
                 runSettings: runSettings,
                 syncCoordinator: syncCoordinator,
-                coachInbox: coachInbox
+                coachInbox: coachInbox,
+                coachBridge: coachBridge
             )
                 .preferredColorScheme(.dark)
                 .modelContainer(runContainer)
@@ -69,6 +74,7 @@ struct FlowRootView: View {
     let runSettings: AppSettings
     let syncCoordinator: SyncCoordinator
     let coachInbox: CoachPatchInbox
+    let coachBridge: CoachBridgeSync
 
     var body: some View {
         @Bindable var coachInbox = coachInbox
@@ -107,7 +113,8 @@ struct FlowRootView: View {
                 store: routineStore,
                 historyStore: historyStore,
                 runs: workouts,
-                inbox: coachInbox
+                inbox: coachInbox,
+                bridge: coachBridge
             )
         }
         .onOpenURL { url in
