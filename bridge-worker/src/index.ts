@@ -197,8 +197,9 @@ async function handleAuthorize(request: Request, env: Env, mailboxId: string | u
 
   const clientName = client.clientName?.trim() || "An MCP client";
   const action = pathnameAndSearch(request.url);
+  const formAction = formActionDirective(client.redirectUris);
 
-  if (request.method === "GET") return consentPage(clientName, granted, action);
+  if (request.method === "GET") return consentPage(clientName, granted, action, formAction);
 
   let phrase: string | undefined;
   try {
@@ -209,7 +210,7 @@ async function handleAuthorize(request: Request, env: Env, mailboxId: string | u
     return json({ error: "The consent form must be submitted as form data." }, 400);
   }
   if (!phrase || !(await secretEqual(phrase, connectSecret))) {
-    return consentPage(clientName, granted, action, "That connect phrase is not right for this mailbox.");
+    return consentPage(clientName, granted, action, formAction, "That connect phrase is not right for this mailbox.");
   }
 
   const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
@@ -227,7 +228,39 @@ function pathnameAndSearch(raw: string): string {
   return `${url.pathname}${url.search}`;
 }
 
-function consentPage(clientName: string, scopes: readonly McpScope[], action: string, problem?: string): Response {
+/**
+ * The consent form posts back to this Worker, but a successful approval answers
+ * with a redirect to the client's registered redirect URI. Browsers apply
+ * `form-action` to the redirect target as well as the form target, so a bare
+ * `form-action 'self'` aborts that final navigation with no visible error: the
+ * page simply sits there. The directive therefore has to name the redirect
+ * origins, which come from the client registration the OAuth layer has already
+ * validated. If any registered URI is not an http(s) origin, such as a native
+ * app scheme, the directive is omitted rather than silently breaking the flow.
+ */
+function formActionDirective(redirectUris: ReadonlyArray<string>): string {
+  const origins = new Set<string>();
+  for (const uri of redirectUris) {
+    let parsed: URL;
+    try {
+      parsed = new URL(uri);
+    } catch {
+      return "";
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return "";
+    origins.add(parsed.origin);
+  }
+  if (origins.size === 0) return "";
+  return `form-action 'self' ${[...origins].sort().join(" ")}`;
+}
+
+function consentPage(
+  clientName: string,
+  scopes: readonly McpScope[],
+  action: string,
+  formAction: string,
+  problem?: string,
+): Response {
   const scopeItems = scopes
     .map((scope) => `<li>${escapeHtml(SCOPE_DESCRIPTIONS[scope])}</li>`)
     .join("");
@@ -271,7 +304,13 @@ ${problem ? `<p class="error">${escapeHtml(problem)}</p>` : ""}
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
-      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "content-security-policy": [
+        "default-src 'none'",
+        "style-src 'unsafe-inline'",
+        formAction,
+        "frame-ancestors 'none'",
+        "base-uri 'none'",
+      ].filter((directive) => directive !== "").join("; "),
     },
   });
   return response;

@@ -129,6 +129,50 @@ describe("Flow Coach bridge OAuth edge", () => {
     expect(html).not.toContain(CONNECT_PHRASE);
   });
 
+  it("lets the browser follow the approval redirect back to the client", async () => {
+    // Regression: `form-action 'self'` alone is applied to the redirect target
+    // as well as the form target, so the browser aborted the navigation after
+    // a correct phrase and the consent page appeared to do nothing.
+    const clientId = await registerClient();
+    for (const method of ["GET", "POST"] as const) {
+      const response = await SELF.fetch(authorizeUrl(clientId), {
+        method,
+        headers: method === "POST" ? { "content-type": "application/x-www-form-urlencoded" } : undefined,
+        body: method === "POST" ? new URLSearchParams({ connect_phrase: "wrong-but-long-enough-to-submit" }) : undefined,
+        redirect: "manual",
+      });
+      const csp = response.headers.get("content-security-policy") ?? "";
+      expect(csp).toContain("form-action 'self' https://client.test");
+      expect(csp).toContain("default-src 'none'");
+      expect(csp).toContain("frame-ancestors 'none'");
+    }
+  });
+
+  it("omits form-action when a client registers a non-web redirect", async () => {
+    // A native-app scheme cannot be expressed as an origin. Blocking the flow
+    // would be worse than dropping one directive, so it is dropped.
+    const registration = await SELF.fetch("https://flow.test/oauth/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Native client",
+        redirect_uris: ["myapp://oauth/callback"],
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    expect(registration.status).toBe(201);
+    const clientId = ((await registration.json()) as { client_id: string }).client_id;
+
+    const url = authorizeUrl(clientId, { redirect_uri: "myapp://oauth/callback" });
+    const response = await SELF.fetch(url);
+    expect(response.status).toBe(200);
+    const csp = response.headers.get("content-security-policy") ?? "";
+    expect(csp).not.toContain("form-action");
+    expect(csp).toContain("default-src 'none'");
+  });
+
   it("rejects a wrong connect phrase without leaking anything", async () => {
     const clientId = await registerClient();
     const denied = await SELF.fetch(authorizeUrl(clientId), {
