@@ -136,7 +136,7 @@ struct CoachBridgeSyncView: View {
                 .foregroundColor(TN.comment)
             Text(sharingSummary)
                 .terminalFont(11)
-                .foregroundColor(sync.requiresSharingApproval ? TN.yellow : TN.comment)
+                .foregroundColor(sharingSummaryColor)
             Spacer()
             Button {
                 showingSharing = true
@@ -149,10 +149,26 @@ struct CoachBridgeSyncView: View {
         }
     }
 
+    /// An approved selection wider than the recommended pair is a settled,
+    /// working state, so it needs saying out loud here rather than reading as
+    /// ordinary (#60). It is a different thing from needing review, and says
+    /// so in different words and a different colour.
     private var sharingSummary: String {
-        let names = sync.sharingProfile.dataTiers.map(Self.tierName)
+        Self.sharingSummary(for: sync.sharingProfile.dataTiers, needsReview: sync.requiresSharingApproval)
+    }
+
+    static func sharingSummary(for tiers: [FlowCoachDataTier], needsReview: Bool) -> String {
+        let names = tiers.map(tierName)
         let list = names.isEmpty ? "nothing" : names.joined(separator: ", ")
-        return sync.requiresSharingApproval ? "\(list) — needs review" : list
+        if needsReview { return "\(list) — needs review" }
+        let extra = tiersBeyondRecommended(tiers)
+        guard !extra.isEmpty else { return list }
+        return "\(list) — wider than recommended, includes \(Self.list(extra))"
+    }
+
+    private var sharingSummaryColor: Color {
+        if sync.requiresSharingApproval { return TN.yellow }
+        return Self.tiersBeyondRecommended(sync.sharingProfile.dataTiers).isEmpty ? TN.comment : TN.orange
     }
 
     @ViewBuilder
@@ -245,6 +261,29 @@ struct CoachBridgeSyncView: View {
             }
             .buttonStyle(.plain)
         }
+    }
+
+    /// The tiers #37 made deliberate opt-ins, in the order they escalate. Kept
+    /// here rather than on the model because this is presentation: the model
+    /// already carries the decision in `FlowCoachSharingProfile.recommended`.
+    static let recommendedTiers: [FlowCoachDataTier] = FlowCoachSharingProfile.recommended.dataTiers
+
+    static let escalationTiers: [FlowCoachDataTier] = FlowCoachDataTier.allCases.filter {
+        !FlowCoachSharingProfile.recommended.dataTiers.contains($0)
+    }
+
+    static func tiersBeyondRecommended(_ tiers: [FlowCoachDataTier]) -> [FlowCoachDataTier] {
+        escalationTiers.filter(tiers.contains)
+    }
+
+    static func isRecommendedSelection(_ tiers: Set<FlowCoachDataTier>) -> Bool {
+        tiers == Set(recommendedTiers)
+    }
+
+    static func list(_ tiers: [FlowCoachDataTier]) -> String {
+        let names = tiers.map(tierName)
+        guard names.count > 1 else { return names.first ?? "nothing" }
+        return names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
     }
 
     static func tierName(_ tier: FlowCoachDataTier) -> String {
@@ -448,11 +487,20 @@ private struct CoachBridgePairingSheet: View {
 
 /// Shows exactly which categories would leave the device, and takes the
 /// explicit approval the first sync requires.
+///
+/// #37 decided the tiers as an escalation, not a menu: routines and Flow's own
+/// strength history are the starting point, cardio totals are a separate
+/// opt-in, and health metrics are a further one. Four identical rows flattened
+/// that decision and made it easy to approve more than intended (#60), so the
+/// recommended pair and the additions are now different things on screen:
+/// different groups, different marks, and health metrics has to be confirmed
+/// against what it contains before it can go on.
 private struct CoachSharingApprovalSheet: View {
     let sync: CoachBridgeSync
 
     @Environment(\.dismiss) private var dismiss
     @State private var selected: Set<FlowCoachDataTier> = []
+    @State private var confirmingEscalation: FlowCoachDataTier?
 
     var body: some View {
         ZStack {
@@ -475,13 +523,9 @@ private struct CoachSharingApprovalSheet: View {
                         .terminalFont(12)
                         .foregroundColor(TN.comment)
 
-                    ForEach(FlowCoachDataTier.allCases, id: \.self) { tier in
-                        tierRow(tier)
-                    }
-
-                    Text("Routines on their own are the smallest useful snapshot. Cardio totals and health metrics are separate opt-ins.")
-                        .terminalFont(11)
-                        .foregroundColor(TN.comment)
+                    recommendedGroup
+                    escalationGroup
+                    selectionSummary
 
                     Button { approve() } label: {
                         Text("[ APPROVE THESE CATEGORIES ]")
@@ -495,21 +539,122 @@ private struct CoachSharingApprovalSheet: View {
         }
         .presentationDetents([.large])
         .onAppear { selected = Set(sync.sharingProfile.dataTiers) }
+        .confirmationDialog(
+            confirmingEscalation.map { "Also share \(CoachBridgeSyncView.tierName($0))?" } ?? "",
+            isPresented: Binding(
+                get: { confirmingEscalation != nil },
+                set: { if !$0 { confirmingEscalation = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            if let tier = confirmingEscalation {
+                Button("Share \(CoachBridgeSyncView.tierName(tier))") {
+                    selected.insert(tier)
+                    confirmingEscalation = nil
+                }
+                Button("Cancel", role: .cancel) { confirmingEscalation = nil }
+            }
+        } message: {
+            if let tier = confirmingEscalation {
+                // What the tier actually contains, at the moment of turning it
+                // on rather than in prose further down the sheet.
+                Text(CoachBridgeSyncView.tierDetail(tier))
+            }
+        }
     }
 
-    private func tierRow(_ tier: FlowCoachDataTier) -> some View {
+    // MARK: - Groups
+
+    private var recommendedGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            groupHeader("RECOMMENDED", color: TN.green)
+            Text("What a coach needs to work from, and the least Flow can usefully send.")
+                .terminalFont(11)
+                .foregroundColor(TN.comment)
+
+            ForEach(CoachBridgeSyncView.recommendedTiers, id: \.self) { tier in
+                tierRow(tier, isEscalation: false)
+            }
+
+            if !CoachBridgeSyncView.isRecommendedSelection(selected) {
+                // One tap back to exactly the recommendation, so nobody has to
+                // undo a row they did not knowingly select.
+                Button {
+                    selected = Set(CoachBridgeSyncView.recommendedTiers)
+                } label: {
+                    Text("[ JUST THE RECOMMENDED PAIR ]")
+                        .terminalFont(11)
+                        .foregroundColor(TN.green)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var escalationGroup: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            groupHeader("A STEP FURTHER", color: TN.orange)
+            Text("Off unless you turn them on. Each one sends a category the recommended pair does not.")
+                .terminalFont(11)
+                .foregroundColor(TN.comment)
+
+            ForEach(CoachBridgeSyncView.escalationTiers, id: \.self) { tier in
+                tierRow(tier, isEscalation: true)
+            }
+        }
+    }
+
+    private func groupHeader(_ title: String, color: Color) -> some View {
+        Text("// \(title)")
+            .terminalFont(12, weight: .bold)
+            .foregroundColor(color)
+    }
+
+    @ViewBuilder
+    private var selectionSummary: some View {
+        let extra = CoachBridgeSyncView.tiersBeyondRecommended(Array(selected))
+        if selected.isEmpty {
+            Text("Nothing selected, so there is nothing to approve.")
+                .terminalFont(11)
+                .foregroundColor(TN.comment)
+        } else if extra.isEmpty {
+            Text(CoachBridgeSyncView.isRecommendedSelection(selected)
+                ? "This is the recommended pair."
+                : "Narrower than the recommended pair.")
+                .terminalFont(11)
+                .foregroundColor(TN.comment)
+        } else {
+            Text("Wider than recommended: this also sends \(CoachBridgeSyncView.list(extra)).")
+                .terminalFont(11)
+                .foregroundColor(TN.orange)
+        }
+    }
+
+    // MARK: - Rows
+
+    private func tierRow(_ tier: FlowCoachDataTier, isEscalation: Bool) -> some View {
         let isOn = selected.contains(tier)
+        let accent = isEscalation ? TN.orange : TN.green
         return Button {
-            if isOn { selected.remove(tier) } else { selected.insert(tier) }
+            toggle(tier, isOn: isOn)
         } label: {
             HStack(alignment: .top, spacing: 8) {
-                Text(isOn ? "[x]" : "[ ]")
+                // Turning on an addition is marked differently from keeping a
+                // recommended row: the two are not the same act.
+                Text(isOn ? (isEscalation ? "[+]" : "[x]") : "[ ]")
                     .terminalFont(12, weight: .bold)
-                    .foregroundColor(isOn ? TN.green : TN.comment)
+                    .foregroundColor(isOn ? accent : TN.comment)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(CoachBridgeSyncView.tierName(tier).uppercased())
-                        .terminalFont(12, weight: .bold)
-                        .foregroundColor(TN.fg)
+                    HStack(spacing: 6) {
+                        Text(CoachBridgeSyncView.tierName(tier).uppercased())
+                            .terminalFont(12, weight: .bold)
+                            .foregroundColor(TN.fg)
+                        if isEscalation {
+                            Text("OPT-IN")
+                                .terminalFont(9, weight: .bold)
+                                .foregroundColor(TN.orange)
+                        }
+                    }
                     Text(CoachBridgeSyncView.tierDetail(tier))
                         .terminalFont(11)
                         .foregroundColor(TN.comment)
@@ -522,7 +667,22 @@ private struct CoachSharingApprovalSheet: View {
         .buttonStyle(.plain)
     }
 
+    private func toggle(_ tier: FlowCoachDataTier, isOn: Bool) {
+        if isOn {
+            selected.remove(tier)
+        } else if tier == .healthMetrics {
+            // The furthest step, and the one whose contents are least obvious
+            // from its name, so it does not go on from a single tap.
+            confirmingEscalation = tier
+        } else {
+            selected.insert(tier)
+        }
+    }
+
     private func approve() {
+        // Any change of selection clears the approval inside
+        // `updateSharingProfile`, so nothing can be approved that was not seen
+        // in this final form.
         sync.updateSharingProfile(FlowCoachSharingProfile(dataTiers: Array(selected)))
         sync.approveSharing()
         dismiss()
