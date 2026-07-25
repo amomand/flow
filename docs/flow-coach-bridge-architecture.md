@@ -1,7 +1,7 @@
 # ADR: Flow Coach bridge
 
-- **Status:** Provisional; two human gates remain open (initial sharing tier, household model)
-- **Decision date:** 10 July 2026; amended 16 July 2026 for the Claude-first pivot and the [#46](https://github.com/amomand/flow/issues/46) spike results
+- **Status:** Accepted; all human gates closed 19 July 2026
+- **Decision date:** 10 July 2026; amended 16 July 2026 for the Claude-first pivot and the [#46](https://github.com/amomand/flow/issues/46) spike results; accepted 19 July 2026
 - **Issues:** [#37](https://github.com/amomand/flow/issues/37), handing off to [#38](https://github.com/amomand/flow/issues/38), [#39](https://github.com/amomand/flow/issues/39), and [#40](https://github.com/amomand/flow/issues/40)
 
 ## Context
@@ -113,7 +113,9 @@ Closed on 16 July 2026:
 2. **Hosting (was gate 3).** Cloudflare with an EU-jurisdiction Durable Object is confirmed by the spike deployment on Alex's account. The free plan suffices, so there is no billing decision. Data-location trade-offs stand as documented in the privacy section.
 3. **Edge ordering (was gate 4).** The question inverted: MCP is the primary edge with OAuth 2.1 in #38's MVP scope, and Actions may follow, if ever (#49).
 
-This ADR becomes accepted once Alex confirms the remaining two:
+Closed on 19 July 2026, confirmed by Alex alongside the PR #53 review:
 
-1. **The initial sharing tier.** The proposed default is routines plus Flow strength-history summaries; cardio totals and HealthKit-derived metrics stay separate opt-ins. No real context is uploaded until Alex approves the categories shown by Flow.
-2. **The household model.** One isolated deployment and one dedicated Claude Project per person, with no shared credential or chat context.
+4. **The initial sharing tier.** Confirmed as proposed: routines plus Flow strength-history summaries; cardio totals and HealthKit-derived metrics stay separate opt-ins. One operational check remains in #39: no real context is uploaded until Alex approves the concrete categories shown by Flow before the first sync.
+5. **The household model.** Confirmed: one isolated deployment and one dedicated Claude Project per person, with no shared credential or chat context.
+
+All gates are closed and the ADR is accepted. Implementation proceeds through #38, #39, and #40 as amended by their pivot comments.
