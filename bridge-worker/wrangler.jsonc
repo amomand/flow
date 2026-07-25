@@ -19,6 +19,18 @@
       }
     ]
   },
+  // OAuth token/grant/client storage (#38). The root entry only serves local
+  // dev and tests; each deployed environment needs its own real namespace so
+  // grants cannot cross people. Create with
+  //   npx wrangler kv namespace create OAUTH_KV --env primary
+  //   npx wrangler kv namespace create OAUTH_KV --env partner
+  // and paste the returned ids over the placeholders before deploying.
+  "kv_namespaces": [
+    {
+      "binding": "OAUTH_KV",
+      "id": "local-dev-and-tests-only"
+    }
+  ],
   "env": {
     "primary": {
       "vars": {
@@ -31,7 +43,13 @@
             "class_name": "FlowCoachMailbox"
           }
         ]
-      }
+      },
+      "kv_namespaces": [
+        {
+          "binding": "OAUTH_KV",
+          "id": "REPLACE_WITH_PRIMARY_OAUTH_KV_ID"
+        }
+      ]
     },
     "partner": {
       "vars": {
@@ -44,7 +62,13 @@
             "class_name": "FlowCoachMailbox"
           }
         ]
-      }
+      },
+      "kv_namespaces": [
+        {
+          "binding": "OAUTH_KV",
+          "id": "REPLACE_WITH_PARTNER_OAUTH_KV_ID"
+        }
+      ]
     }
   },
   "migrations": [

@@ -13,6 +13,7 @@
     "deploy:dry-run:partner": "wrangler deploy --env partner --dry-run --outdir dist/partner"
   },
   "dependencies": {
+    "@cloudflare/workers-oauth-provider": "^0.8.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {

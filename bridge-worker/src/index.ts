@@ -1,5 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
-import { handleMcpMessage } from "./mcp";
+import OAuthProvider from "@cloudflare/workers-oauth-provider";
+import type { AuthRequest, OAuthHelpers } from "@cloudflare/workers-oauth-provider";
+import { MCP_SCOPES, handleMcpMessage } from "./mcp";
+import type { McpScope } from "./mcp";
 import {
   acknowledgementSchema,
   patchEnvelopeSchema,
@@ -16,23 +19,45 @@ const TOMBSTONE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface Env {
   FLOW_COACH: DurableObjectNamespace<FlowCoachMailbox>;
+  /** Token, grant, and dynamic-client storage for the OAuth provider (#38). */
+  OAUTH_KV: KVNamespace;
+  /** Injected by OAuthProvider before either handler runs; never bound in config. */
+  OAUTH_PROVIDER: OAuthHelpers;
   FLOW_COACH_MAILBOX_ID?: string;
   FLOW_COACH_ACTIONS_SECRET?: string;
   FLOW_COACH_DEVICE_SECRET?: string;
   /**
-   * #46 spike only: mounts the MCP edge at /mcp/<token>. The unguessable
-   * path is the whole access control until #38 adds OAuth, so the token
-   * must be at least 32 characters of fresh randomness and must be rotated
-   * or removed once the spike is done.
+   * The per-person connect phrase checked at the OAuth consent page (#38).
+   * Knowing this phrase is what authorises a Claude connector to this
+   * mailbox, so it must be at least 32 characters of fresh randomness and
+   * must never be shared across people or edges. The consent page fails
+   * closed (503) while it is unset or too short.
    */
-  FLOW_COACH_MCP_SPIKE_TOKEN?: string;
+  FLOW_COACH_CONNECT_SECRET?: string;
   /** Test-only: workerd does not implement jurisdiction-restricted namespaces. */
   FLOW_COACH_LOCAL_TEST?: string;
 }
 
 type Edge = "actions" | "device";
 
-export default {
+/** What completeAuthorization stores on the grant and every token minted from it. */
+interface McpGrantProps {
+  mailboxId: string;
+  scopes: McpScope[];
+}
+
+const SCOPE_DESCRIPTIONS: Record<McpScope, string> = {
+  "coach:read": "Read the routines and recent training summary that Flow has synced here",
+  "patch:propose": "Validate and store draft routine edits for Flow to preview",
+};
+
+/**
+ * Non-OAuth routes: health, the consent page, and the Actions/device edges.
+ * OAuthProvider sends every request here except /mcp (which needs a valid
+ * bearer token first) and the endpoints it implements itself
+ * (/oauth/token, /oauth/register, /.well-known/*).
+ */
+const defaultHandler = {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     const mailboxId = configuredMailboxId(env.FLOW_COACH_MAILBOX_ID);
@@ -41,8 +66,7 @@ export default {
         ? json({ ok: true })
         : json({ ok: false, error: "Mailbox deployment is not configured." }, 503);
     }
-    const mcpMatch = url.pathname.match(/^\/mcp\/([^/]+)$/);
-    if (mcpMatch) return handleMcpEdge(request, env, mailboxId, decodeURIComponent(mcpMatch[1]!));
+    if (url.pathname === "/oauth/authorize") return handleAuthorize(request, env, mailboxId);
 
     const edge: Edge | undefined = url.pathname.startsWith("/actions/")
       ? "actions"
@@ -72,6 +96,196 @@ export default {
   },
 };
 
+/**
+ * The MCP edge (#38): OAuthProvider has already required a valid access
+ * token before this handler runs, and ctx.props carries what the consent
+ * page stored on the grant. Scope enforcement per tool happens inside
+ * handleMcpMessage.
+ */
+const mcpApiHandler = {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const props = (ctx as ExecutionContext & { props?: Partial<McpGrantProps> }).props;
+    const mailboxId = configuredMailboxId(env.FLOW_COACH_MAILBOX_ID);
+    if (!mailboxId) return json({ error: "Mailbox deployment is not configured." }, 503);
+    if (props?.mailboxId !== mailboxId) {
+      // A grant minted while this deployment pointed at a different mailbox
+      // must not carry over; the connector has to re-authorise.
+      return json({ error: "This authorisation does not match the deployment. Reconnect the connector." }, 403);
+    }
+    const scopes = Array.isArray(props.scopes) ? props.scopes : [];
+    if (request.method !== "POST") {
+      // Stateless server: no SSE stream to GET, no session to DELETE.
+      const response = json({ error: "The MCP endpoint accepts POST only." }, 405);
+      response.headers.set("allow", "POST");
+      return response;
+    }
+    let message: unknown;
+    try {
+      message = await readJson(request, 128 * 1024);
+    } catch (caught) {
+      if (!(caught instanceof SyntaxError)) throw caught;
+      return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Request body must be valid JSON." } }, 400);
+    }
+    if (message instanceof Response) return message;
+
+    const stub = mailboxStub(env, mailboxId);
+    const outcome = await handleMcpMessage(message, ({ method, path, body, headers }) => {
+      const forwarded = new Headers(headers);
+      forwarded.set("x-flow-edge", "actions");
+      forwarded.set("x-flow-principal", `mcp:${mailboxId}`);
+      forwarded.set("x-flow-provenance", "claude-mcp");
+      if (body !== undefined) forwarded.set("content-type", "application/json");
+      return stub.fetch(`https://mailbox.internal${path}`, {
+        method,
+        headers: forwarded,
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    }, scopes);
+    if (!outcome) return withSecurityHeaders(new Response(null, { status: 202 }));
+    return json(outcome.body, outcome.status);
+  },
+};
+
+export default new OAuthProvider({
+  apiRoute: "/mcp",
+  apiHandler: mcpApiHandler,
+  defaultHandler,
+  authorizeEndpoint: "/oauth/authorize",
+  tokenEndpoint: "/oauth/token",
+  clientRegistrationEndpoint: "/oauth/register",
+  scopesSupported: [...MCP_SCOPES],
+  // OAuth 2.1: S256 only, no implicit flow.
+  allowPlainPKCE: false,
+});
+
+/**
+ * The consent page. GET renders the approval form; POST checks the
+ * per-person connect phrase and, on success, records the grant and sends
+ * the browser back to the client with an authorization code. The phrase is
+ * this page's entire authentication, mirroring how Flow pairs by
+ * possession of the device secret: whoever operates the deployment hands
+ * the phrase to the one person allowed to connect.
+ */
+async function handleAuthorize(request: Request, env: Env, mailboxId: string | undefined): Promise<Response> {
+  if (request.method !== "GET" && request.method !== "POST") {
+    const response = json({ error: "Method not allowed." }, 405);
+    response.headers.set("allow", "GET, POST");
+    return response;
+  }
+  if (!mailboxId) return json({ error: "Mailbox deployment is not configured." }, 503);
+  const connectSecret = env.FLOW_COACH_CONNECT_SECRET?.trim();
+  if (!connectSecret || connectSecret.length < 32) {
+    return json({ error: "The connector consent page is not configured." }, 503);
+  }
+
+  // OAuth parameters are read from the query string only; the POST body
+  // carries the connect phrase and is never handed to the OAuth parser.
+  // parseAuthRequest validates the client and redirect URI and throws on
+  // anything malformed.
+  let authRequest: AuthRequest;
+  try {
+    authRequest = await env.OAUTH_PROVIDER.parseAuthRequest(new Request(request.url, { method: "GET" }));
+  } catch {
+    return json({ error: "Invalid authorization request." }, 400);
+  }
+  const client = await env.OAUTH_PROVIDER.lookupClient(authRequest.clientId);
+  if (!client) return json({ error: "Unknown OAuth client." }, 400);
+
+  const requested = authRequest.scope.filter((scope) => (MCP_SCOPES as readonly string[]).includes(scope)) as McpScope[];
+  const granted: McpScope[] = authRequest.scope.length === 0 ? [...MCP_SCOPES] : requested;
+  if (granted.length === 0) return json({ error: "None of the requested scopes are supported." }, 400);
+
+  const clientName = client.clientName?.trim() || "An MCP client";
+  const action = pathnameAndSearch(request.url);
+
+  if (request.method === "GET") return consentPage(clientName, granted, action);
+
+  let phrase: string | undefined;
+  try {
+    const form = await request.formData();
+    const field = form.get("connect_phrase");
+    phrase = typeof field === "string" ? field.trim() : undefined;
+  } catch {
+    return json({ error: "The consent form must be submitted as form data." }, 400);
+  }
+  if (!phrase || !(await secretEqual(phrase, connectSecret))) {
+    return consentPage(clientName, granted, action, "That connect phrase is not right for this mailbox.");
+  }
+
+  const { redirectTo } = await env.OAUTH_PROVIDER.completeAuthorization({
+    request: authRequest,
+    userId: mailboxId,
+    metadata: { grantedAt: new Date().toISOString() },
+    scope: granted,
+    props: { mailboxId, scopes: granted } satisfies McpGrantProps,
+  });
+  return Response.redirect(redirectTo, 302);
+}
+
+function pathnameAndSearch(raw: string): string {
+  const url = new URL(raw);
+  return `${url.pathname}${url.search}`;
+}
+
+function consentPage(clientName: string, scopes: readonly McpScope[], action: string, problem?: string): Response {
+  const scopeItems = scopes
+    .map((scope) => `<li>${escapeHtml(SCOPE_DESCRIPTIONS[scope])}</li>`)
+    .join("");
+  const body = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow Coach bridge</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 2rem 1rem; background: #f5f5f4; color: #1c1917; }
+  main { max-width: 26rem; margin: 0 auto; background: #fff; border-radius: 12px; padding: 1.5rem; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  h1 { font-size: 1.2rem; margin-top: 0; }
+  ul { padding-left: 1.2rem; }
+  label { display: block; margin: 1rem 0 .35rem; font-weight: 600; }
+  input { width: 100%; box-sizing: border-box; padding: .55rem; border: 1px solid #d6d3d1; border-radius: 8px; font-size: 1rem; }
+  button { margin-top: 1rem; width: 100%; padding: .65rem; border: 0; border-radius: 8px; background: #1c1917; color: #fff; font-size: 1rem; }
+  .error { color: #b91c1c; }
+  .quiet { color: #57534e; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Flow Coach bridge</h1>
+<p><strong>${escapeHtml(clientName)}</strong> is asking to connect to this Flow Coach mailbox. If you approve, it can:</p>
+<ul>${scopeItems}</ul>
+<p class="quiet">It can never change a routine. Every proposal waits in Flow for explicit preview and apply, and you can disconnect it at any time from the client's connector settings.</p>
+${problem ? `<p class="error">${escapeHtml(problem)}</p>` : ""}
+<form method="post" action="${escapeHtml(action)}">
+<label for="connect_phrase">Connect phrase for this mailbox</label>
+<input id="connect_phrase" name="connect_phrase" type="password" autocomplete="off" required>
+<button type="submit">Approve connection</button>
+</form>
+</main>
+</body>
+</html>`;
+  const response = new Response(body, {
+    status: problem ? 403 : 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+      "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+    },
+  });
+  return response;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function mailboxStub(env: Env, mailboxId: string): DurableObjectStub<FlowCoachMailbox> {
   const namespace = env.FLOW_COACH_LOCAL_TEST === "true"
     ? env.FLOW_COACH
@@ -80,45 +294,6 @@ function mailboxStub(env: Env, mailboxId: string): DurableObjectStub<FlowCoachMa
   // or device-supplied request parameter. The first household deployment
   // runs one separately authenticated Worker service per person.
   return namespace.get(namespace.idFromName(`flow-coach:${mailboxId}`));
-}
-
-async function handleMcpEdge(request: Request, env: Env, mailboxId: string | undefined, supplied: string): Promise<Response> {
-  // The unguessable path is the spike's whole access control (#46): an
-  // unconfigured edge, a short configured token, and a wrong token are all
-  // indistinguishable 404s.
-  const token = env.FLOW_COACH_MCP_SPIKE_TOKEN?.trim();
-  if (!token || token.length < 32 || !(await secretEqual(supplied, token))) return json({ error: "Not found." }, 404);
-  if (!mailboxId) return json({ error: "Mailbox deployment is not configured." }, 503);
-  if (request.method !== "POST") {
-    // Stateless server: no SSE stream to GET, no session to DELETE.
-    const response = json({ error: "The MCP endpoint accepts POST only." }, 405);
-    response.headers.set("allow", "POST");
-    return response;
-  }
-  let message: unknown;
-  try {
-    message = await readJson(request, 128 * 1024);
-  } catch (caught) {
-    if (!(caught instanceof SyntaxError)) throw caught;
-    return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Request body must be valid JSON." } }, 400);
-  }
-  if (message instanceof Response) return message;
-
-  const stub = mailboxStub(env, mailboxId);
-  const outcome = await handleMcpMessage(message, ({ method, path, body, headers }) => {
-    const forwarded = new Headers(headers);
-    forwarded.set("x-flow-edge", "actions");
-    forwarded.set("x-flow-principal", "mcp-primary");
-    forwarded.set("x-flow-provenance", "claude-mcp");
-    if (body !== undefined) forwarded.set("content-type", "application/json");
-    return stub.fetch(`https://mailbox.internal${path}`, {
-      method,
-      headers: forwarded,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  });
-  if (!outcome) return withSecurityHeaders(new Response(null, { status: 202 }));
-  return json(outcome.body, outcome.status);
 }
 
 function configuredMailboxId(value: string | undefined): string | undefined {

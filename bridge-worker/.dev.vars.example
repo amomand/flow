@@ -1,9 +1,10 @@
 FLOW_COACH_MAILBOX_ID="local-person"
 FLOW_COACH_ACTIONS_SECRET="replace-with-a-long-random-actions-secret"
 FLOW_COACH_DEVICE_SECRET="replace-with-a-different-long-random-device-secret"
-# #46 spike only: mounts the MCP edge at /mcp/<token>. Generate with
-# `openssl rand -hex 32`; under 32 characters the edge stays closed.
-FLOW_COACH_MCP_SPIKE_TOKEN="replace-with-at-least-32-random-characters"
+# The connect phrase entered on the OAuth consent page when a Claude
+# connector is authorised (#38). Generate with `openssl rand -hex 32`;
+# under 32 characters the consent page stays closed.
+FLOW_COACH_CONNECT_SECRET="replace-with-at-least-32-random-characters"
 # workerd cannot emulate jurisdiction-restricted Durable Object namespaces.
 # Never set this binding in a deployed Wrangler environment.
 FLOW_COACH_LOCAL_TEST="true"

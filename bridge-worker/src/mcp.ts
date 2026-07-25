@@ -1,5 +1,5 @@
 /**
- * Flow Coach bridge - MCP edge (issue #46, Claude connector spike).
+ * Flow Coach bridge - MCP edge (proved by the #46 spike, hardened for #38).
  *
  * A stateless Streamable HTTP MCP server implemented directly over the
  * Worker fetch API: each POST carries one JSON-RPC message and receives one
@@ -7,7 +7,9 @@
  * Streamable HTTP transport permits both for stateless servers and Claude's
  * custom connectors accept them. Tool calls translate onto the same domain
  * routes the REST Actions edge uses, so the Durable Object stays the single
- * domain service and nothing forks by provider.
+ * domain service and nothing forks by provider. Access control lives in
+ * index.ts: OAuth 2.1 bearer tokens verified by workers-oauth-provider,
+ * with per-tool scope checks here.
  *
  * Six tools, matching the phase 5 prototype contract (#36, PR #43) adapted
  * to the worker's exact-snapshot correlation rules:
@@ -17,6 +19,15 @@
  */
 
 export const MCP_SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
+
+/**
+ * OAuth scopes on the MCP edge (#38). Reads require coach:read; patch
+ * validation and pending-patch creation require patch:propose. The split
+ * lets a Project be connected read-only if a person wants advice without
+ * even draft-level write access.
+ */
+export const MCP_SCOPES = ["coach:read", "patch:propose"] as const;
+export type McpScope = (typeof MCP_SCOPES)[number];
 
 const BRIDGE_INSTRUCTIONS = `Flow Coach bridge.
 
@@ -57,6 +68,7 @@ interface ToolDefinition {
   name: string;
   title: string;
   description: string;
+  requiredScope: McpScope;
   inputSchema: JsonSchema;
   annotations: {
     readOnlyHint: boolean;
@@ -175,6 +187,7 @@ const patchProperty = {
 const TOOLS: ReadonlyArray<ToolDefinition> = [
   {
     name: "get_flow_coach_context",
+    requiredScope: "coach:read",
     title: "Get Flow coach context",
     description:
       "Returns a lean summary of the user's current Flow coach context: the contextId " +
@@ -204,6 +217,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "list_routines",
+    requiredScope: "coach:read",
     title: "List Flow routines",
     description:
       "Lists every routine in one exact snapshot with id, name, current phase, " +
@@ -225,6 +239,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "get_routine",
+    requiredScope: "coach:read",
     title: "Get one Flow routine",
     description:
       "Returns the full body of one routine by id, in the same JSON shape Flow itself " +
@@ -253,6 +268,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "get_training_summary",
+    requiredScope: "coach:read",
     title: "Get recent Flow training summary",
     description:
       "Returns a bounded window of recent strength and cardio summaries from one " +
@@ -284,6 +300,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "validate_flow_routine_patch",
+    requiredScope: "patch:propose",
     title: "Validate a Flow routine patch",
     description:
       "Validates a candidate FlowRoutinePatch (schema 2) against one exact snapshot " +
@@ -314,6 +331,7 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
   },
   {
     name: "create_pending_routine_patch",
+    requiredScope: "patch:propose",
     title: "Propose a Flow routine patch",
     description:
       "Stores a DRAFT routine patch for Flow to review. This tool does not modify any " +
@@ -353,12 +371,15 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
 /**
  * Handles one decoded JSON-RPC message. Returns the HTTP status and JSON
  * body to send, or null for a notification/response message that only needs
- * a 202. The caller owns transport concerns: token gate, method check, body
- * size limits, and JSON parse errors.
+ * a 202. The caller owns transport concerns: the OAuth token gate, method
+ * check, body size limits, and JSON parse errors. grantedScopes is what the
+ * grant behind the presented token was authorised for: tools/list shows
+ * only tools the token can call, and tools/call refuses the rest.
  */
 export async function handleMcpMessage(
   message: unknown,
   domain: DomainFetch,
+  grantedScopes: ReadonlyArray<string>,
 ): Promise<{ status: number; body: unknown } | null> {
   if (Array.isArray(message)) {
     return { status: 400, body: rpcError(null, -32600, "Batch requests are not supported.") };
@@ -395,14 +416,19 @@ export async function handleMcpMessage(
   if (rpc.method === "ping") return rpcResult(id, {});
   if (rpc.method === "tools/list") {
     return rpcResult(id, {
-      tools: TOOLS.map(({ name, title, description, inputSchema, annotations }) => ({
-        name, title, description, inputSchema, annotations,
-      })),
+      tools: TOOLS
+        .filter((tool) => grantedScopes.includes(tool.requiredScope))
+        .map(({ name, title, description, inputSchema, annotations }) => ({
+          name, title, description, inputSchema, annotations,
+        })),
     });
   }
   if (rpc.method === "tools/call") {
     const tool = TOOLS.find((candidate) => candidate.name === params.name);
     if (!tool) return { status: 200, body: rpcError(id, -32602, `Unknown tool: ${String(params.name)}.`) };
+    if (!grantedScopes.includes(tool.requiredScope)) {
+      return { status: 200, body: rpcError(id, -32602, `${tool.name} requires the ${tool.requiredScope} scope, which this connection was not granted.`) };
+    }
     const args = (params.arguments ?? {}) as ToolArguments;
     const problem = argumentProblem(tool, args);
     if (problem) return { status: 200, body: rpcError(id, -32602, problem) };

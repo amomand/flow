@@ -1,11 +1,15 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
+import { obtainTokens } from "./oauth-helper";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
 const DEVICE_SECRET = "fixture-device-secret";
-const MCP_TOKEN = "fixture-mcp-spike-token-0123456789abcdef";
-const MCP_URL = `https://flow.test/mcp/${MCP_TOKEN}`;
+const MCP_URL = "https://flow.test/mcp";
+
+// One OAuth grant for the whole file: clearing the mailbox between tests
+// wipes the Durable Object, not the provider's token storage.
+let accessToken = "";
 
 function auth(secret: string): HeadersInit {
   return { authorization: `Bearer ${secret}`, "content-type": "application/json" };
@@ -45,10 +49,14 @@ async function json(response: Response): Promise<Record<string, any>> {
   return response.json() as Promise<Record<string, any>>;
 }
 
+function mcpHeaders(): HeadersInit {
+  return { authorization: `Bearer ${accessToken}`, "content-type": "application/json" };
+}
+
 async function rpc(method: string, params?: unknown, id: number | string = 1): Promise<Response> {
   return SELF.fetch(MCP_URL, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: mcpHeaders(),
     body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
   });
 }
@@ -78,20 +86,13 @@ async function upload(envelope = snapshot()): Promise<Response> {
 }
 
 describe("Flow Coach bridge MCP edge", () => {
+  beforeAll(async () => {
+    accessToken = (await obtainTokens()).accessToken;
+  });
   beforeEach(clearMailbox);
 
-  it("hides the edge behind the unguessable path", async () => {
-    const wrongToken = await SELF.fetch("https://flow.test/mcp/not-the-token-but-still-32-chars-long", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
-    });
-    expect(wrongToken.status).toBe(404);
-
-    const bareMount = await SELF.fetch("https://flow.test/mcp/", { method: "POST" });
-    expect(bareMount.status).toBe(404);
-
-    const wrongMethod = await SELF.fetch(MCP_URL);
+  it("accepts POST only, even with a valid token", async () => {
+    const wrongMethod = await SELF.fetch(MCP_URL, { headers: mcpHeaders() });
     expect(wrongMethod.status).toBe(405);
     expect(wrongMethod.headers.get("allow")).toBe("POST");
   });
@@ -112,7 +113,7 @@ describe("Flow Coach bridge MCP edge", () => {
 
     const initialized = await SELF.fetch(MCP_URL, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: mcpHeaders(),
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }),
     });
     expect(initialized.status).toBe(202);
@@ -263,7 +264,7 @@ describe("Flow Coach bridge MCP edge", () => {
 
     const batch = await SELF.fetch(MCP_URL, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: mcpHeaders(),
       body: JSON.stringify([{ jsonrpc: "2.0", id: 1, method: "ping" }]),
     });
     expect(batch.status).toBe(400);
@@ -271,7 +272,7 @@ describe("Flow Coach bridge MCP edge", () => {
 
     const unparseable = await SELF.fetch(MCP_URL, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: mcpHeaders(),
       body: "{not json",
     });
     expect(unparseable.status).toBe(400);
