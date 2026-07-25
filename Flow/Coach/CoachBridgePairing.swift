@@ -12,6 +12,10 @@ struct CoachBridgePairing: Equatable {
     let label: String
     let endpoint: URL
     let pairedAt: Date
+    /// When this endpoint and credential were last proved to work together.
+    /// `nil` means the pairing was saved while the device was offline and has
+    /// not been checked since, which the UI has to say out loud (#58).
+    var verifiedAt: Date?
 
     /// The device credential. Held separately from the display fields so the
     /// UI layer can pass a pairing around without carrying the secret.
@@ -21,6 +25,8 @@ struct CoachBridgePairing: Equatable {
         guard let host = endpoint.host else { return endpoint.absoluteString }
         return host
     }
+
+    var isVerified: Bool { verifiedAt != nil }
 }
 
 /// Where a pairing is kept. The Keychain implementation is the real one; tests
@@ -116,6 +122,7 @@ final class CoachBridgePairingStore {
     private(set) var lastError: String?
 
     private let vault: CoachBridgeVault
+    private let probe: CoachBridgePairingProbe
 
     private struct StoredPairing: Codable {
         let schemaVersion: Int
@@ -123,12 +130,21 @@ final class CoachBridgePairingStore {
         let endpoint: URL
         let credential: String
         let pairedAt: Date
+        /// Absent in version 1 records, which were written before pairing was
+        /// checked at all.
+        let verifiedAt: Date?
     }
 
-    private static let schemaVersion = 1
+    /// Version 2 records carry `verifiedAt`. The vault format is otherwise
+    /// unchanged, and a version 1 record still decodes.
+    private static let schemaVersion = 2
 
-    init(vault: CoachBridgeVault = KeychainBridgeVault()) {
+    init(
+        vault: CoachBridgeVault = KeychainBridgeVault(),
+        probe: CoachBridgePairingProbe = CoachBridgeEdgeProbe()
+    ) {
         self.vault = vault
+        self.probe = probe
         load()
     }
 
@@ -140,6 +156,12 @@ final class CoachBridgePairingStore {
         case insecureEndpoint
         case emptyCredential
         case vaultUnavailable
+        case credentialRejected
+        case addressUnreachable
+        case notAMailbox
+        case mailboxNotReady
+        case refused(status: Int)
+        case cannotRotateOffline
 
         var errorDescription: String? {
             switch self {
@@ -153,6 +175,18 @@ final class CoachBridgePairingStore {
                 return "Paste the device credential for this mailbox."
             case .vaultUnavailable:
                 return "Could not save the pairing to the Keychain."
+            case .credentialRejected:
+                return "The mailbox is there, but it rejected this device credential. Check you pasted the credential for this mailbox, or roll it in the bridge and paste the new one. Nothing was saved."
+            case .addressUnreachable:
+                return "Nothing answered at that address. Check the address, then try again. Nothing was saved."
+            case .notAMailbox:
+                return "Something answered at that address, but it is not a coach mailbox. Check the address. Nothing was saved."
+            case .mailboxNotReady:
+                return "That deployment is not set up as a mailbox yet. The address and the credential are not the problem, and this is not something Flow can fix; the bridge needs configuring first."
+            case .refused(let status):
+                return "The mailbox refused the check (HTTP \(status)). Nothing was saved."
+            case .cannotRotateOffline:
+                return "Flow cannot check a new credential while this device is offline, and it will not replace a working one unchecked. Rotate when you have a connection."
             }
         }
     }
@@ -160,47 +194,111 @@ final class CoachBridgePairingStore {
     /// Pairs, or re-pairs, this installation. Callers must have confirmed a
     /// switch with the user first: `pendingSwitchWarning(for:)` describes what
     /// changing endpoint means.
+    ///
+    /// The endpoint and credential are proved against the live mailbox before
+    /// anything is written, so a pairing Flow reports as working is one that
+    /// has worked at least once (#58). A failed check leaves any previous
+    /// pairing exactly as it was: there is no point at which the old record has
+    /// been cleared and the new one has not landed.
     @discardableResult
-    func pair(label: String, endpointText: String, credential: String, now: Date = Date()) -> Result<CoachBridgePairing, PairingError> {
+    func pair(label: String, endpointText: String, credential: String, now: Date = Date()) async -> Result<CoachBridgePairing, PairingError> {
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedLabel.isEmpty else { return .failure(.emptyLabel) }
         let trimmedCredential = credential.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCredential.isEmpty else { return .failure(.emptyCredential) }
 
+        let endpoint: URL
         switch Self.normalisedEndpoint(from: endpointText) {
         case .failure(let error):
             return .failure(error)
-        case .success(let endpoint):
-            let record = CoachBridgePairing(
-                label: trimmedLabel,
-                endpoint: endpoint,
-                pairedAt: now,
-                credential: trimmedCredential
-            )
-            guard persist(record) else { return .failure(.vaultUnavailable) }
-            pairing = record
-            lastError = nil
-            return .success(record)
+        case .success(let normalised):
+            endpoint = normalised
         }
+
+        let verifiedAt: Date?
+        switch await probe.check(endpoint: endpoint, credential: trimmedCredential) {
+        case .accepted:
+            verifiedAt = now
+        case .offline:
+            // Pairing on a train should still work. The record is saved
+            // unchecked and says so on screen until a real request settles it.
+            verifiedAt = nil
+        case .credentialRejected:
+            return .failure(.credentialRejected)
+        case .unreachable:
+            return .failure(.addressUnreachable)
+        case .notAMailbox:
+            return .failure(.notAMailbox)
+        case .notReady:
+            return .failure(.mailboxNotReady)
+        case .refused(let status):
+            return .failure(.refused(status: status))
+        }
+
+        let record = CoachBridgePairing(
+            label: trimmedLabel,
+            endpoint: endpoint,
+            pairedAt: now,
+            verifiedAt: verifiedAt,
+            credential: trimmedCredential
+        )
+        guard persist(record) else { return .failure(.vaultUnavailable) }
+        pairing = record
+        lastError = nil
+        return .success(record)
     }
 
     /// Replaces the credential without touching the endpoint, for rotation
     /// after the bridge's secret is rolled.
+    ///
+    /// Checked against the stored endpoint first: a rotation that pastes the
+    /// wrong secret must fail here and leave the working credential in place,
+    /// rather than presenting as success and breaking the next sync.
     @discardableResult
-    func rotateCredential(_ credential: String) -> Result<CoachBridgePairing, PairingError> {
+    func rotateCredential(_ credential: String, now: Date = Date()) async -> Result<CoachBridgePairing, PairingError> {
         guard let current = pairing else { return .failure(.emptyCredential) }
         let trimmed = credential.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return .failure(.emptyCredential) }
+
+        switch await probe.check(endpoint: current.endpoint, credential: trimmed) {
+        case .accepted:
+            break
+        case .offline:
+            // Unlike pairing, there is something to lose here: the credential
+            // already stored works.
+            return .failure(.cannotRotateOffline)
+        case .credentialRejected:
+            return .failure(.credentialRejected)
+        case .unreachable:
+            return .failure(.addressUnreachable)
+        case .notAMailbox:
+            return .failure(.notAMailbox)
+        case .notReady:
+            return .failure(.mailboxNotReady)
+        case .refused(let status):
+            return .failure(.refused(status: status))
+        }
+
         let record = CoachBridgePairing(
             label: current.label,
             endpoint: current.endpoint,
             pairedAt: current.pairedAt,
+            verifiedAt: now,
             credential: trimmed
         )
         guard persist(record) else { return .failure(.vaultUnavailable) }
         pairing = record
         lastError = nil
         return .success(record)
+    }
+
+    /// Records that this endpoint answered a real request, which is the same
+    /// proof pairing takes. Ignored when it does not name the current pairing.
+    func markVerified(_ endpoint: URL, at date: Date = Date()) {
+        guard var current = pairing, current.endpoint == endpoint, !current.isVerified else { return }
+        current.verifiedAt = date
+        guard persist(current) else { return }
+        pairing = current
     }
 
     /// Signs out of the mailbox. Local routines, inbox records, and edit
@@ -235,7 +333,8 @@ final class CoachBridgePairingStore {
             label: record.label,
             endpoint: record.endpoint,
             credential: record.credential,
-            pairedAt: record.pairedAt
+            pairedAt: record.pairedAt,
+            verifiedAt: record.verifiedAt
         )
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -258,6 +357,10 @@ final class CoachBridgePairingStore {
             label: stored.label,
             endpoint: stored.endpoint,
             pairedAt: stored.pairedAt,
+            // A version 1 record predates the check and belongs to an
+            // installation already syncing with it, so it counts as proven;
+            // only a version 2 record can be genuinely unverified.
+            verifiedAt: stored.verifiedAt ?? (stored.schemaVersion < 2 ? stored.pairedAt : nil),
             credential: stored.credential
         )
     }

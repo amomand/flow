@@ -28,6 +28,12 @@ private actor StubBridgeTransport: CoachBridgeTransport {
         replies[key, default: []].append(Reply(status: -1, json: ""))
     }
 
+    /// A device with no connection at all, which is a different thing from a
+    /// network that cannot find the mailbox (#58).
+    func stubOffline(_ key: String) {
+        replies[key, default: []].append(Reply(status: -2, json: ""))
+    }
+
     func requests() -> [Recorded] { recorded }
 
     func requestCount(_ key: String) -> Int {
@@ -49,6 +55,9 @@ private actor StubBridgeTransport: CoachBridgeTransport {
         let reply = replies[key]?.isEmpty == false ? replies[key]!.removeFirst() : Reply(status: 200, json: "{}")
         if reply.status == -1 {
             throw CoachBridgeError.transport("the network is unavailable")
+        }
+        if reply.status == -2 {
+            throw URLError(.notConnectedToInternet)
         }
         // A real mailbox echoes back the identity it stored. `$CONTEXT_ID$`
         // stands in for "whatever Flow just sent", so identity verification is
@@ -73,6 +82,26 @@ private actor StubBridgeTransport: CoachBridgeTransport {
     }
 }
 
+/// Scripted pairing probe. Accepts by default, so tests that only care about
+/// what happens after pairing read as they did before validation existed.
+private actor StubPairingProbe: CoachBridgePairingProbe {
+    private var results: [CoachBridgePairingCheck]
+    private var seen: [(endpoint: URL, credential: String)] = []
+
+    init(_ results: [CoachBridgePairingCheck] = []) {
+        self.results = results
+    }
+
+    func checkCount() -> Int { seen.count }
+
+    func lastCredential() -> String? { seen.last?.credential }
+
+    func check(endpoint: URL, credential: String) async -> CoachBridgePairingCheck {
+        seen.append((endpoint, credential))
+        return results.isEmpty ? .accepted : results.removeFirst()
+    }
+}
+
 @MainActor
 final class CoachBridgeSyncTests: XCTestCase {
     private var createdDirectories: [URL] = []
@@ -87,11 +116,11 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     // MARK: - Pairing
 
-    func testPairingSurvivesReloadAndKeepsCredentialOutOfDisplayFields() throws {
+    func testPairingSurvivesReloadAndKeepsCredentialOutOfDisplayFields() async throws {
         let vault = InMemoryBridgeVault()
-        let store = CoachBridgePairingStore(vault: vault)
+        let store = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe())
 
-        guard case .success(let pairing) = store.pair(
+        guard case .success(let pairing) = await store.pair(
             label: "Alex's mailbox",
             endpointText: "https://flow-coach-bridge-primary.example.workers.dev",
             credential: "device-secret-one"
@@ -101,37 +130,33 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(pairing.label, "Alex's mailbox")
         XCTAssertEqual(pairing.endpointDescription, "flow-coach-bridge-primary.example.workers.dev")
 
-        let reloaded = CoachBridgePairingStore(vault: vault)
+        let reloaded = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe())
         XCTAssertTrue(reloaded.isPaired)
         XCTAssertEqual(reloaded.pairing?.label, "Alex's mailbox")
         XCTAssertEqual(reloaded.credential(), "device-secret-one")
     }
 
-    func testPairingRejectsInsecureAndMalformedEndpoints() {
-        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault())
+    func testPairingRejectsInsecureAndMalformedEndpoints() async {
+        let probe = StubPairingProbe()
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: probe)
 
-        XCTAssertEqual(
-            store.pair(label: "x", endpointText: "http://coach.example.com", credential: "c"),
-            .failure(.insecureEndpoint)
-        )
-        XCTAssertEqual(
-            store.pair(label: "x", endpointText: "not a url at all", credential: "c"),
-            .failure(.invalidEndpoint)
-        )
-        XCTAssertEqual(
-            store.pair(label: "  ", endpointText: "https://coach.example.com", credential: "c"),
-            .failure(.emptyLabel)
-        )
-        XCTAssertEqual(
-            store.pair(label: "x", endpointText: "https://coach.example.com", credential: "   "),
-            .failure(.emptyCredential)
-        )
+        let insecure = await store.pair(label: "x", endpointText: "http://coach.example.com", credential: "c")
+        XCTAssertEqual(insecure, .failure(.insecureEndpoint))
+        let malformed = await store.pair(label: "x", endpointText: "not a url at all", credential: "c")
+        XCTAssertEqual(malformed, .failure(.invalidEndpoint))
+        let unnamed = await store.pair(label: "  ", endpointText: "https://coach.example.com", credential: "c")
+        XCTAssertEqual(unnamed, .failure(.emptyLabel))
+        let uncredentialled = await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "   ")
+        XCTAssertEqual(uncredentialled, .failure(.emptyCredential))
+
         XCTAssertFalse(store.isPaired)
+        let checks = await probe.checkCount()
+        XCTAssertEqual(checks, 0, "a pairing that cannot be formed must not reach the network")
     }
 
-    func testLoopbackHTTPIsAllowedForLocalVerification() {
-        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-        guard case .success(let pairing) = store.pair(
+    func testLoopbackHTTPIsAllowedForLocalVerification() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+        guard case .success(let pairing) = await store.pair(
             label: "local",
             endpointText: "http://127.0.0.1:8787/",
             credential: "c"
@@ -142,9 +167,9 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(pairing.endpoint.absoluteString, "http://127.0.0.1:8787")
     }
 
-    func testBareHostGainsHTTPSScheme() {
-        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-        guard case .success(let pairing) = store.pair(
+    func testBareHostGainsHTTPSScheme() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+        guard case .success(let pairing) = await store.pair(
             label: "x",
             endpointText: "coach.example.com",
             credential: "c"
@@ -154,23 +179,23 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(pairing.endpoint.scheme, "https")
     }
 
-    func testRotationKeepsEndpointAndReplacesCredential() {
-        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-        store.pair(label: "x", endpointText: "https://coach.example.com", credential: "old")
+    func testRotationKeepsEndpointAndReplacesCredential() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+        await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "old")
 
-        guard case .success = store.rotateCredential("new") else {
+        guard case .success = await store.rotateCredential("new") else {
             return XCTFail("Expected rotation to succeed")
         }
         XCTAssertEqual(store.credential(), "new")
         XCTAssertEqual(store.pairing?.endpoint.absoluteString, "https://coach.example.com")
     }
 
-    func testSignOutClearsPairingWithoutTouchingLocalData() throws {
+    func testSignOutClearsPairingWithoutTouchingLocalData() async throws {
         let inbox = CoachPatchInbox(fileURL: try makeFileURL("coach-inbox.json"))
         inbox.enqueue(rawJSON: "{\"a\":1}", source: .paste)
-        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-        store.pair(label: "x", endpointText: "https://coach.example.com", credential: "c")
-        let sync = try makeSync(inbox: inbox, pairingStore: store, transport: StubBridgeTransport())
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+        await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "c")
+        let sync = try await makeSync(inbox: inbox, pairingStore: store, transport: StubBridgeTransport())
 
         XCTAssertTrue(sync.signOut())
 
@@ -178,19 +203,203 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(inbox.pending.count, 1, "signing out must not delete local inbox records")
     }
 
-    func testSwitchDetectionOnlyFlagsADifferentEndpoint() {
-        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-        store.pair(label: "x", endpointText: "https://a.example.com", credential: "c")
+    func testSwitchDetectionOnlyFlagsADifferentEndpoint() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+        await store.pair(label: "x", endpointText: "https://a.example.com", credential: "c")
 
         XCTAssertFalse(store.isSwitch(to: "https://a.example.com/"))
         XCTAssertTrue(store.isSwitch(to: "https://b.example.com"))
+    }
+
+    // MARK: - Pairing validation (#58)
+
+    func testPairingIsCheckedAgainstTheMailboxBeforeAnythingIsStored() async {
+        let vault = InMemoryBridgeVault()
+        let probe = StubPairingProbe()
+        let store = CoachBridgePairingStore(vault: vault, probe: probe)
+
+        guard case .success(let pairing) = await store.pair(
+            label: "Alex's mailbox",
+            endpointText: "https://coach.example.com",
+            credential: "device-secret"
+        ) else {
+            return XCTFail("Expected pairing to succeed")
+        }
+
+        let credential = await probe.lastCredential()
+        XCTAssertEqual(credential, "device-secret", "the check must carry the credential being paired")
+        XCTAssertTrue(pairing.isVerified)
+        XCTAssertTrue(CoachBridgePairingStore(vault: vault, probe: StubPairingProbe()).pairing?.isVerified == true)
+    }
+
+    func testRejectedCredentialFailsAtPairingTimeAndNamesTheCredential() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe([.credentialRejected]))
+
+        let result = await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "wrong")
+
+        XCTAssertEqual(result, .failure(.credentialRejected))
+        XCTAssertFalse(store.isPaired, "a rejected credential must not be stored")
+        let message = CoachBridgePairingStore.PairingError.credentialRejected.localizedDescription
+        XCTAssertTrue(message.contains("credential"))
+        XCTAssertFalse(message.contains("wrong"), "no credential may reach a message or a log")
+    }
+
+    func testUnreachableAddressFailsAtPairingTimeAndNamesTheAddress() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe([.unreachable]))
+
+        let result = await store.pair(label: "x", endpointText: "https://typo.example.com", credential: "c")
+
+        XCTAssertEqual(result, .failure(.addressUnreachable))
+        XCTAssertFalse(store.isPaired)
+        XCTAssertTrue(
+            CoachBridgePairingStore.PairingError.addressUnreachable.localizedDescription.contains("address")
+        )
+    }
+
+    func testUnconfiguredDeploymentSaysTheMailboxIsNotReady() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe([.notReady]))
+
+        let result = await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "c")
+
+        XCTAssertEqual(result, .failure(.mailboxNotReady))
+        let message = CoachBridgePairingStore.PairingError.mailboxNotReady.localizedDescription
+        XCTAssertTrue(message.contains("not set up"))
+        XCTAssertFalse(message.contains("rejected"), "a 503 is neither a bad credential nor a bad address")
+    }
+
+    func testFailedValidationLeavesThePreviousPairingUsable() async {
+        let vault = InMemoryBridgeVault()
+        let store = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe([.accepted, .credentialRejected]))
+        await store.pair(label: "working", endpointText: "https://mine.example.com", credential: "good-secret")
+
+        let result = await store.pair(label: "typo", endpointText: "https://theirs.example.com", credential: "bad-secret")
+
+        XCTAssertEqual(result, .failure(.credentialRejected))
+        XCTAssertEqual(store.pairing?.label, "working")
+        XCTAssertEqual(store.pairing?.endpoint.absoluteString, "https://mine.example.com")
+        XCTAssertEqual(store.credential(), "good-secret")
+        // And nothing half-written landed in the vault either.
+        let reloaded = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe())
+        XCTAssertEqual(reloaded.pairing?.label, "working")
+        XCTAssertEqual(reloaded.credential(), "good-secret")
+    }
+
+    func testPairingOfflineIsSavedButReportedAsUnverified() async {
+        let vault = InMemoryBridgeVault()
+        let store = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe([.offline]))
+
+        guard case .success(let pairing) = await store.pair(
+            label: "paired on a train",
+            endpointText: "https://coach.example.com",
+            credential: "c"
+        ) else {
+            return XCTFail("Expected an offline pairing to be saved")
+        }
+
+        XCTAssertFalse(pairing.isVerified)
+        XCTAssertFalse(
+            CoachBridgePairingStore(vault: vault, probe: StubPairingProbe()).pairing?.isVerified == true,
+            "unverified must survive relaunch, or the screen would start claiming a check that never happened"
+        )
+    }
+
+    func testASuccessfulRequestSettlesAnUnverifiedPairing() async throws {
+        let vault = InMemoryBridgeVault()
+        let store = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe([.offline]))
+        await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "c")
+        XCTAssertFalse(store.pairing?.isVerified == true)
+
+        let transport = StubBridgeTransport()
+        await transport.stub("GET /device/pending-patches", status: 200, json: "{\"patches\":[]}")
+        let sync = try await makeSync(pairingStore: store, transport: transport)
+        _ = await sync.pullPendingPatches()
+
+        XCTAssertTrue(store.pairing?.isVerified == true)
+    }
+
+    func testRotationWithARejectedCredentialKeepsTheWorkingOne() async {
+        let store = CoachBridgePairingStore(
+            vault: InMemoryBridgeVault(),
+            probe: StubPairingProbe([.accepted, .credentialRejected])
+        )
+        await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "working")
+
+        let result = await store.rotateCredential("fat-fingered")
+
+        XCTAssertEqual(result, .failure(.credentialRejected))
+        XCTAssertEqual(store.credential(), "working")
+    }
+
+    func testRotationRefusesToReplaceAWorkingCredentialUnchecked() async {
+        let store = CoachBridgePairingStore(
+            vault: InMemoryBridgeVault(),
+            probe: StubPairingProbe([.accepted, .offline])
+        )
+        await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "working")
+
+        let result = await store.rotateCredential("new")
+
+        XCTAssertEqual(result, .failure(.cannotRotateOffline))
+        XCTAssertEqual(store.credential(), "working")
+    }
+
+    func testAPairingWrittenBeforeValidationExistedCountsAsVerified() {
+        // A version 1 record predates the check and belongs to an installation
+        // that has been syncing with it; it must not suddenly read as unproven.
+        let legacy = """
+        {"schemaVersion":1,"label":"Alex's mailbox","endpoint":"https://coach.example.com",\
+        "credential":"device-secret","pairedAt":"2026-07-25T12:00:00Z"}
+        """
+        let store = CoachBridgePairingStore(
+            vault: InMemoryBridgeVault(stored: Data(legacy.utf8)),
+            probe: StubPairingProbe()
+        )
+
+        XCTAssertTrue(store.pairing?.isVerified == true)
+        XCTAssertEqual(store.credential(), "device-secret")
+    }
+
+    func testProbeReadsTheDeviceEdgeAndRejectsAHostThatIsNotAMailbox() async {
+        let transport = StubBridgeTransport()
+        await transport.stub("GET /device/pending-patches", status: 200, json: "{\"patches\":[]}")
+        await transport.stub("GET /device/pending-patches", status: 200, json: "{\"hello\":\"world\"}")
+        await transport.stub("GET /device/pending-patches", status: 401, json: "{\"error\":\"Invalid or missing credential.\"}")
+        await transport.stub("GET /device/pending-patches", status: 503, json: "{\"error\":\"Mailbox deployment is not configured.\"}")
+        let probe = CoachBridgeEdgeProbe(transport: transport)
+        let endpoint = URL(string: "https://coach.example.com")!
+
+        let accepted = await probe.check(endpoint: endpoint, credential: "c")
+        let stranger = await probe.check(endpoint: endpoint, credential: "c")
+        let rejected = await probe.check(endpoint: endpoint, credential: "c")
+        let unconfigured = await probe.check(endpoint: endpoint, credential: "c")
+
+        XCTAssertEqual(accepted, .accepted)
+        XCTAssertEqual(stranger, .notAMailbox, "a 200 from something that is not the device edge is not a mailbox")
+        XCTAssertEqual(rejected, .credentialRejected)
+        XCTAssertEqual(unconfigured, .notReady)
+        let calls = await transport.requests()
+        XCTAssertTrue(calls.allSatisfy { $0.method == "GET" }, "the check must have no side effects")
+    }
+
+    func testProbeSeparatesAnOfflineDeviceFromAnUnreachableAddress() async {
+        let offlineTransport = StubBridgeTransport()
+        await offlineTransport.stubOffline("GET /device/pending-patches")
+        let unreachableTransport = StubBridgeTransport()
+        await unreachableTransport.stubFailure("GET /device/pending-patches")
+        let endpoint = URL(string: "https://coach.example.com")!
+
+        let offline = await CoachBridgeEdgeProbe(transport: offlineTransport).check(endpoint: endpoint, credential: "c")
+        let unreachable = await CoachBridgeEdgeProbe(transport: unreachableTransport).check(endpoint: endpoint, credential: "c")
+
+        XCTAssertEqual(offline, .offline)
+        XCTAssertEqual(unreachable, .unreachable)
     }
 
     // MARK: - Sharing approval
 
     func testFirstSyncRequiresExplicitSharingApproval() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
 
         XCTAssertTrue(sync.requiresSharingApproval)
         let result = await sync.syncToCoach(routines: [], strengthWorkouts: [], cardioWorkouts: [])
@@ -200,8 +409,8 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(count, 0, "nothing may leave the device before the categories are approved")
     }
 
-    func testChangingSharingSelectionRevokesApproval() throws {
-        let sync = try makeSync()
+    func testChangingSharingSelectionRevokesApproval() async throws {
+        let sync = try await makeSync()
         sync.approveSharing()
         XCTAssertFalse(sync.requiresSharingApproval)
 
@@ -210,24 +419,24 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertTrue(sync.requiresSharingApproval, "a widened selection must be re-approved")
     }
 
-    func testDefaultSharingProfileIsRoutinesAndStrengthHistoryOnly() throws {
-        let sync = try makeSync()
+    func testDefaultSharingProfileIsRoutinesAndStrengthHistoryOnly() async throws {
+        let sync = try await makeSync()
         XCTAssertEqual(sync.sharingProfile.dataTiers, [.routines, .strengthHistory])
         XCTAssertFalse(sync.sharingProfile.includes(.cardioHistory))
         XCTAssertFalse(sync.sharingProfile.includes(.healthMetrics))
     }
 
-    func testSharingSelectionAndApprovalSurviveReload() throws {
+    func testSharingSelectionAndApprovalSurviveReload() async throws {
         let stateURL = try makeFileURL("coach-bridge-state.json")
         let inboxURL = try makeFileURL("coach-inbox.json")
         let profile = FlowCoachSharingProfile(dataTiers: [.routines, .strengthHistory, .cardioHistory])
         do {
-            let sync = try makeSync(inboxURL: inboxURL, stateURL: stateURL)
+            let sync = try await makeSync(inboxURL: inboxURL, stateURL: stateURL)
             sync.updateSharingProfile(profile)
             sync.approveSharing()
         }
 
-        let reloaded = try makeSync(inboxURL: inboxURL, stateURL: stateURL)
+        let reloaded = try await makeSync(inboxURL: inboxURL, stateURL: stateURL)
         XCTAssertEqual(reloaded.sharingProfile.dataTiers, profile.dataTiers)
         XCTAssertFalse(reloaded.requiresSharingApproval)
     }
@@ -236,7 +445,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testSyncUploadsEnvelopeAndRecordsReceipt() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
         let routine = Routine(name: "Push", sections: [])
 
@@ -258,7 +467,7 @@ final class CoachBridgeSyncTests: XCTestCase {
             status: 201,
             json: "{\"stored\":true,\"contextId\":\"11111111-1111-1111-1111-111111111111\"}"
         )
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
 
         let result = await sync.syncToCoach(routines: [], strengthWorkouts: [], cardioWorkouts: [])
@@ -270,7 +479,7 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testInvalidCredentialIsReportedAsRotatable() async throws {
         let transport = StubBridgeTransport()
         await transport.stub("PUT /device/snapshots", status: 401, json: "{\"error\":\"Invalid or missing credential.\"}")
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
 
         let result = await sync.syncToCoach(routines: [], strengthWorkouts: [], cardioWorkouts: [])
@@ -281,7 +490,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testUploadedEnvelopeExcludesUnselectedCategories() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
         await captureUploadedContextId(transport: transport, sync: sync, routines: [Routine(name: "Push", sections: [])])
 
@@ -297,7 +506,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testDeleteSnapshotTargetsTheUploadedContextAndClearsTheReceipt() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
         let contextId = await captureUploadedContextId(transport: transport, sync: sync, routines: [])
         await transport.stub("DELETE /device/snapshots/\(contextId)", status: 200, json: "{\"deleted\":true}")
@@ -312,7 +521,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testDeletingAnAlreadyGoneSnapshotStillClearsTheLocalRecord() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
         let contextId = await captureUploadedContextId(transport: transport, sync: sync, routines: [])
         await transport.stub("DELETE /device/snapshots/\(contextId)", status: 410, json: "{\"error\":\"expired\"}")
@@ -325,7 +534,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testDeleteAllRemoteDataClearsReceiptAndOwedAcknowledgements() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         sync.approveSharing()
         _ = await captureUploadedContextId(transport: transport, sync: sync, routines: [])
         await transport.stubFailure("POST /device/pending-patches/p1/ack")
@@ -344,7 +553,7 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testPullLandsPatchInInboxOnceAcrossRepeatedPulls() async throws {
         let transport = StubBridgeTransport()
         let inbox = CoachPatchInbox(fileURL: try makeFileURL("coach-inbox.json"))
-        let sync = try makeSync(inbox: inbox, transport: transport)
+        let sync = try await makeSync(inbox: inbox, transport: transport)
         let body = Self.pullBody(bridgePatchId: "bridge-1", contextId: "ctx-1")
         await transport.stub("GET /device/pending-patches", status: 200, json: body)
         await transport.stub("GET /device/pending-patches", status: 200, json: body)
@@ -369,7 +578,7 @@ final class CoachBridgeSyncTests: XCTestCase {
             .appendingPathComponent("CoachBridgeSyncTests-missing-\(UUID().uuidString)", isDirectory: true)
         createdDirectories.append(unwritable)
         let inbox = CoachPatchInbox(fileURL: unwritable.appendingPathComponent("coach-inbox.json"))
-        let sync = try makeSync(inbox: inbox, transport: transport)
+        let sync = try await makeSync(inbox: inbox, transport: transport)
         await transport.stub(
             "GET /device/pending-patches",
             status: 200,
@@ -389,7 +598,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testPullAcknowledgesPulledAfterStoring() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         await transport.stub(
             "GET /device/pending-patches",
             status: 200,
@@ -427,13 +636,13 @@ final class CoachBridgeSyncTests: XCTestCase {
         let inboxURL = try makeFileURL("coach-inbox.json")
         await transport.stubFailure("POST /device/pending-patches/bridge-1/ack")
         do {
-            let sync = try makeSync(inboxURL: inboxURL, stateURL: stateURL, transport: transport)
+            let sync = try await makeSync(inboxURL: inboxURL, stateURL: stateURL, transport: transport)
             await sync.recordDecision(bridgePatchId: "bridge-1", status: .applied)
             XCTAssertEqual(sync.pendingAcknowledgements.count, 1)
             XCTAssertEqual(sync.pendingAcknowledgements.first?.attempts, 1)
         }
 
-        let reloaded = try makeSync(inboxURL: inboxURL, stateURL: stateURL, transport: transport)
+        let reloaded = try await makeSync(inboxURL: inboxURL, stateURL: stateURL, transport: transport)
         XCTAssertEqual(reloaded.pendingAcknowledgements.first?.bridgePatchId, "bridge-1")
         XCTAssertEqual(reloaded.pendingAcknowledgements.first?.status, .applied)
     }
@@ -441,7 +650,7 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testQueuedAcknowledgementIsDeliveredOnALaterFlush() async throws {
         let transport = StubBridgeTransport()
         await transport.stubFailure("POST /device/pending-patches/bridge-1/ack")
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
         await sync.recordDecision(bridgePatchId: "bridge-1", status: .applied)
         XCTAssertEqual(sync.pendingAcknowledgements.count, 1)
 
@@ -454,7 +663,7 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testTerminalAcknowledgementFailureIsNotRetriedForever() async throws {
         let transport = StubBridgeTransport()
         await transport.stub("POST /device/pending-patches/bridge-1/ack", status: 404, json: "{\"error\":\"Patch was not found.\"}")
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
 
         await sync.recordDecision(bridgePatchId: "bridge-1", status: .applied)
 
@@ -465,7 +674,7 @@ final class CoachBridgeSyncTests: XCTestCase {
         let transport = StubBridgeTransport()
         await transport.stubFailure("POST /device/pending-patches/bridge-1/ack")
         await transport.stubFailure("POST /device/pending-patches/bridge-1/ack")
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
 
         await sync.recordDecision(bridgePatchId: "bridge-1", status: .pulled)
         await sync.recordDecision(bridgePatchId: "bridge-1", status: .applied)
@@ -477,15 +686,15 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testAcknowledgementsAreNeverSentToADifferentMailbox() async throws {
         let transport = StubBridgeTransport()
         let vault = InMemoryBridgeVault()
-        let pairingStore = CoachBridgePairingStore(vault: vault)
-        pairingStore.pair(label: "mine", endpointText: "https://mine.example.com", credential: "mine-secret")
+        let pairingStore = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe())
+        await pairingStore.pair(label: "mine", endpointText: "https://mine.example.com", credential: "mine-secret")
         await transport.stubFailure("POST /device/pending-patches/bridge-1/ack")
-        let sync = try makeSync(pairingStore: pairingStore, transport: transport)
+        let sync = try await makeSync(pairingStore: pairingStore, transport: transport)
         await sync.recordDecision(bridgePatchId: "bridge-1", status: .applied)
         XCTAssertEqual(sync.pendingAcknowledgements.count, 1)
 
         // Switch to the other person's mailbox.
-        pairingStore.pair(label: "theirs", endpointText: "https://theirs.example.com", credential: "their-secret")
+        await pairingStore.pair(label: "theirs", endpointText: "https://theirs.example.com", credential: "their-secret")
         await sync.flushAcknowledgements()
 
         XCTAssertTrue(sync.actionableAcknowledgements.isEmpty)
@@ -496,16 +705,16 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testSwitchingDiscardsAcknowledgementsAndSnapshotFromTheOldMailbox() async throws {
         let transport = StubBridgeTransport()
         let vault = InMemoryBridgeVault()
-        let pairingStore = CoachBridgePairingStore(vault: vault)
-        pairingStore.pair(label: "mine", endpointText: "https://mine.example.com", credential: "mine-secret")
-        let sync = try makeSync(pairingStore: pairingStore, transport: transport)
+        let pairingStore = CoachBridgePairingStore(vault: vault, probe: StubPairingProbe())
+        await pairingStore.pair(label: "mine", endpointText: "https://mine.example.com", credential: "mine-secret")
+        let sync = try await makeSync(pairingStore: pairingStore, transport: transport)
         sync.approveSharing()
         _ = await captureUploadedContextId(transport: transport, sync: sync, routines: [])
         await transport.stubFailure("POST /device/pending-patches/bridge-1/ack")
         await sync.recordDecision(bridgePatchId: "bridge-1", status: .applied)
         XCTAssertEqual(sync.acknowledgementsLostBySwitching(), 1)
 
-        pairingStore.pair(label: "theirs", endpointText: "https://theirs.example.com", credential: "their-secret")
+        await pairingStore.pair(label: "theirs", endpointText: "https://theirs.example.com", credential: "their-secret")
         sync.discardAcknowledgements(notMatching: pairingStore.pairing?.endpoint)
 
         XCTAssertTrue(sync.pendingAcknowledgements.isEmpty)
@@ -514,7 +723,7 @@ final class CoachBridgeSyncTests: XCTestCase {
 
     func testUnpairedSyncMakesNoNetworkCalls() async throws {
         let transport = StubBridgeTransport()
-        let sync = try makeSync(pairingStore: CoachBridgePairingStore(vault: InMemoryBridgeVault()), transport: transport)
+        let sync = try await makeSync(pairingStore: CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe()), transport: transport)
 
         let upload = await sync.syncToCoach(routines: [], strengthWorkouts: [], cardioWorkouts: [])
         let pull = await sync.pullPendingPatches()
@@ -530,7 +739,7 @@ final class CoachBridgeSyncTests: XCTestCase {
     func testExpiredSnapshotIsReportedAsNeedingAFreshSync() async throws {
         let transport = StubBridgeTransport()
         await transport.stub("GET /device/pending-patches", status: 410, json: "{\"error\":\"That coach snapshot expired.\"}")
-        let sync = try makeSync(transport: transport)
+        let sync = try await makeSync(transport: transport)
 
         let result = await sync.pullPendingPatches()
 
@@ -546,7 +755,7 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertFalse(CoachBridgeError.identityMismatch.isRetryable)
     }
 
-    func testSnapshotReceiptKnowsWhenItHasExpired() {
+    func testSnapshotReceiptKnowsWhenItHasExpired() async {
         let receipt = CoachBridgeSnapshotReceipt(
             contextId: UUID(),
             uploadedAt: Date(timeIntervalSince1970: 0),
@@ -628,14 +837,14 @@ final class CoachBridgeSyncTests: XCTestCase {
         stateURL: URL? = nil,
         pairingStore: CoachBridgePairingStore? = nil,
         transport: StubBridgeTransport = StubBridgeTransport()
-    ) throws -> CoachBridgeSync {
+    ) async throws -> CoachBridgeSync {
         let resolvedInbox = try inbox ?? CoachPatchInbox(fileURL: inboxURL ?? makeFileURL("coach-inbox.json"))
         let resolvedPairing: CoachBridgePairingStore
         if let pairingStore {
             resolvedPairing = pairingStore
         } else {
-            resolvedPairing = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-            resolvedPairing.pair(
+            resolvedPairing = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+            await resolvedPairing.pair(
                 label: "Test mailbox",
                 endpointText: "https://coach.example.com",
                 credential: "device-secret"

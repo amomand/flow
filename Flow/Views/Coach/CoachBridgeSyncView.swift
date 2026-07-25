@@ -105,6 +105,13 @@ struct CoachBridgeSyncView: View {
                 Text(pairing.endpointDescription)
                     .terminalFont(11)
                     .foregroundColor(TN.comment)
+                if !pairing.isVerified {
+                    // Saved while offline, so nothing has proved this address
+                    // and credential work together yet (#58).
+                    Text("Not checked yet: you paired while offline. The first sync will confirm it works.")
+                        .terminalFont(11)
+                        .foregroundColor(TN.yellow)
+                }
             }
 
             sharingLine
@@ -273,6 +280,7 @@ private struct CoachBridgePairingSheet: View {
     @State private var credential = ""
     @State private var problem: String?
     @State private var showingSwitchConfirmation = false
+    @State private var isChecking = false
 
     private var isRepairing: Bool { sync.pairingStore.isPaired }
 
@@ -297,6 +305,10 @@ private struct CoachBridgePairingSheet: View {
                         .terminalFont(12)
                         .foregroundColor(TN.comment)
 
+                    Text("Flow checks the address and credential against the mailbox before saving anything.")
+                        .terminalFont(11)
+                        .foregroundColor(TN.comment)
+
                     field("NAME", text: $label, placeholder: "Alex's coach mailbox")
                     field("ADDRESS", text: $endpoint, placeholder: "flow-coach-bridge-primary.workers.dev")
                     field("DEVICE CREDENTIAL", text: $credential, placeholder: "paste the device secret", secure: true)
@@ -315,17 +327,20 @@ private struct CoachBridgePairingSheet: View {
 
                     HStack(spacing: 10) {
                         Button { attemptPair() } label: {
-                            Text(isRepairing ? "[ SAVE ]" : "[ PAIR ]")
+                            Text(isChecking ? "[ CHECKING… ]" : (isRepairing ? "[ SAVE ]" : "[ PAIR ]"))
                         }
                         .buttonStyle(TerminalButtonStyle(color: TN.green))
+                        .disabled(isChecking)
 
                         if isRepairing {
                             Button { rotate() } label: {
                                 Text("[ ROTATE CREDENTIAL ]")
                             }
                             .buttonStyle(TerminalButtonStyle(color: TN.blue))
+                            .disabled(isChecking)
                         }
                     }
+                    .opacity(isChecking ? 0.45 : 1)
                 }
                 .padding()
             }
@@ -397,23 +412,33 @@ private struct CoachBridgePairingSheet: View {
     }
 
     private func commitPair() {
-        switch sync.pairingStore.pair(label: label, endpointText: endpoint, credential: credential) {
-        case .success(let pairing):
-            // Anything owed to a previous endpoint must never be delivered here.
-            sync.discardAcknowledgements(notMatching: pairing.endpoint)
-            dismiss()
-        case .failure(let error):
-            problem = error.localizedDescription
+        isChecking = true
+        Task {
+            let result = await sync.pairingStore.pair(label: label, endpointText: endpoint, credential: credential)
+            isChecking = false
+            switch result {
+            case .success(let pairing):
+                // Anything owed to a previous endpoint must never be delivered here.
+                sync.discardAcknowledgements(notMatching: pairing.endpoint)
+                dismiss()
+            case .failure(let error):
+                problem = error.localizedDescription
+            }
         }
     }
 
     private func rotate() {
         problem = nil
-        switch sync.pairingStore.rotateCredential(credential) {
-        case .success:
-            dismiss()
-        case .failure(let error):
-            problem = error.localizedDescription
+        isChecking = true
+        Task {
+            let result = await sync.pairingStore.rotateCredential(credential)
+            isChecking = false
+            switch result {
+            case .success:
+                dismiss()
+            case .failure(let error):
+                problem = error.localizedDescription
+            }
         }
     }
 }

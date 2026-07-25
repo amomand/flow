@@ -57,7 +57,9 @@ final class CoachBridgeIntegrationTests: XCTestCase {
     func testFullCoachLoopAgainstRunningBridge() async throws {
         let inbox = CoachPatchInbox(fileURL: try makeFileURL("coach-inbox.json"))
         let pairingStore = CoachBridgePairingStore(vault: InMemoryBridgeVault())
-        guard case .success = pairingStore.pair(
+        // The real probe runs here: pairing against the running bridge is
+        // itself part of what this test proves (#58).
+        guard case .success = await pairingStore.pair(
             label: "Local bridge",
             endpointText: baseURL,
             credential: deviceSecret
