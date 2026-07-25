@@ -75,14 +75,26 @@ npx wrangler secret put FLOW_COACH_CONNECT_SECRET --env partner
 
 Do not add plaintext secret bindings to `wrangler.jsonc`. The Worker returns `503` when mailbox deployment configuration or an edge secret is absent, and `401` for the wrong credential. The Actions credential cannot call device routes, the device credential cannot call Actions routes, and neither environment's credential should authenticate to the other environment.
 
-Before real data, run a two-environment isolation smoke test with fixture snapshots:
+Before real data, prove isolation with fixture snapshots. `npm run smoke:isolation` does the whole check and cleans up after itself:
 
-1. Upload a different fixture context to each device endpoint.
-2. Verify each Actions endpoint reads only its own fixture.
-3. Verify both credentials for `primary` receive `401` from `partner`, and vice versa.
-4. Create and pull one proposal in each environment; verify neither appears in the other.
-5. Delete all data in one environment; verify the other environment is unchanged.
-6. Remove the fixtures and rotate the temporary credentials before pairing either phone.
+```bash
+export FLOW_COACH_PRIMARY_ACTIONS_SECRET=... FLOW_COACH_PRIMARY_DEVICE_SECRET=...
+export FLOW_COACH_PARTNER_ACTIONS_SECRET=... FLOW_COACH_PARTNER_DEVICE_SECRET=...
+npm run smoke:isolation -- https://<primary-host> https://<partner-host>
+```
+
+It refuses to run against one hostname or with any credential reused, then proves: both deployments are up and refuse anonymous and tokenless calls; every credential is rejected by the other deployment and by the other edge; each Actions endpoint reads only its own fixture and cannot resolve the other's `contextId` even when given it; a proposal is visible and acknowledgeable only in the mailbox that created it; retries are idempotent; and deleting one snapshot, then all data, in one environment leaves the other intact.
+
+The same script can be rehearsed locally before deploying, which is worth doing after any change to the auth boundary. Give each local instance its own secrets and storage:
+
+```bash
+# .dev.vars.primary and .dev.vars.partner hold distinct secrets; both are gitignored.
+npx wrangler dev --env primary --port 8787 --persist-to .wrangler/state-primary
+npx wrangler dev --env partner --port 8788 --persist-to .wrangler/state-partner
+npm run smoke:isolation -- http://127.0.0.1:8787 http://127.0.0.1:8788
+```
+
+After the deployed run, rotate the temporary credentials before pairing either phone.
 
 ## Rotation
 
