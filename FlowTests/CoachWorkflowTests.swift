@@ -1775,6 +1775,99 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertTrue(summary.isCreate)
     }
 
+    /// "Already applied" has to mean the same routine, not merely the same id.
+    /// A coach revising its own earlier draft will reuse the id it generated,
+    /// and calling that a completed retry would swallow the revision behind a
+    /// reassuring chip.
+    func testACreateReusingAnAppliedIdWithNewContentIsAConflict() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let created = newRoutine(name: "Lower A")
+        store.addRoutine(created)
+
+        var revised = created
+        revised.sections[0].exercises[0].sets = 5
+        let inbox = CoachPatchInbox(fileURL: fixture.directory.appendingPathComponent("inbox.json"))
+        inbox.enqueue(rawJSON: try patchJSON(createPatch(revised)), source: .paste)
+
+        let summary = inbox.summary(for: try XCTUnwrap(inbox.pending.first), routines: store.routines)
+        guard case .conflict = summary.readiness else {
+            return XCTFail("Expected conflict, got \(summary.readiness)")
+        }
+
+        // A rename with the same exercises is a revision too.
+        var renamed = created
+        renamed.name = "Lower A (heavy)"
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(renamed), routines: [created])) { error in
+            guard case FlowRoutinePatchError.routineIdReused = error else {
+                return XCTFail("Expected routineIdReused, got \(error)")
+            }
+        }
+
+        // A phase toggle after applying is the user's, not a revision.
+        var togglePhase = created
+        togglePhase.currentPhase = .peak
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(created), routines: [togglePhase])) { error in
+            guard case FlowRoutinePatchError.routineAlreadyExists = error else {
+                return XCTFail("Expected routineAlreadyExists, got \(error)")
+            }
+        }
+    }
+
+    func testCreateRefusesOnceThereAreAsManyRoutinesAsASnapshotCarries() throws {
+        let existing = (0..<FlowRoutinePatcher.maximumRoutines).map { index in
+            Routine(name: "Routine \(index)", sections: [
+                Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+            ])
+        }
+
+        XCTAssertThrowsError(
+            try FlowRoutinePatcher.preview(patch: createPatch(newRoutine(name: "One too many")), routines: existing)
+        ) { error in
+            guard case FlowRoutinePatchError.tooManyRoutines(FlowRoutinePatcher.maximumRoutines) = error else {
+                return XCTFail("Expected tooManyRoutines, got \(error)")
+            }
+        }
+
+        let roomForOne = Array(existing.dropLast())
+        XCTAssertNoThrow(
+            try FlowRoutinePatcher.preview(patch: createPatch(newRoutine(name: "The last that fits")), routines: roomForOne)
+        )
+    }
+
+    /// The only undo that deletes, and the content hash covers sections only,
+    /// so renaming a routine the coach added must not let it vanish on one tap.
+    func testUndoingACreateRefusesAfterARename() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(createPatch(newRoutine(name: "Lower A")))),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the create to apply")
+        }
+
+        var madeTheirOwn = store.routines[0]
+        madeTheirOwn.name = "Lower A (mine)"
+        store.updateRoutine(madeTheirOwn)
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .failure(let error) = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected undo to refuse a routine renamed since the create")
+        }
+        XCTAssertEqual(error, .routineChangedSinceEdit("Lower A (mine)"))
+        XCTAssertEqual(store.routines.count, 1)
+
+        guard case .success = store.restoreCoachEdit(record, allowingOverwrite: true) else {
+            return XCTFail("Expected an explicit overwrite to remove it")
+        }
+        XCTAssertTrue(store.routines.isEmpty)
+    }
+
     func testUndoingACreateRemovesTheRoutine() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)

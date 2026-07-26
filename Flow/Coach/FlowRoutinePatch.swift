@@ -271,10 +271,14 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case wouldEmptyRoutine
     case duplicateSectionId(UUID)
     case tooManySections(Int)
+    case tooManyRoutines(Int)
     case tooManyExercisesInSection(section: String, limit: Int)
     /// A create whose routine is already here. Usually a retry of something
     /// that landed, so it is reported as superseded rather than broken.
     case routineAlreadyExists(UUID)
+    /// A create whose id is here but whose content is not the content that
+    /// landed. A revision that reused its own earlier id, not a retry.
+    case routineIdReused(name: String)
     case createMustStandAlone
     case operationNeedsNewerSchema(kind: String, minimum: Int, declared: Int)
     case persistenceFailed(String)
@@ -311,10 +315,14 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Section id \(id.uuidString) already exists in this routine."
         case .tooManySections(let limit):
             return "Routine patch would take the routine past \(limit) sections."
+        case .tooManyRoutines(let limit):
+            return "You already have \(limit) routines, which is as many as the coach can be sent. Remove one before adding another."
         case .tooManyExercisesInSection(let section, let limit):
             return "Routine patch would take \(section) past \(limit) exercises."
-        case .routineAlreadyExists(let id):
-            return "A routine with id \(id.uuidString) is already here, so this draft has already been applied."
+        case .routineAlreadyExists:
+            return "This routine is already here, so this draft has already been applied."
+        case .routineIdReused(let name):
+            return "\(name) already uses this draft's routine id, but its exercises are different. Ask the coach for a fresh draft with a new routine id, or remove \(name) first."
         case .createMustStandAlone:
             return "A patch that creates a routine must contain that one operation and nothing else."
         case .persistenceFailed(let message):
@@ -334,6 +342,12 @@ enum FlowRoutinePatcher {
     /// pushed past this stops fitting in a snapshot, so the routine would drop
     /// out of the coach's view at the next sync.
     static let maximumExercisesPerSection = 100
+
+    /// A snapshot carries at most this many routines. `createRoutine` is the
+    /// first operation that can grow the count, and going past it is worse
+    /// than the other ceilings: the next snapshot upload fails whole, so the
+    /// coach stops seeing anything at all rather than losing one routine.
+    static let maximumRoutines = 50
 
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
@@ -490,8 +504,24 @@ enum FlowRoutinePatcher {
 
         // Reported before anything else, because the ordinary cause is a retry
         // of a draft that already landed rather than a patch that is wrong.
-        guard !routines.contains(where: { $0.id == routine.id }) else {
+        //
+        // "Already applied" has to mean the same routine, not merely the same
+        // id. A coach revising its own earlier draft will happily reuse the id
+        // it generated, and treating that as a completed retry would swallow
+        // the revision behind a reassuring chip. Compared on sections and
+        // name, not phase: the phase is state the user owns after applying,
+        // and a toggled phase does not make a retry into a revision.
+        if let existing = routines.first(where: { $0.id == routine.id }) {
+            let sameContent = FlowRoutineRevision.contentHash(for: existing)
+                == FlowRoutineRevision.contentHash(for: routine)
+            guard sameContent, existing.name == routine.name.trimmingCharacters(in: .whitespacesAndNewlines) else {
+                throw FlowRoutinePatchError.routineIdReused(name: existing.name)
+            }
             throw FlowRoutinePatchError.routineAlreadyExists(routine.id)
+        }
+
+        guard routines.count < maximumRoutines else {
+            throw FlowRoutinePatchError.tooManyRoutines(maximumRoutines)
         }
 
         let name = routine.name.trimmingCharacters(in: .whitespacesAndNewlines)

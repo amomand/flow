@@ -368,11 +368,16 @@ class RoutineStore {
 
         // Undoing a create means the routine should not be here. There are no
         // sections to put back, and leaving an empty husk behind would be a
-        // worse answer than either keeping it or removing it. The hash check
-        // above already refused if the user has edited it since, so this only
-        // ever removes a routine that is still exactly as the patch left it,
-        // unless an overwrite was explicitly asked for.
+        // worse answer than either keeping it or removing it.
+        //
+        // This is the one undo that deletes, so it also checks the name, which
+        // the content hash cannot see. Renaming a routine the coach added is
+        // exactly how someone makes it their own, and it should not then
+        // vanish on one tap without a word.
         if record.wasCreate {
+            if !allowingOverwrite, current.name != record.routineName {
+                return .failure(.routineChangedSinceEdit(current.name))
+            }
             return removeCreatedRoutine(at: index, record: record)
         }
         // The content hash covers sections only, so it cannot see a rename

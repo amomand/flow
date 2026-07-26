@@ -433,6 +433,15 @@ export class FlowCoachMailbox extends DurableObject<Env> {
       .some((column) => (column.name === "routine_id" || column.name === "base_hash") && column.notnull === 1);
     if (!anchored) return;
 
+    // Copying rows with their explicit `seq` leaves the rebuilt table's
+    // AUTOINCREMENT counter at the highest surviving row rather than the
+    // highest ever issued, so a seq already handed out to a since-expired
+    // patch could be issued again. Pull cursors are ordered by seq, so that
+    // would quietly break their monotonicity.
+    const previousSequence = this.ctx.storage.sql
+      .exec<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'patches'")
+      .toArray()[0]?.seq;
+
     this.ctx.storage.transactionSync(() => {
       this.ctx.storage.sql.exec(`
         CREATE TABLE patches_rebuilt (
@@ -466,6 +475,12 @@ export class FlowCoachMailbox extends DurableObject<Env> {
         CREATE INDEX IF NOT EXISTS patches_context ON patches(context_id);
         CREATE INDEX IF NOT EXISTS patches_expiry ON patches(expires_at, tombstone_expires_at);
       `);
+      if (previousSequence !== undefined) {
+        // Replaced rather than upserted: sqlite_sequence carries no unique
+        // constraint on `name`, so there is nothing for ON CONFLICT to match.
+        this.ctx.storage.sql.exec("DELETE FROM sqlite_sequence WHERE name = 'patches'");
+        this.ctx.storage.sql.exec("INSERT INTO sqlite_sequence(name, seq) VALUES ('patches', ?)", previousSequence);
+      }
     });
   }
 

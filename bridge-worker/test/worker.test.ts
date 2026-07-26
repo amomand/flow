@@ -1098,9 +1098,53 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       );
       expect(state.storage.sql.exec("SELECT COUNT(*) AS n FROM patches").one().n).toBe(2);
 
-      // Idempotent, and the autoincrement sequence survives the rebuild.
+      // Idempotent.
       instance.migrateSchema();
       expect(state.storage.sql.exec("SELECT COUNT(*) AS n FROM patches").one().n).toBe(2);
+    });
+  });
+
+  /**
+   * Pull cursors are ordered by seq, so a rebuild that reset the counter to
+   * the highest surviving row could hand out a seq it had already issued to a
+   * patch that has since expired.
+   */
+  it("carries the patch sequence counter across the rebuild", async () => {
+    const id = env.FLOW_COACH.idFromName(`flow-coach:sequence-${crypto.randomUUID()}`);
+    const stub = env.FLOW_COACH.get(id);
+
+    await runInDurableObject(stub, async (instance: any, state: DurableObjectState) => {
+      state.storage.sql.exec("DROP TABLE patches");
+      state.storage.sql.exec(`
+        CREATE TABLE patches (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          patch_id TEXT NOT NULL UNIQUE, context_id TEXT NOT NULL,
+          routine_id TEXT NOT NULL, base_hash TEXT NOT NULL,
+          created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, status TEXT NOT NULL,
+          provenance TEXT NOT NULL, principal_id TEXT NOT NULL, rationale TEXT, patch_json TEXT,
+          pulled_at INTEGER, terminal_at INTEGER, tombstone_expires_at INTEGER,
+          idempotency_digest TEXT UNIQUE, proposal_digest TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL
+        )`);
+      const insert = (patchId: string, digest: string) => state.storage.sql.exec(
+        `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
+          provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
+         VALUES (?, 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', ?, 'pd')`,
+        patchId, digest,
+      );
+      insert("patch-1", "d1");
+      insert("patch-2", "d2");
+      insert("patch-3", "d3");
+      // Everything but the first has since gone terminal and been swept, so
+      // the surviving row's seq is well below the highest ever issued.
+      state.storage.sql.exec("DELETE FROM patches WHERE seq > 1");
+      const issued = state.storage.sql.exec<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'patches'").one().seq;
+      expect(issued).toBe(3);
+
+      instance.migrateSchema();
+
+      insert("patch-4", "d4");
+      const next = state.storage.sql.exec<{ seq: number }>("SELECT seq FROM patches WHERE patch_id = 'patch-4'").one().seq;
+      expect(next).toBeGreaterThan(issued);
     });
   });
 });

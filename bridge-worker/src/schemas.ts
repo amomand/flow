@@ -40,6 +40,13 @@ export const exerciseSchema = z.object({
  */
 export const MAX_SECTIONS = 50;
 export const MAX_EXERCISES_PER_SECTION = 100;
+/**
+ * And the most routines a snapshot carries. `createRoutine` is the first
+ * operation that can grow the count, and passing this is worse than the other
+ * ceilings: the next upload fails whole, so the coach stops seeing anything
+ * at all rather than losing one routine.
+ */
+export const MAX_ROUTINES = 50;
 
 export const routineSchema = z.object({
   id: UUID,
@@ -109,7 +116,7 @@ export const coachContextSchema = z.object({
   schemaVersion: z.literal(2),
   generatedAt: ISO_DATE,
   app: z.literal("Flow"),
-  routines: z.array(routineSchema).max(50),
+  routines: z.array(routineSchema).max(MAX_ROUTINES),
   currentPhaseByRoutineId: z.record(z.string(), phase),
   routineContentHashByRoutineId: z.record(z.string(), CONTENT_HASH),
   routineStateHashByRoutineId: z.record(z.string(), STATE_HASH),
@@ -401,6 +408,9 @@ function validateCreate(
   // already landed rather than a patch that is wrong.
   if (context.routines.some((existing) => existing.id === routine.id)) {
     return [{ path: "operations.0.routine.id", message: "a routine with this id already exists" }];
+  }
+  if (context.routines.length >= MAX_ROUTINES) {
+    return [{ path: "operations.0.routine", message: `a snapshot carries at most ${MAX_ROUTINES} routines, and there are already that many` }];
   }
   const name = routine.name.trim();
   if (!name || name.length > 100) {

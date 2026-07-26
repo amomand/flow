@@ -258,6 +258,11 @@ final class CoachPatchInbox {
                 readiness = .conflict(error.localizedDescription)
             case .routineAlreadyExists:
                 readiness = .superseded(error.localizedDescription)
+            // A revision that reused its own earlier id is a conflict, not a
+            // completed retry: there is something here to look at and decide
+            // about, and calling it "already applied" would lose it.
+            case .routineIdReused:
+                readiness = .conflict(error.localizedDescription)
             default:
                 readiness = .invalid(error.localizedDescription)
             }
