@@ -382,6 +382,33 @@ function anchorProblem(
  * never existed in any of them, and the person approving would be reading a
  * history rather than a routine.
  */
+/**
+ * Whether a proposed routine is the routine already in the snapshot.
+ *
+ * Sections and name, not phase: the phase is state the user owns once the
+ * routine is theirs, and toggling it does not turn a retry into a revision.
+ * Mirrors what the app compares, which is its content hash plus the name.
+ */
+function sameRoutineContent(existing: Routine, proposed: Routine): boolean {
+  if (existing.name.trim() !== proposed.name.trim()) return false;
+  const shape = (routine: Routine) => JSON.stringify(routine.sections.map((section) => ({
+    id: section.id,
+    name: section.name.trim(),
+    exercises: section.exercises.map((exercise) => ({
+      ...exercise,
+      name: exercise.name.trim(),
+      // Flow drops empty overrides before storing, so a draft carrying one is
+      // still the same routine as the one that landed without it.
+      phaseOverrides: Object.fromEntries(
+        Object.entries(exercise.phaseOverrides ?? {})
+          .filter(([, override]) => Object.values(override).some((value) => value !== undefined))
+          .sort(([left], [right]) => left.localeCompare(right)),
+      ),
+    })),
+  })));
+  return shape(existing) === shape(proposed);
+}
+
 function validateCreate(
   patch: RoutinePatch,
   context: CoachContext,
@@ -406,8 +433,24 @@ function validateCreate(
   const problems: PatchProblem[] = [];
   // Reported first, because the ordinary cause is a retry of a draft that
   // already landed rather than a patch that is wrong.
-  if (context.routines.some((existing) => existing.id === routine.id)) {
-    return [{ path: "operations.0.routine.id", message: "a routine with this id already exists" }];
+  //
+  // The two cases need different advice, and getting it wrong is expensive.
+  // "This id is taken" invites regenerating ids and re-proposing, which for a
+  // draft that already landed manufactures a duplicate routine that the app
+  // will accept, because every id in it is genuinely fresh. Compared
+  // structurally on sections and name; the bridge cannot compute Flow's
+  // content hash, but it holds both routines and that is enough.
+  const collision = context.routines.find((existing) => existing.id === routine.id);
+  if (collision) {
+    return sameRoutineContent(collision, routine)
+      ? [{
+        path: "operations.0.routine.id",
+        message: "this routine has already been applied in Flow; do not propose it again with new ids",
+      }]
+      : [{
+        path: "operations.0.routine.id",
+        message: `a different routine ("${collision.name}") already uses this id; generate a fresh routine id`,
+      }];
   }
   if (context.routines.length >= MAX_ROUTINES) {
     return [{ path: "operations.0.routine", message: `a snapshot carries at most ${MAX_ROUTINES} routines, and there are already that many` }];

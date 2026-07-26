@@ -220,9 +220,10 @@ const patchProperty = {
         "just added, and a second renameRoutine reads the name the first one set. " +
         "createRoutine (schema 3) needs routine, and belongs only in a patch whose target is newRoutine, " +
         "as its single operation. " +
-        "Ceilings, which a patch may not push a routine past: 50 sections, and 100 exercises in any one " +
-        "section. A routine beyond either stops fitting in a coach snapshot and would drop out of view " +
-        "entirely at the next sync. A patch may also not leave a routine with no exercises at all. " +
+        "Ceilings, which a patch may not push past: 50 routines, 50 sections in a routine, and 100 " +
+        "exercises in any one section. Beyond the first the next snapshot upload fails whole and the " +
+        "coach stops seeing anything; beyond the others a routine stops fitting in a snapshot and drops " +
+        "out of view at the next sync. A patch may also not leave a routine with no exercises at all. " +
         "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps. " +
         "Base-value operations (replaceExerciseReps, replaceExerciseSets, replaceTimedDuration) change the " +
         "base value only and do not cascade into phaseOverrides: an exercise with a peak or deload override " +

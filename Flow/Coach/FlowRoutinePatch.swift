@@ -322,7 +322,7 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
         case .routineAlreadyExists:
             return "This routine is already here, so this draft has already been applied."
         case .routineIdReused(let name):
-            return "\(name) already uses this draft's routine id, but its exercises are different. Ask the coach for a fresh draft with a new routine id, or remove \(name) first."
+            return "\(name) already uses this draft's routine id, but it is not the same routine. If this draft is the one you want, ask the coach for a fresh one with a new routine id."
         case .createMustStandAlone:
             return "A patch that creates a routine must contain that one operation and nothing else."
         case .persistenceFailed(let message):
@@ -502,28 +502,6 @@ enum FlowRoutinePatcher {
             throw FlowRoutinePatchError.missingField("routine")
         }
 
-        // Reported before anything else, because the ordinary cause is a retry
-        // of a draft that already landed rather than a patch that is wrong.
-        //
-        // "Already applied" has to mean the same routine, not merely the same
-        // id. A coach revising its own earlier draft will happily reuse the id
-        // it generated, and treating that as a completed retry would swallow
-        // the revision behind a reassuring chip. Compared on sections and
-        // name, not phase: the phase is state the user owns after applying,
-        // and a toggled phase does not make a retry into a revision.
-        if let existing = routines.first(where: { $0.id == routine.id }) {
-            let sameContent = FlowRoutineRevision.contentHash(for: existing)
-                == FlowRoutineRevision.contentHash(for: routine)
-            guard sameContent, existing.name == routine.name.trimmingCharacters(in: .whitespacesAndNewlines) else {
-                throw FlowRoutinePatchError.routineIdReused(name: existing.name)
-            }
-            throw FlowRoutinePatchError.routineAlreadyExists(routine.id)
-        }
-
-        guard routines.count < maximumRoutines else {
-            throw FlowRoutinePatchError.tooManyRoutines(maximumRoutines)
-        }
-
         let name = routine.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must not be empty")
@@ -540,12 +518,6 @@ enum FlowRoutinePatcher {
 
         var sectionIds: Set<UUID> = []
         var exerciseIds: Set<UUID> = []
-        // Exercise ids are checked against every other routine, not just this
-        // one. Nothing in the store enforces it, but whole-routine import has
-        // always reassigned ids on the way in, so globally fresh ids are what
-        // the rest of the app already assumes, and history reads more simply
-        // when an id means one exercise.
-        let idsElsewhere = Set(routines.flatMap { $0.sections.flatMap { $0.exercises.map(\.id) } })
         var created = routine
         created.name = name
 
@@ -572,7 +544,7 @@ enum FlowRoutinePatcher {
                 var exercise = created.sections[index].exercises[exerciseIndex]
                 exercise.phaseOverrides = exercise.phaseOverrides.filter { !$0.value.isEmpty }
                 try validateExercise(exercise)
-                guard exerciseIds.insert(exercise.id).inserted, !idsElsewhere.contains(exercise.id) else {
+                guard exerciseIds.insert(exercise.id).inserted else {
                     throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
                 }
                 created.sections[index].exercises[exerciseIndex] = exercise
@@ -581,6 +553,41 @@ enum FlowRoutinePatcher {
 
         guard created.canStartWorkout else {
             throw FlowRoutinePatchError.wouldEmptyRoutine
+        }
+
+        // Checked against the normalised routine, not the raw draft. What an
+        // earlier apply stored was `created`, with names trimmed and empty
+        // phase overrides dropped, so hashing the draft as it arrived would
+        // make a byte-identical retry of a landed draft look like a revision.
+        //
+        // "Already applied" has to mean the same routine, not merely the same
+        // id: a coach revising its own earlier draft will happily reuse the id
+        // it generated, and treating that as a completed retry would swallow
+        // the revision behind a reassuring chip. Compared on sections and
+        // name, not phase, which is state the user owns once the routine is
+        // theirs; a toggled phase does not make a retry into a revision.
+        if let existing = routines.first(where: { $0.id == created.id }) {
+            let sameContent = FlowRoutineRevision.contentHash(for: existing)
+                == FlowRoutineRevision.contentHash(for: created)
+            guard sameContent, existing.name == created.name else {
+                throw FlowRoutinePatchError.routineIdReused(name: existing.name)
+            }
+            throw FlowRoutinePatchError.routineAlreadyExists(created.id)
+        }
+
+        guard routines.count < maximumRoutines else {
+            throw FlowRoutinePatchError.tooManyRoutines(maximumRoutines)
+        }
+
+        // Exercise ids are checked against every other routine, not just this
+        // one. Nothing in the store enforces it, but whole-routine import has
+        // always reassigned ids on the way in, so globally fresh ids are what
+        // the rest of the app already assumes, and history reads more simply
+        // when an id means one exercise. After the collision check, so a retry
+        // is not reported as borrowing its own exercise ids.
+        let idsElsewhere = Set(routines.flatMap { $0.sections.flatMap { $0.exercises.map(\.id) } })
+        if let borrowed = created.sections.flatMap({ $0.exercises }).first(where: { idsElsewhere.contains($0.id) }) {
+            throw FlowRoutinePatchError.duplicateExerciseId(borrowed.id)
         }
 
         var diffs = [FlowRoutinePatchDiff(

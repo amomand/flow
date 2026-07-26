@@ -916,16 +916,55 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
     expect(pulled.patches).toHaveLength(1);
   });
 
-  it("refuses a create whose routine id is already in the snapshot", async () => {
+  /**
+   * The two collisions need different advice. "This id is taken" invites
+   * regenerating ids and re-proposing, which for a draft that already landed
+   * manufactures a duplicate routine the app would happily accept, since
+   * every id in it is genuinely fresh.
+   */
+  it("tells a landed retry apart from a genuine id collision", async () => {
     const envelope = capableSnapshot();
     expect((await upload(envelope)).status).toBe(201);
+    const landed = fixtureContext.routines[0]!;
 
-    const checked = await validate(envelope.contextId, createPatch({}, { id: fixtureContext.routines[0]!.id }));
+    // The routine already in the snapshot, proposed again unchanged.
+    const retry = await validate(envelope.contextId, createPatch({}, {
+      id: landed.id,
+      name: landed.name,
+      currentPhase: fixtureContext.currentPhaseByRoutineId[landed.id as keyof typeof fixtureContext.currentPhaseByRoutineId],
+      sections: landed.sections,
+    }));
+    expect(retry.status).toBe(422);
+    expect((await json(retry)).problems[0].message).toContain("do not propose it again");
 
-    expect(checked.status).toBe(422);
-    const problems = (await json(checked)).problems;
+    // A different routine wearing the same id.
+    const collision = await validate(envelope.contextId, createPatch({}, { id: landed.id }));
+    expect(collision.status).toBe(422);
+    const problems = (await json(collision)).problems;
     expect(problems[0].path).toBe("operations.0.routine.id");
-    expect(problems[0].message).toContain("already exists");
+    expect(problems[0].message).toContain("generate a fresh routine id");
+  });
+
+  it("still calls a retry a retry when the draft carries an empty phase override", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const landed = fixtureContext.routines[0]!;
+
+    const retry = await validate(envelope.contextId, createPatch({}, {
+      id: landed.id,
+      name: `  ${landed.name}  `,
+      currentPhase: fixtureContext.currentPhaseByRoutineId[landed.id as keyof typeof fixtureContext.currentPhaseByRoutineId],
+      sections: landed.sections.map((section, index) => index > 0 ? section : {
+        ...section,
+        exercises: section.exercises.map((exercise, position) => position > 0 ? exercise : {
+          ...exercise,
+          phaseOverrides: { ...exercise.phaseOverrides, deload: {} },
+        }),
+      }),
+    }));
+
+    expect(retry.status).toBe(422);
+    expect((await json(retry)).problems[0].message).toContain("do not propose it again");
   });
 
   it("refuses a create that carries an anchor it cannot have", async () => {

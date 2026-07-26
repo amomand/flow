@@ -1815,6 +1815,35 @@ final class CoachWorkflowTests: XCTestCase {
         }
     }
 
+    /// What an earlier apply stored is the normalised routine, with names
+    /// trimmed and empty phase overrides dropped. Comparing the draft as it
+    /// arrived would make a byte-identical retry look like a revision.
+    func testARetryIsRecognisedThroughNormalisation() throws {
+        var created = newRoutine(name: "Lower A")
+        created.sections[0].name = "Main Lifts"
+        created.sections[0].exercises[0].phaseOverrides = [:]
+
+        // What the store holds after applying that draft.
+        guard case .success(let preview) = Result(catching: {
+            try FlowRoutinePatcher.preview(patch: createPatch(created), routines: [])
+        }) else {
+            return XCTFail("Expected the create to preview")
+        }
+        let applied = preview.updatedRoutine
+
+        // The same draft as it arrives on a retry: padded section name, and an
+        // override entry that carries nothing.
+        var retried = created
+        retried.sections[0].name = "  Main Lifts  "
+        retried.sections[0].exercises[0].phaseOverrides = [.deload: PhaseOverride()]
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(retried), routines: [applied])) { error in
+            guard case FlowRoutinePatchError.routineAlreadyExists = error else {
+                return XCTFail("Expected routineAlreadyExists, got \(error)")
+            }
+        }
+    }
+
     func testCreateRefusesOnceThereAreAsManyRoutinesAsASnapshotCarries() throws {
         let existing = (0..<FlowRoutinePatcher.maximumRoutines).map { index in
             Routine(name: "Routine \(index)", sections: [
