@@ -288,8 +288,11 @@ final class CoachWorkflowTests: XCTestCase {
         let peak = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .peak })
         let deload = try XCTUnwrap(diff.phaseConsequences.first { $0.phase == .deload })
         XCTAssertEqual(peak.relation, .belowBase)
-        XCTAssertEqual(peak.summary, "Peak: 3 sets, below base at 4")
+        XCTAssertEqual(peak.summary, "Peak: 3 sets, below base at 4 sets")
         XCTAssertEqual(deload.relation, .belowBase)
+        // A deload of one set is the ordinary case, so the unit has to agree
+        // with the number.
+        XCTAssertEqual(deload.summary, "Deload: 1 set, below base at 4 sets")
         // Wording describes the values; it does not say the patch is wrong.
         XCTAssertFalse(peak.summary.lowercased().contains("error"))
         XCTAssertFalse(peak.summary.lowercased().contains("invalid"))

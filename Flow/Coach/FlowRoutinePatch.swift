@@ -110,14 +110,31 @@ struct FlowRoutinePhaseConsequence: Identifiable, Equatable, Codable {
         case inheritsBase
     }
 
+    /// The field that changed, which is also how it is read out. A deload
+    /// override of one set is a real case, so the unit has to agree with the
+    /// number rather than always reading "1 sets".
+    enum Unit: String, Codable {
+        case sets
+        case reps
+        case seconds
+
+        func label(for value: Int) -> String {
+            guard value == 1 else { return rawValue }
+            switch self {
+            case .sets: return "set"
+            case .reps: return "rep"
+            case .seconds: return "second"
+            }
+        }
+    }
+
     let phase: WorkoutPhase
-    /// Display unit for the field that changed: "sets", "reps", or "seconds".
-    let unit: String
+    let unit: Unit
     let baseValue: Int
     let overrideValue: Int?
     let relation: Relation
 
-    var id: String { "\(phase.rawValue)-\(unit)" }
+    var id: String { "\(phase.rawValue)-\(unit.rawValue)" }
 
     var value: Int { overrideValue ?? baseValue }
 
@@ -125,13 +142,13 @@ struct FlowRoutinePhaseConsequence: Identifiable, Equatable, Codable {
     var summary: String {
         switch relation {
         case .inheritsBase:
-            return "\(phase.displayName): follows base at \(baseValue) \(unit)"
+            return "\(phase.displayName): follows base at \(baseValue) \(unit.label(for: baseValue))"
         case .stepsUpFromBase:
-            return "\(phase.displayName): \(value) \(unit)"
+            return "\(phase.displayName): \(value) \(unit.label(for: value))"
         case .matchesBase:
-            return "\(phase.displayName): \(value) \(unit), the same as base"
+            return "\(phase.displayName): \(value) \(unit.label(for: value)), the same as base"
         case .belowBase:
-            return "\(phase.displayName): \(value) \(unit), below base at \(baseValue)"
+            return "\(phase.displayName): \(value) \(unit.label(for: value)), below base at \(baseValue) \(unit.label(for: baseValue))"
         }
     }
 
@@ -504,11 +521,11 @@ enum FlowRoutinePatcher {
         case reps
         case durationSeconds
 
-        var unit: String {
+        var unit: FlowRoutinePhaseConsequence.Unit {
             switch self {
-            case .sets: return "sets"
-            case .reps: return "reps"
-            case .durationSeconds: return "seconds"
+            case .sets: return .sets
+            case .reps: return .reps
+            case .durationSeconds: return .seconds
             }
         }
 
