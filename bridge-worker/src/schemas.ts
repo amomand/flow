@@ -201,7 +201,11 @@ const operationSchema = z.object({
 }).strict();
 
 export const routinePatchSchema = z.object({
-  schemaVersion: z.union([z.literal(2), z.literal(3)]),
+  // Read from the shared contract rather than spelled out as literals, so
+  // adding a version there cannot leave this rejecting it.
+  schemaVersion: z.number().int().refine((version) => PATCH_SCHEMA_VERSIONS.includes(version), {
+    message: `must be one of ${PATCH_SCHEMA_VERSIONS.join(", ")}`,
+  }),
   routineId: UUID,
   baseContentHash: CONTENT_HASH,
   exportedAt: ISO_DATE.optional(),
@@ -291,13 +295,13 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
   // "mostly valid", and saying so here is the whole point of advertising
   // capabilities in the first place.
   if (!capabilities.patchSchemaVersions.includes(patch.schemaVersion)) {
+    const supported = capabilities.patchSchemaVersions.length > 0
+      ? `support for patch schema ${capabilities.patchSchemaVersions.join(", ")}`
+      : "no patch schema version this bridge also supports";
     return {
       valid: false,
       patch,
-      problems: [{
-        path: "schemaVersion",
-        message: `Flow reports support for patch schema ${capabilities.patchSchemaVersions.join(", ")}; this patch declares ${patch.schemaVersion}`,
-      }],
+      problems: [{ path: "schemaVersion", message: `Flow reports ${supported}; this patch declares ${patch.schemaVersion}` }],
     };
   }
   const routine = context.routines.find((candidate) => candidate.id === patch.routineId);

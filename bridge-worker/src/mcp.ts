@@ -18,6 +18,8 @@
  *   create_pending_routine_patch.
  */
 
+import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "./schemas";
+
 export const MCP_SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
 /**
@@ -129,7 +131,9 @@ const patchProperty = {
     "version that introduced it, so renameRoutine requires schemaVersion 3 and is " +
     "rejected under schemaVersion 2.",
   properties: {
-    schemaVersion: { type: "integer", enum: [2, 3] },
+    // Published from the shared contract, not restated, so the schema a client
+    // composes against cannot fall behind what the bridge accepts.
+    schemaVersion: { type: "integer", enum: PATCH_SCHEMA_VERSIONS },
     routineId: uuidProperty,
     baseContentHash: {
       type: "string",
@@ -162,15 +166,7 @@ const patchProperty = {
       items: {
         type: "object",
         properties: {
-          kind: {
-            type: "string",
-            enum: [
-              "replaceExerciseReps", "replaceExerciseSets", "replaceTimedDuration",
-              "replaceRestBetweenSets", "replaceRestAfterExercise", "updateExerciseNotes",
-              "addExercise", "removeExercise", "moveExercise", "replacePhaseOverride",
-              "renameRoutine",
-            ],
-          },
+          kind: { type: "string", enum: OPERATION_KINDS },
           exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise and renameRoutine; must exist in the routine." },
           sectionId: { ...uuidProperty, description: "For addExercise: the section to add into." },
           targetSectionId: { ...uuidProperty, description: "For moveExercise: the destination section." },

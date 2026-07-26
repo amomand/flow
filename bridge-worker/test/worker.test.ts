@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
-import { OPERATION_KINDS } from "../src/schemas";
+import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
 const DEVICE_SECRET = "fixture-device-secret";
@@ -367,6 +367,36 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       expect(checked.status).toBe(422);
       expect((await json(checked)).problems[0].path).toBe("operations.0.newStringValue");
     }
+  });
+
+  /**
+   * The version list lives in patch-operations.json and is read by the app,
+   * the parser, and the published MCP schema. This pins the parser to it: a
+   * version added to the contract that zod still rejects would advertise a
+   * capability no patch could actually use.
+   */
+  it("parses exactly the schema versions the shared contract names", async () => {
+    const envelope = capableSnapshot(
+      [...OPERATION_KINDS],
+      [...PATCH_SCHEMA_VERSIONS],
+    );
+    expect((await upload(envelope)).status).toBe(201);
+
+    for (const schemaVersion of PATCH_SCHEMA_VERSIONS) {
+      const checked = await validate(envelope.contextId, {
+        ...renamePatch({ schemaVersion }),
+        // renameRoutine only exists from 3, so probe each version with an
+        // operation every version has.
+        operations: validPatch().operations,
+      });
+      const body = await json(checked);
+      expect(body.problems.filter((problem: any) => problem.path === "schemaVersion")).toEqual([]);
+      expect(body.valid).toBe(true);
+    }
+
+    const unknown = await validate(envelope.contextId, renamePatch({ schemaVersion: 99 }));
+    expect(unknown.status).toBe(422);
+    expect((await json(unknown)).problems[0].path).toBe("schemaVersion");
   });
 
   it("still validates and stores a schema 2 patch unchanged", async () => {

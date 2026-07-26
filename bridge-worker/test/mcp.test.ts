@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
-import { OPERATION_KINDS } from "../src/schemas";
+import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
 import { obtainTokens } from "./oauth-helper";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
@@ -153,6 +153,10 @@ describe("Flow Coach bridge MCP edge", () => {
       // operation kind that never reaches the published schema is a failure
       // rather than a number someone bumps.
       expect(operation.properties.kind.enum).toEqual(OPERATION_KINDS);
+      // Same reason: a schema version added to the contract but not published
+      // here would leave a client composing against a version the bridge no
+      // longer agrees is the newest.
+      expect(patchSchema.properties.schemaVersion.enum).toEqual(PATCH_SCHEMA_VERSIONS);
       expect(operation.properties.expectedIntValue.type).toBe("integer");
       expect(operation.properties.newIntValue.type).toBe("integer");
       expect(patchSchema.properties.operations.description).toContain("expectedIntValue");
