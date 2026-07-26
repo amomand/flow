@@ -10,35 +10,20 @@
 		E00001 /* FlowApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10001 /* FlowApp.swift */; };
 		E00002 /* TokyoNightColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10002 /* TokyoNightColors.swift */; };
 		E00003 /* TerminalStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10003 /* TerminalStyle.swift */; };
-		E00020 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10020 /* Theme.swift */; };
 		E00004 /* Routine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10004 /* Routine.swift */; };
 		E00005 /* WorkoutSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10005 /* WorkoutSession.swift */; };
 		E00006 /* SetRating.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10006 /* SetRating.swift */; };
-		E00043 /* CompletedWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10047 /* CompletedWorkout.swift */; };
 		E00007 /* RoutineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10007 /* RoutineStore.swift */; };
-		E00044 /* StrengthHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10048 /* StrengthHistoryStore.swift */; };
-		E00060 /* FlowCoachContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10060 /* FlowCoachContext.swift */; };
-		E00061 /* FlowRoutinePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10061 /* FlowRoutinePatch.swift */; };
-		E00064 /* FlowRoutineExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10064 /* FlowRoutineExchange.swift */; };
-		E00080 /* CoachBridgePairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10080 /* CoachBridgePairing.swift */; };
-		E00081 /* CoachBridgeSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10081 /* CoachBridgeSync.swift */; };
-		E00082 /* CoachBridgeSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10082 /* CoachBridgeSyncView.swift */; };
-		E00084 /* CoachBridgeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10084 /* CoachBridgeIntegrationTests.swift */; };
-		E00083 /* CoachBridgeSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10083 /* CoachBridgeSyncTests.swift */; };
-		E00066 /* CoachPatchInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10066 /* CoachPatchInbox.swift */; };
-		E00067 /* FlowCoachDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10067 /* FlowCoachDeepLink.swift */; };
-		E00069 /* CoachEditHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10070 /* CoachEditHistoryStore.swift */; };
-		E00070 /* CoachEditHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10071 /* CoachEditHistorySheet.swift */; };
 		E00008 /* RoutineListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10008 /* RoutineListView.swift */; };
-		E00062 /* CoachWorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10062 /* CoachWorkflowSheet.swift */; };
 		E00009 /* WorkoutFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10009 /* WorkoutFlowView.swift */; };
 		E00010 /* ExerciseCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10010 /* ExerciseCardView.swift */; };
 		E00011 /* RestTimerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10011 /* RestTimerView.swift */; };
 		E00012 /* WorkoutSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10012 /* WorkoutSummaryView.swift */; };
-		E00045 /* WorkoutHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10049 /* WorkoutHistoryView.swift */; };
 		E00013 /* RoutineEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10013 /* RoutineEditorView.swift */; };
 		E00014 /* ExerciseEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10014 /* ExerciseEditorView.swift */; };
+		E00015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E10015 /* Assets.xcassets */; };
 		E00016 /* RoutineOverviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10016 /* RoutineOverviewSheet.swift */; };
+		E00020 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10020 /* Theme.swift */; };
 		E00030 /* Run.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10030 /* Run.swift */; };
 		E00031 /* RunMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10031 /* RunMetrics.swift */; };
 		E00032 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10032 /* AppSettings.swift */; };
@@ -51,14 +36,29 @@
 		E00040 /* RunRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10040 /* RunRowView.swift */; };
 		E00041 /* HealthSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10041 /* HealthSyncView.swift */; };
 		E00042 /* SparklineView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10042 /* SparklineView.swift */; };
-		E00015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E10015 /* Assets.xcassets */; };
+		E00043 /* CompletedWorkout.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10047 /* CompletedWorkout.swift */; };
+		E00044 /* StrengthHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10048 /* StrengthHistoryStore.swift */; };
+		E00045 /* WorkoutHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10049 /* WorkoutHistoryView.swift */; };
 		E00050 /* WorkoutSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10051 /* WorkoutSessionTests.swift */; };
 		E00051 /* RoutineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10052 /* RoutineStoreTests.swift */; };
 		E00052 /* RunMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10053 /* RunMetricsTests.swift */; };
+		E00060 /* FlowCoachContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10060 /* FlowCoachContext.swift */; };
+		E00061 /* FlowRoutinePatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10061 /* FlowRoutinePatch.swift */; };
+		E00062 /* CoachWorkflowSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10062 /* CoachWorkflowSheet.swift */; };
 		E00063 /* CoachWorkflowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10063 /* CoachWorkflowTests.swift */; };
+		E00064 /* FlowRoutineExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10064 /* FlowRoutineExchange.swift */; };
 		E00065 /* RoutineExchangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10065 /* RoutineExchangeTests.swift */; };
+		E00066 /* CoachPatchInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10066 /* CoachPatchInbox.swift */; };
+		E00067 /* FlowCoachDeepLink.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10067 /* FlowCoachDeepLink.swift */; };
 		E00068 /* CoachPatchInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10068 /* CoachPatchInboxTests.swift */; };
+		E00069 /* CoachEditHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10070 /* CoachEditHistoryStore.swift */; };
+		E00070 /* CoachEditHistorySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10071 /* CoachEditHistorySheet.swift */; };
 		E00071 /* CoachEditHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10072 /* CoachEditHistoryTests.swift */; };
+		E00080 /* CoachBridgePairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10080 /* CoachBridgePairing.swift */; };
+		E00081 /* CoachBridgeSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10081 /* CoachBridgeSync.swift */; };
+		E00082 /* CoachBridgeSyncView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10082 /* CoachBridgeSyncView.swift */; };
+		E00083 /* CoachBridgeSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10083 /* CoachBridgeSyncTests.swift */; };
+		E00084 /* CoachBridgeIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10084 /* CoachBridgeIntegrationTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,36 +75,20 @@
 		E10001 /* FlowApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowApp.swift; sourceTree = "<group>"; };
 		E10002 /* TokyoNightColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokyoNightColors.swift; sourceTree = "<group>"; };
 		E10003 /* TerminalStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalStyle.swift; sourceTree = "<group>"; };
-		E10020 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E10004 /* Routine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Routine.swift; sourceTree = "<group>"; };
 		E10005 /* WorkoutSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSession.swift; sourceTree = "<group>"; };
 		E10006 /* SetRating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetRating.swift; sourceTree = "<group>"; };
-		E10047 /* CompletedWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedWorkout.swift; sourceTree = "<group>"; };
 		E10007 /* RoutineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStore.swift; sourceTree = "<group>"; };
-		E10048 /* StrengthHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrengthHistoryStore.swift; sourceTree = "<group>"; };
-		E10060 /* FlowCoachContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachContext.swift; sourceTree = "<group>"; };
-		E10061 /* FlowRoutinePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutinePatch.swift; sourceTree = "<group>"; };
-		E10064 /* FlowRoutineExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutineExchange.swift; sourceTree = "<group>"; };
-		E10080 /* CoachBridgePairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgePairing.swift; sourceTree = "<group>"; };
-		E10081 /* CoachBridgeSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSync.swift; sourceTree = "<group>"; };
-		E10082 /* CoachBridgeSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSyncView.swift; sourceTree = "<group>"; };
-		E10084 /* CoachBridgeIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeIntegrationTests.swift; sourceTree = "<group>"; };
-		E10083 /* CoachBridgeSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSyncTests.swift; sourceTree = "<group>"; };
-		E10066 /* CoachPatchInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInbox.swift; sourceTree = "<group>"; };
-		E10067 /* FlowCoachDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachDeepLink.swift; sourceTree = "<group>"; };
-		E10070 /* CoachEditHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistoryStore.swift; sourceTree = "<group>"; };
-		E10071 /* CoachEditHistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistorySheet.swift; sourceTree = "<group>"; };
-		E10069 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E10008 /* RoutineListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineListView.swift; sourceTree = "<group>"; };
-		E10062 /* CoachWorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowSheet.swift; sourceTree = "<group>"; };
 		E10009 /* WorkoutFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutFlowView.swift; sourceTree = "<group>"; };
 		E10010 /* ExerciseCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseCardView.swift; sourceTree = "<group>"; };
 		E10011 /* RestTimerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RestTimerView.swift; sourceTree = "<group>"; };
 		E10012 /* WorkoutSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSummaryView.swift; sourceTree = "<group>"; };
-		E10049 /* WorkoutHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutHistoryView.swift; sourceTree = "<group>"; };
 		E10013 /* RoutineEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineEditorView.swift; sourceTree = "<group>"; };
 		E10014 /* ExerciseEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExerciseEditorView.swift; sourceTree = "<group>"; };
+		E10015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		E10016 /* RoutineOverviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineOverviewSheet.swift; sourceTree = "<group>"; };
+		E10020 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E10030 /* Run.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Run.swift; sourceTree = "<group>"; };
 		E10031 /* RunMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetrics.swift; sourceTree = "<group>"; };
 		E10032 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
@@ -118,16 +102,32 @@
 		E10041 /* HealthSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncView.swift; sourceTree = "<group>"; };
 		E10042 /* SparklineView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparklineView.swift; sourceTree = "<group>"; };
 		E10043 /* Flow.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Flow.entitlements; sourceTree = "<group>"; };
-		E10015 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		E10099 /* Flow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flow.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E10047 /* CompletedWorkout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompletedWorkout.swift; sourceTree = "<group>"; };
+		E10048 /* StrengthHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StrengthHistoryStore.swift; sourceTree = "<group>"; };
+		E10049 /* WorkoutHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutHistoryView.swift; sourceTree = "<group>"; };
 		E10050 /* FlowTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FlowTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E10051 /* WorkoutSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSessionTests.swift; sourceTree = "<group>"; };
 		E10052 /* RoutineStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineStoreTests.swift; sourceTree = "<group>"; };
 		E10053 /* RunMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunMetricsTests.swift; sourceTree = "<group>"; };
+		E10060 /* FlowCoachContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachContext.swift; sourceTree = "<group>"; };
+		E10061 /* FlowRoutinePatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutinePatch.swift; sourceTree = "<group>"; };
+		E10062 /* CoachWorkflowSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowSheet.swift; sourceTree = "<group>"; };
 		E10063 /* CoachWorkflowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachWorkflowTests.swift; sourceTree = "<group>"; };
+		E10064 /* FlowRoutineExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowRoutineExchange.swift; sourceTree = "<group>"; };
 		E10065 /* RoutineExchangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoutineExchangeTests.swift; sourceTree = "<group>"; };
+		E10066 /* CoachPatchInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInbox.swift; sourceTree = "<group>"; };
+		E10067 /* FlowCoachDeepLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FlowCoachDeepLink.swift; sourceTree = "<group>"; };
 		E10068 /* CoachPatchInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachPatchInboxTests.swift; sourceTree = "<group>"; };
+		E10069 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		E10070 /* CoachEditHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistoryStore.swift; sourceTree = "<group>"; };
+		E10071 /* CoachEditHistorySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistorySheet.swift; sourceTree = "<group>"; };
 		E10072 /* CoachEditHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachEditHistoryTests.swift; sourceTree = "<group>"; };
+		E10080 /* CoachBridgePairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgePairing.swift; sourceTree = "<group>"; };
+		E10081 /* CoachBridgeSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSync.swift; sourceTree = "<group>"; };
+		E10082 /* CoachBridgeSyncView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSyncView.swift; sourceTree = "<group>"; };
+		E10083 /* CoachBridgeSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeSyncTests.swift; sourceTree = "<group>"; };
+		E10084 /* CoachBridgeIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoachBridgeIntegrationTests.swift; sourceTree = "<group>"; };
+		E10099 /* Flow.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Flow.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -204,21 +204,6 @@
 			path = Storage;
 			sourceTree = "<group>";
 		};
-		E20060 /* Coach */ = {
-			isa = PBXGroup;
-			children = (
-				E10080 /* CoachBridgePairing.swift */,
-				E10081 /* CoachBridgeSync.swift */,
-				E10060 /* FlowCoachContext.swift */,
-				E10061 /* FlowRoutinePatch.swift */,
-				E10064 /* FlowRoutineExchange.swift */,
-				E10066 /* CoachPatchInbox.swift */,
-				E10067 /* FlowCoachDeepLink.swift */,
-				E10070 /* CoachEditHistoryStore.swift */,
-			);
-			path = Coach;
-			sourceTree = "<group>";
-		};
 		E20006 /* Views */ = {
 			isa = PBXGroup;
 			children = (
@@ -228,16 +213,6 @@
 				E20008 /* Editor */,
 			);
 			path = Views;
-			sourceTree = "<group>";
-		};
-		E20062 /* Coach */ = {
-			isa = PBXGroup;
-			children = (
-				E10082 /* CoachBridgeSyncView.swift */,
-				E10062 /* CoachWorkflowSheet.swift */,
-				E10071 /* CoachEditHistorySheet.swift */,
-			);
-			path = Coach;
 			sourceTree = "<group>";
 		};
 		E20007 /* Workout */ = {
@@ -305,15 +280,6 @@
 			path = Views;
 			sourceTree = "<group>";
 		};
-		E20099 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				E10099 /* Flow.app */,
-				E10050 /* FlowTests.xctest */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
 		E20050 /* FlowTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -328,6 +294,40 @@
 				E10072 /* CoachEditHistoryTests.swift */,
 			);
 			path = FlowTests;
+			sourceTree = "<group>";
+		};
+		E20060 /* Coach */ = {
+			isa = PBXGroup;
+			children = (
+				E10080 /* CoachBridgePairing.swift */,
+				E10081 /* CoachBridgeSync.swift */,
+				E10060 /* FlowCoachContext.swift */,
+				E10061 /* FlowRoutinePatch.swift */,
+				E10064 /* FlowRoutineExchange.swift */,
+				E10066 /* CoachPatchInbox.swift */,
+				E10067 /* FlowCoachDeepLink.swift */,
+				E10070 /* CoachEditHistoryStore.swift */,
+			);
+			path = Coach;
+			sourceTree = "<group>";
+		};
+		E20062 /* Coach */ = {
+			isa = PBXGroup;
+			children = (
+				E10082 /* CoachBridgeSyncView.swift */,
+				E10062 /* CoachWorkflowSheet.swift */,
+				E10071 /* CoachEditHistorySheet.swift */,
+			);
+			path = Coach;
+			sourceTree = "<group>";
+		};
+		E20099 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E10099 /* Flow.app */,
+				E10050 /* FlowTests.xctest */,
+			);
+			name = Products;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

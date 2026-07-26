@@ -30,6 +30,11 @@ enum CoachBridgeError: LocalizedError, Equatable {
     case notFound(String)
     case rejected(status: Int, detail: String?)
     case transport(String)
+    /// This device has no connection at all, as opposed to a reachable network
+    /// that cannot find the mailbox. Kept separate because the two need
+    /// different things from the person: one is waiting, the other is a wrong
+    /// address (#58).
+    case offline
     case malformedResponse
     case identityMismatch
 
@@ -49,6 +54,8 @@ enum CoachBridgeError: LocalizedError, Equatable {
             return detail ?? "The mailbox refused the request (HTTP \(status))."
         case .transport(let detail):
             return "Could not reach the mailbox: \(detail)"
+        case .offline:
+            return "This device is offline, so Flow could not reach the mailbox."
         case .malformedResponse:
             return "The mailbox sent a response Flow could not read."
         case .identityMismatch:
@@ -61,13 +68,145 @@ enum CoachBridgeError: LocalizedError, Equatable {
     /// otherwise retry forever.
     var isRetryable: Bool {
         switch self {
-        case .transport:
+        case .transport, .offline:
             return true
         case .rejected(let status, _):
             return status == 429 || (500...599).contains(status)
         case .notPaired, .sharingNotApproved, .invalidCredential, .snapshotGone,
              .notFound, .malformedResponse, .identityMismatch:
             return false
+        }
+    }
+}
+
+/// One request against a mailbox's device edge.
+///
+/// Lives outside `CoachBridgeSync` because pairing has to make the same request
+/// with the same status mapping before there is anything to sync with (#58).
+enum CoachBridgeEdge {
+    /// URLSession codes that mean this device has no connection, rather than
+    /// meaning the address is wrong. Anything else stays `.transport`, because
+    /// a reachable network that cannot find the host is a pairing problem.
+    private static let offlineCodes: Set<URLError.Code> = [
+        .notConnectedToInternet,
+        .networkConnectionLost,
+        .dataNotAllowed,
+        .internationalRoamingOff,
+        .callIsActive,
+    ]
+
+    static func request(
+        endpoint: URL,
+        path: String,
+        method: String,
+        body: Data?,
+        credential: String,
+        transport: CoachBridgeTransport
+    ) async throws -> [String: Any] {
+        guard let url = URL(string: endpoint.absoluteString + path) else {
+            throw CoachBridgeError.transport("The mailbox address is not usable.")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let body {
+            request.httpBody = body
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        }
+        request.timeoutInterval = 30
+
+        let data: Data
+        let response: HTTPURLResponse
+        do {
+            (data, response) = try await transport.perform(request)
+        } catch let error as CoachBridgeError {
+            throw error
+        } catch let error as URLError where offlineCodes.contains(error.code) {
+            throw CoachBridgeError.offline
+        } catch {
+            throw CoachBridgeError.transport(error.localizedDescription)
+        }
+
+        let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+        let detail = payload["error"] as? String
+
+        switch response.statusCode {
+        case 200...299:
+            return payload
+        case 401, 403:
+            throw CoachBridgeError.invalidCredential
+        case 404:
+            throw CoachBridgeError.notFound(detail ?? "The mailbox has no such record.")
+        case 410:
+            throw CoachBridgeError.snapshotGone(detail ?? "That coach snapshot has expired. Sync a fresh one.")
+        default:
+            throw CoachBridgeError.rejected(status: response.statusCode, detail: detail)
+        }
+    }
+}
+
+/// What a candidate endpoint and credential turned out to be (#58).
+///
+/// Deliberately finer-grained than `CoachBridgeError`: at pairing time the
+/// person needs to know which of the two things they just typed is wrong,
+/// because the fixes are different and only one of them is theirs to make.
+enum CoachBridgePairingCheck: Equatable {
+    case accepted
+    case credentialRejected
+    /// Something answered, but it is not a Flow coach mailbox.
+    case notAMailbox
+    /// A real mailbox deployment that has not been configured yet, which the
+    /// person can fix from neither the address nor the credential.
+    case notReady
+    case unreachable
+    case offline
+    case refused(status: Int)
+}
+
+/// Proves an endpoint and a credential work together.
+protocol CoachBridgePairingProbe: Sendable {
+    func check(endpoint: URL, credential: String) async -> CoachBridgePairingCheck
+}
+
+/// The real probe: one cheap authenticated read against the device edge.
+///
+/// `GET /device/pending-patches` is retry-safe, has no side effects, and
+/// exercises exactly the credential and the boundary that sync will use.
+struct CoachBridgeEdgeProbe: CoachBridgePairingProbe {
+    private let transport: CoachBridgeTransport
+
+    init(transport: CoachBridgeTransport = URLSessionBridgeTransport()) {
+        self.transport = transport
+    }
+
+    func check(endpoint: URL, credential: String) async -> CoachBridgePairingCheck {
+        do {
+            let payload = try await CoachBridgeEdge.request(
+                endpoint: endpoint,
+                path: "/device/pending-patches",
+                method: "GET",
+                body: nil,
+                credential: credential,
+                transport: transport
+            )
+            // An authenticated 200 from something that does not answer with a
+            // patch list is not this mailbox: a wrong https host can answer 200
+            // with anything at all.
+            guard payload["patches"] is [Any] else { return .notAMailbox }
+            return .accepted
+        } catch CoachBridgeError.invalidCredential {
+            return .credentialRejected
+        } catch CoachBridgeError.offline {
+            return .offline
+        } catch CoachBridgeError.transport {
+            return .unreachable
+        } catch CoachBridgeError.notFound {
+            return .notAMailbox
+        } catch CoachBridgeError.rejected(let status, _) {
+            return status == 503 ? .notReady : .refused(status: status)
+        } catch {
+            return .notAMailbox
         }
     }
 }
@@ -156,12 +295,15 @@ final class CoachBridgeSync {
 
     init(
         inbox: CoachPatchInbox,
-        pairingStore: CoachBridgePairingStore = CoachBridgePairingStore(),
+        // Built inside the initialiser rather than as a default argument:
+        // default arguments are evaluated in a nonisolated context, and the
+        // store is main-actor isolated.
+        pairingStore: CoachBridgePairingStore? = nil,
         transport: CoachBridgeTransport = URLSessionBridgeTransport(),
         fileURL: URL? = nil
     ) {
         self.inbox = inbox
-        self.pairingStore = pairingStore
+        self.pairingStore = pairingStore ?? CoachBridgePairingStore()
         self.transport = transport
         if let fileURL {
             self.fileURL = fileURL
@@ -247,6 +389,9 @@ final class CoachBridgeSync {
                   storedId == envelope.contextId.uuidString else {
                 return finish(.failure(.identityMismatch))
             }
+            // The mailbox stored what Flow sent and echoed the identity back,
+            // which settles a pairing saved offline and never checked (#58).
+            pairingStore.markVerified(pairing.endpoint)
             let receipt = CoachBridgeSnapshotReceipt(
                 contextId: envelope.contextId,
                 uploadedAt: envelope.createdAt,
@@ -355,6 +500,12 @@ final class CoachBridgeSync {
                 pairing: pairing,
                 credential: credential
             )
+            // The same recognition the pairing probe uses: a patch list means
+            // this really is the device edge, so it can settle an unverified
+            // pairing where a bare 2xx cannot (#58).
+            if payload["patches"] is [Any] {
+                pairingStore.markVerified(pairing.endpoint)
+            }
             let pulled = Self.decodePulledPatches(from: payload)
             var newCount = 0
             var failedWrite: String?
@@ -511,44 +662,19 @@ final class CoachBridgeSync {
         pairing: CoachBridgePairing,
         credential: String
     ) async throws -> [String: Any] {
-        guard let url = URL(string: pairing.endpoint.absoluteString + path) else {
-            throw CoachBridgeError.transport("The mailbox address is not usable.")
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.setValue("Bearer \(credential)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-        request.timeoutInterval = 30
-
-        let data: Data
-        let response: HTTPURLResponse
-        do {
-            (data, response) = try await transport.perform(request)
-        } catch let error as CoachBridgeError {
-            throw error
-        } catch {
-            throw CoachBridgeError.transport(error.localizedDescription)
-        }
-
-        let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        let detail = payload["error"] as? String
-
-        switch response.statusCode {
-        case 200...299:
-            return payload
-        case 401, 403:
-            throw CoachBridgeError.invalidCredential
-        case 404:
-            throw CoachBridgeError.notFound(detail ?? "The mailbox has no such record.")
-        case 410:
-            throw CoachBridgeError.snapshotGone(detail ?? "That coach snapshot has expired. Sync a fresh one.")
-        default:
-            throw CoachBridgeError.rejected(status: response.statusCode, detail: detail)
-        }
+        // Deliberately does not settle an unverified pairing. A 2xx on its own
+        // is not proof this endpoint is the mailbox: an offline pairing can
+        // hold a wrong address, and a wrong https host can answer 200 with
+        // anything. Only the callers that recognise the response as the device
+        // edge mark it verified.
+        try await CoachBridgeEdge.request(
+            endpoint: pairing.endpoint,
+            path: path,
+            method: method,
+            body: body,
+            credential: credential,
+            transport: transport
+        )
     }
 
     static func decodePulledPatches(from payload: [String: Any]) -> [CoachBridgePulledPatch] {
