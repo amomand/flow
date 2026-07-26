@@ -1454,6 +1454,132 @@ final class CoachWorkflowTests: XCTestCase {
         }
     }
 
+    func testAddSectionUpToTheCeilingIsAllowed() throws {
+        let sections = (0..<(FlowRoutinePatcher.maximumSections - 1)).map {
+            Section(name: "Section \($0)", exercises: [ExerciseBlock(name: "Press")])
+        }
+        let routine = Routine(name: "Upper A", sections: sections)
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                section: FlowRoutinePatchSection(id: UUID(), name: "The last one that fits")
+            )
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+        XCTAssertEqual(preview.updatedRoutine.sections.count, FlowRoutinePatcher.maximumSections)
+    }
+
+    /// The same invariant as the section ceiling: a section past this stops
+    /// fitting in a snapshot, so the routine would quietly drop out of the
+    /// coach's view at the next sync rather than fail anywhere visible.
+    func testAddExerciseRefusesToPushASectionPastTheExerciseCeiling() throws {
+        let sectionId = UUID()
+        let full = (0..<FlowRoutinePatcher.maximumExercisesPerSection).map {
+            ExerciseBlock(name: "Exercise \($0)")
+        }
+        let routine = Routine(name: "Upper A", sections: [
+            Section(id: sectionId, name: "Main", exercises: full)
+        ])
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: sectionId,
+                exercise: ExerciseBlock(name: "One too many")
+            )
+        ])
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.tooManyExercisesInSection("Main", FlowRoutinePatcher.maximumExercisesPerSection) = error else {
+                return XCTFail("Expected tooManyExercisesInSection, got \(error)")
+            }
+        }
+    }
+
+    /// A move within one section takes the exercise out before putting it
+    /// back, so a full section can always still be reordered.
+    func testMovingWithinAFullSectionIsStillAllowed() throws {
+        let sectionId = UUID()
+        let movingId = UUID()
+        var full = (0..<(FlowRoutinePatcher.maximumExercisesPerSection - 1)).map {
+            ExerciseBlock(name: "Exercise \($0)")
+        }
+        full.append(ExerciseBlock(id: movingId, name: "Last"))
+        let routine = Routine(name: "Upper A", sections: [
+            Section(id: sectionId, name: "Main", exercises: full)
+        ])
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(kind: .moveExercise, exerciseId: movingId, targetSectionId: sectionId)
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises.count, FlowRoutinePatcher.maximumExercisesPerSection)
+    }
+
+    /// Flow resolves an anchor before inserting, so an exercise can never be
+    /// placed after itself. The bridge has to agree, or it stores a draft the
+    /// phone refuses to preview.
+    func testAnExerciseCannotBeAnchoredOnItself() throws {
+        let sectionId = UUID()
+        let movingId = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(id: sectionId, name: "Main", exercises: [
+                ExerciseBlock(id: movingId, name: "Press"),
+                ExerciseBlock(name: "Row")
+            ])
+        ])
+
+        let added = UUID()
+        let addingOntoItself = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: sectionId,
+                afterExerciseId: added,
+                exercise: ExerciseBlock(id: added, name: "Face Pull")
+            )
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: addingOntoItself, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.exerciseNotFound(added) = error else {
+                return XCTFail("Expected exerciseNotFound, got \(error)")
+            }
+        }
+
+        let movingOntoItself = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .moveExercise,
+                exerciseId: movingId,
+                targetSectionId: sectionId,
+                afterExerciseId: movingId
+            )
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: movingOntoItself, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.exerciseNotFound(movingId) = error else {
+                return XCTFail("Expected exerciseNotFound, got \(error)")
+            }
+        }
+    }
+
+    func testTwoRenamesInOnePatchChainFromEachOther() throws {
+        let routine = Routine(name: "Wednesday — Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .renameRoutine,
+                expectedStringValue: "Wednesday — Upper A",
+                newStringValue: "Upper A"
+            ),
+            FlowRoutinePatchOperation(
+                kind: .renameRoutine,
+                expectedStringValue: "Upper A",
+                newStringValue: "Upper A (heavy)"
+            )
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+        XCTAssertEqual(preview.updatedRoutine.name, "Upper A (heavy)")
+    }
+
     func testAddSectionBoundsAndTrimsItsName() throws {
         let routine = Routine(name: "Upper A", sections: [
             Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])

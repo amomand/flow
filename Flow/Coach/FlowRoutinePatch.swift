@@ -212,6 +212,7 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case wouldEmptyRoutine
     case duplicateSectionId(UUID)
     case tooManySections(Int)
+    case tooManyExercisesInSection(section: String, limit: Int)
     case operationNeedsNewerSchema(kind: String, minimum: Int, declared: Int)
     case persistenceFailed(String)
 
@@ -247,6 +248,8 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Section id \(id.uuidString) already exists in this routine."
         case .tooManySections(let limit):
             return "Routine patch would take the routine past \(limit) sections."
+        case .tooManyExercisesInSection(let section, let limit):
+            return "Routine patch would take \(section) past \(limit) exercises."
         case .persistenceFailed(let message):
             return "The routine patch was not saved: \(message)"
         }
@@ -259,6 +262,11 @@ enum FlowRoutinePatcher {
     /// block should look like; it is about not letting a patch push a routine
     /// out of the range the coach can still read back.
     static let maximumSections = 50
+
+    /// Also from the bridge's `routineSchema`, for the same reason: a section
+    /// pushed past this stops fitting in a snapshot, so the routine would drop
+    /// out of the coach's view at the next sync.
+    static let maximumExercisesPerSection = 100
 
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
@@ -484,6 +492,12 @@ enum FlowRoutinePatcher {
             guard findExercise(in: routine, id: exercise.id) == nil else {
                 throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
             }
+            guard routine.sections[sectionIndex].exercises.count < Self.maximumExercisesPerSection else {
+                throw FlowRoutinePatchError.tooManyExercisesInSection(
+                    section: routine.sections[sectionIndex].name,
+                    limit: Self.maximumExercisesPerSection
+                )
+            }
             let insertIndex: Int
             if let afterExerciseId = operation.afterExerciseId {
                 let after = try exerciseLocation(in: routine, id: afterExerciseId)
@@ -524,6 +538,12 @@ enum FlowRoutinePatcher {
             let source = try exerciseLocation(in: routine, id: id)
             let moving = routine.sections[source.sectionIndex].exercises.remove(at: source.exerciseIndex)
             let targetSectionIndex = try sectionIndex(in: routine, id: targetSectionId)
+            guard routine.sections[targetSectionIndex].exercises.count < Self.maximumExercisesPerSection else {
+                throw FlowRoutinePatchError.tooManyExercisesInSection(
+                    section: routine.sections[targetSectionIndex].name,
+                    limit: Self.maximumExercisesPerSection
+                )
+            }
             let insertIndex: Int
             if let afterExerciseId = operation.afterExerciseId {
                 let after = try exerciseLocation(in: routine, id: afterExerciseId)

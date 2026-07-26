@@ -191,6 +191,13 @@ export const PATCH_SCHEMA_VERSIONS: number[] = contract.patchSchemaVersions;
 export const MAX_SECTIONS = 50;
 
 /**
+ * Also from `routineSchema`, and there for the same reason as MAX_SECTIONS: a
+ * routine a patch pushes past this stops fitting in a snapshot, and would
+ * silently drop out of the coach's view at the next sync.
+ */
+export const MAX_EXERCISES_PER_SECTION = 100;
+
+/**
  * A section arriving with a patch. No exercises: a section a patch adds is
  * always empty, and carrying exercises here would be a second, unvalidated
  * route for adding them. Fill it with `addExercise` later in the same patch.
@@ -315,6 +322,32 @@ function workingRoutine(routine: Routine) {
   return { sectionIds, exercises };
 }
 
+type WorkingRoutine = ReturnType<typeof workingRoutine>;
+
+function countIn(working: WorkingRoutine, sectionId: string): number {
+  let count = 0;
+  for (const entry of working.exercises.values()) if (entry.sectionId === sectionId) count += 1;
+  return count;
+}
+
+/**
+ * What is wrong with an `afterExerciseId`, if anything. Flow inserts at the
+ * anchor's index within the section being added to or moved into, so an
+ * anchor that is absent, or present but in some other section, has no
+ * position for the exercise to land after.
+ */
+function anchorProblem(
+  working: WorkingRoutine,
+  afterExerciseId: string | undefined,
+  sectionId: string | undefined,
+): string[] {
+  if (!afterExerciseId) return [];
+  const anchor = working.exercises.get(afterExerciseId);
+  if (!anchor) return ["anchor exercise must exist"];
+  if (sectionId && anchor.sectionId !== sectionId) return ["anchor exercise must be in the target section"];
+  return [];
+}
+
 export function validatePatch(raw: unknown, context: CoachContext, capabilities: Capabilities): {
   valid: boolean;
   problems: PatchProblem[];
@@ -349,6 +382,7 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
   }
   const working = workingRoutine(routine);
   const startedWithExercises = working.exercises.size > 0;
+  let workingName = routine.name;
   const ranges: Record<string, [number, number]> = {
     replaceExerciseReps: [1, 100], replaceExerciseSets: [1, 10], replaceTimedDuration: [1, 3600],
     replaceRestBetweenSets: [0, 900], replaceRestAfterExercise: [0, 900],
@@ -387,6 +421,15 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
       if (!operation.sectionId || !working.sectionIds.has(operation.sectionId)) problems.push({ path: path("sectionId"), message: "target section must exist" });
       if (!operation.exercise) problems.push({ path: path("exercise"), message: "exercise is required" });
       if (operation.exercise && working.exercises.has(operation.exercise.id)) problems.push({ path: path("exercise.id"), message: "exercise id already exists" });
+      if (operation.sectionId && countIn(working, operation.sectionId) >= MAX_EXERCISES_PER_SECTION) {
+        problems.push({ path: path("sectionId"), message: `a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises` });
+      }
+      // Resolved before the new exercise joins the working set, so it cannot
+      // anchor on itself. Flow inserts at the anchor's position within the
+      // target section, so an anchor in another section has no position to be
+      // after and is refused there too.
+      anchorProblem(working, operation.afterExerciseId, operation.sectionId)
+        .forEach((message) => problems.push({ path: path("afterExerciseId"), message }));
       if (operation.exercise && operation.sectionId) {
         working.exercises.set(operation.exercise.id, { exercise: operation.exercise, sectionId: operation.sectionId });
       }
@@ -411,25 +454,40 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
     }
     if (operation.kind === "renameRoutine") {
       // The routine name is outside the content hash, so the expected value
-      // is the only staleness guard a rename has.
+      // is the only staleness guard a rename has. Compared against the name
+      // as earlier operations have left it, not the snapshot's, so two
+      // renames in one patch mean the same here as they do in the app.
       if (operation.expectedStringValue === undefined) {
         problems.push({ path: path("expectedStringValue"), message: "the current routine name is required" });
-      } else if (operation.expectedStringValue !== routine.name) {
-        problems.push({ path: path("expectedStringValue"), message: `routine is named "${routine.name}" in this snapshot` });
+      } else if (operation.expectedStringValue !== workingName) {
+        problems.push({ path: path("expectedStringValue"), message: `routine is named "${workingName}" at this point in the patch` });
       }
       const proposed = operation.newStringValue?.trim();
       if (!proposed || proposed.length > 100) {
         problems.push({ path: path("newStringValue"), message: "new name must be 1 to 100 characters" });
+      } else {
+        workingName = proposed;
       }
     }
     if (operation.kind === "moveExercise") {
-      if (!operation.targetSectionId || !working.sectionIds.has(operation.targetSectionId)) {
+      const target = operation.targetSectionId;
+      if (!target || !working.sectionIds.has(target)) {
         problems.push({ path: path("targetSectionId"), message: "target section must exist" });
-      } else if (located) {
-        working.exercises.set(located.exercise.id, { exercise: located.exercise, sectionId: operation.targetSectionId });
+      }
+      if (located) {
+        // Flow lifts the exercise out before it looks for the anchor, so an
+        // exercise cannot be moved after itself. Taking it out of the working
+        // set first reproduces that.
+        working.exercises.delete(located.exercise.id);
+        anchorProblem(working, operation.afterExerciseId, target)
+          .forEach((message) => problems.push({ path: path("afterExerciseId"), message }));
+        const landsIn = target && working.sectionIds.has(target) ? target : located.sectionId;
+        if (target && working.sectionIds.has(target) && countIn(working, target) >= MAX_EXERCISES_PER_SECTION) {
+          problems.push({ path: path("targetSectionId"), message: `a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises` });
+        }
+        working.exercises.set(located.exercise.id, { exercise: located.exercise, sectionId: landsIn });
       }
     }
-    if (operation.afterExerciseId && !working.exercises.has(operation.afterExerciseId)) problems.push({ path: path("afterExerciseId"), message: "anchor exercise must exist" });
     if (operation.kind === "replacePhaseOverride") {
       if (!operation.phase || operation.phase === "base") problems.push({ path: path("phase"), message: "peak or deload phase is required" });
       if (operation.removePhaseOverride !== true && !operation.newPhaseOverride) problems.push({ path: path("newPhaseOverride"), message: "new override is required unless removing" });

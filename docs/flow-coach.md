@@ -72,6 +72,8 @@ Operations run in array order, and each one sees what the ones before it did. A 
 
 A patch that would leave a routine with no exercises is refused by both the bridge and the app. A routine that was already empty is not refused, since a patch cannot make it emptier, and a patch that clears a section and refills it in the same operations array is fine.
 
+`afterExerciseId` has to name an exercise in the section being added to or moved into, because Flow inserts at that exercise's position within the section. An exercise cannot be anchored on itself: Flow resolves the anchor before the exercise is in place, so there is nothing there yet to sit after. The same ceiling logic as sections applies to exercises: no section may pass 100, which is the most a snapshot will carry back.
+
 `renameRoutine` takes `expectedStringValue` (the routine's current name) and `newStringValue` (1 to 100 characters, stored trimmed), and no `exerciseId`. The routine name sits outside `baseContentHash`, which covers sections only, so a rename cannot be rebased the way a numeric change can: `expectedStringValue` is its entire concurrency guard, and a mismatch is a conflict rather than something to work around. For the same reason, undoing an applied edit checks the name as well as the content hash before it puts an old name back.
 
 ### Capabilities
