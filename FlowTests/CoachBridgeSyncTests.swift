@@ -179,6 +179,26 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(pairing.endpoint.scheme, "https")
     }
 
+    func testEndpointIsStoredAsSomethingAPathCanBeAppendedTo() async {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
+
+        guard case .success(let pairing) = await store.pair(
+            label: "x",
+            endpointText: "https://coach.example.com/?utm=1#top",
+            credential: "c"
+        ) else {
+            return XCTFail("Expected pairing to succeed")
+        }
+
+        // Request paths are appended by string, so a pasted query or fragment
+        // would otherwise swallow the path.
+        XCTAssertEqual(pairing.endpoint.absoluteString, "https://coach.example.com")
+        XCTAssertEqual(
+            URL(string: pairing.endpoint.absoluteString + "/device/pending-patches")?.path,
+            "/device/pending-patches"
+        )
+    }
+
     func testRotationKeepsEndpointAndReplacesCredential() async {
         let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe())
         await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "old")

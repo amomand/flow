@@ -386,6 +386,17 @@ final class CoachBridgePairingStore {
         guard scheme == "https" || (scheme == "http" && isLoopback) else {
             return .failure(.insecureEndpoint)
         }
-        return .success(url)
+        // Paths are appended to this by string, so what is stored has to be a
+        // base a path can be appended to. A pasted query or fragment would
+        // otherwise swallow the path: "https://host?x" + "/device/…" puts the
+        // whole path inside the query string.
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return .failure(.invalidEndpoint)
+        }
+        components.query = nil
+        components.fragment = nil
+        while components.path.hasSuffix("/") { components.path.removeLast() }
+        guard let cleaned = components.url else { return .failure(.invalidEndpoint) }
+        return .success(cleaned)
     }
 }
