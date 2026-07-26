@@ -152,6 +152,11 @@ describe("Flow Coach bridge MCP edge", () => {
       expect(operation.properties.expectedIntValue.type).toBe("integer");
       expect(operation.properties.newIntValue.type).toBe("integer");
       expect(patchSchema.properties.operations.description).toContain("expectedIntValue");
+      // A base-value change leaves phase overrides where they were, so a model
+      // composing a multi-phase change has to be explicit about it (#61).
+      const description = patchSchema.properties.operations.description as string;
+      expect(description).toContain("do not cascade into phaseOverrides");
+      expect(description).toContain("replacePhaseOverride operation");
     }
   });
 
