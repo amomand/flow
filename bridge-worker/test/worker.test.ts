@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
-import { MAX_EXERCISES_PER_SECTION, MAX_SECTIONS, OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
+import { MAX_EXERCISES_PER_SECTION, MAX_ROUTINES, MAX_SECTIONS, OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
 const DEVICE_SECRET = "fixture-device-secret";
@@ -1045,6 +1045,45 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
     expect(checked.status).toBe(422);
     expect((await json(checked)).problems.map((problem: any) => problem.message))
       .toContain("exercise id already exists in another routine");
+  });
+
+  /**
+   * The worst of the three ceilings to cross: past this the next snapshot
+   * upload fails whole, so the coach stops seeing anything at all rather than
+   * losing one routine.
+   */
+  it("refuses a create once the snapshot already carries as many routines as it can", async () => {
+    const envelope = capableSnapshot();
+    const filler = Array.from({ length: MAX_ROUTINES }, (_, index) => ({
+      id: crypto.randomUUID(),
+      name: `Routine ${index}`,
+      currentPhase: "base",
+      sections: [{
+        id: crypto.randomUUID(),
+        name: "Main",
+        exercises: [newExercise(crypto.randomUUID(), "Press")],
+      }],
+    }));
+    envelope.context = {
+      ...fixtureContext,
+      routines: filler,
+      currentPhaseByRoutineId: Object.fromEntries(filler.map((routine) => [routine.id, "base"])),
+      routineContentHashByRoutineId: Object.fromEntries(filler.map((routine) => [routine.id, "c1-0011223344556677"])),
+      routineStateHashByRoutineId: Object.fromEntries(filler.map((routine) => [routine.id, "s1-0011223344556677"])),
+    } as unknown as typeof fixtureContext;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const full = await validate(envelope.contextId, createPatch());
+    expect(full.status).toBe(422);
+    expect((await json(full)).problems[0].message).toContain(`at most ${MAX_ROUTINES} routines`);
+
+    // One fewer, and the same create is fine, so the ceiling is the reason.
+    const roomForOne = { ...envelope, contextId: crypto.randomUUID() };
+    roomForOne.context = { ...envelope.context, routines: filler.slice(0, -1) } as typeof envelope.context;
+    expect((await upload(roomForOne)).status).toBe(201);
+    const fits = await validate(roomForOne.contextId, createPatch());
+    expect(fits.status).toBe(200);
+    expect((await json(fits)).valid).toBe(true);
   });
 
   it("refuses a create when the device does not report support for it", async () => {

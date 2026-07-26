@@ -540,23 +540,30 @@ struct CoachWorkflowSheet: View {
         clearMessages()
         guard let selectedPatchId else { return }
         let selected = inbox.pending.first { $0.id == selectedPatchId }
-        // A draft that no longer matches the routine is reported as stale
-        // rather than rejected, so the mailbox records why it went away.
-        let isStale: Bool = selected.map { patch in
+        // What the mailbox is told has to match what actually happened, or the
+        // coach draws the wrong conclusion and acts on it. A draft that no
+        // longer matches the routine went away because the world moved, which
+        // is stale. A superseded create is the opposite case: the routine it
+        // proposed is already here, so the outcome it wanted is in place, and
+        // calling that stale would invite the coach to propose it again.
+        let outcome: PendingBridgeAcknowledgement.Status = selected.map { patch in
             switch inbox.summary(for: patch, routines: store.routines).readiness {
-            // A superseded create is the clearest stale case there is: the
-            // routine it proposed is already here.
-            case .conflict, .invalid, .superseded: return true
-            case .ready, .rebase: return false
+            case .superseded: return .applied
+            case .conflict, .invalid: return .stale
+            case .ready, .rebase: return .rejected
             }
-        } ?? false
+        } ?? .rejected
         guard inbox.markRejected(selectedPatchId) else {
             errorMessage = inbox.persistenceError ?? "Could not record the rejection."
             return
         }
-        acknowledgeToBridge(selected, status: isStale ? .stale : .rejected)
+        acknowledgeToBridge(selected, status: outcome)
         clearSelection()
-        statusMessage = isStale ? "Patch cleared as stale." : "Patch rejected."
+        switch outcome {
+        case .applied: statusMessage = "Patch cleared; that routine is already here."
+        case .stale: statusMessage = "Patch cleared as stale."
+        default: statusMessage = "Patch rejected."
+        }
     }
 
     /// Reports a resolved bridge draft to its mailbox. Local-only patches
