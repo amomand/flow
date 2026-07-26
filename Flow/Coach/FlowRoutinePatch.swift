@@ -528,12 +528,15 @@ enum FlowRoutinePatcher {
         created.name = name
 
         for index in created.sections.indices {
+            // The field name reaches the person reading the error, and a
+            // create can carry many sections, so it has to say which one.
+            let field = "routine.sections[\(index)].name"
             let sectionName = created.sections[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !sectionName.isEmpty else {
-                throw FlowRoutinePatchError.invalidValue(field: "routine.sections.name", message: "must not be empty")
+                throw FlowRoutinePatchError.invalidValue(field: field, message: "must not be empty")
             }
             guard sectionName.count <= 200 else {
-                throw FlowRoutinePatchError.invalidValue(field: "routine.sections.name", message: "must be 200 characters or fewer")
+                throw FlowRoutinePatchError.invalidValue(field: field, message: "must be 200 characters or fewer")
             }
             created.sections[index].name = sectionName
 
