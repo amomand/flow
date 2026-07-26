@@ -29,14 +29,26 @@ export const exerciseSchema = z.object({
   phaseOverrides: z.record(z.string(), phaseOverride).default({}),
 }).strict();
 
+/**
+ * The most a routine can hold and still fit in a snapshot.
+ *
+ * Declared here and used by both `routineSchema` and the patch validator, so
+ * the shape a snapshot will carry and the shape a patch may produce cannot
+ * drift apart. If they did, a patch would be accepted, applied, and the
+ * routine would then silently fail to upload, dropping out of the coach's
+ * view entirely rather than failing anywhere visible.
+ */
+export const MAX_SECTIONS = 50;
+export const MAX_EXERCISES_PER_SECTION = 100;
+
 export const routineSchema = z.object({
   id: UUID,
   name: z.string().trim().min(1).max(200),
   sections: z.array(z.object({
     id: UUID,
     name: z.string().trim().min(1).max(200),
-    exercises: z.array(exerciseSchema).max(100),
-  }).strict()).max(50),
+    exercises: z.array(exerciseSchema).max(MAX_EXERCISES_PER_SECTION),
+  }).strict()).max(MAX_SECTIONS),
   currentPhase: phase,
 }).strict();
 
@@ -181,21 +193,6 @@ export const OPERATION_KIND_MIN_SCHEMA = contract.operationKindMinimumSchema;
 export type OperationKind = keyof typeof OPERATION_KIND_MIN_SCHEMA;
 export const OPERATION_KINDS = Object.keys(OPERATION_KIND_MIN_SCHEMA) as OperationKind[];
 export const PATCH_SCHEMA_VERSIONS: number[] = contract.patchSchemaVersions;
-
-/**
- * Matches `routineSchema`, which will not carry a routine with more sections
- * than this. The cap is not an opinion about how a training block should be
- * shaped; it stops a patch pushing a routine out of the range the coach can
- * still read back.
- */
-export const MAX_SECTIONS = 50;
-
-/**
- * Also from `routineSchema`, and there for the same reason as MAX_SECTIONS: a
- * routine a patch pushes past this stops fitting in a snapshot, and would
- * silently drop out of the coach's view at the next sync.
- */
-export const MAX_EXERCISES_PER_SECTION = 100;
 
 /**
  * A section arriving with a patch. No exercises: a section a patch adds is

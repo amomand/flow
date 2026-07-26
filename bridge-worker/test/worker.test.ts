@@ -730,6 +730,62 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       .toContain(`a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises`);
   });
 
+  /**
+   * A move takes the exercise out before putting it back, so a full section
+   * can always still be reordered, while moving one *into* a full section is
+   * refused. Flow does exactly this, and the two cases sit either side of the
+   * same line.
+   */
+  it("allows a move within a full section but not into one", async () => {
+    const envelope = capableSnapshot();
+    const fullId = crypto.randomUUID();
+    const spareId = crypto.randomUUID();
+    const movingId = crypto.randomUUID();
+    const full = {
+      ...fixtureContext.routines[0]!,
+      id: crypto.randomUUID(),
+      name: "Everything",
+      sections: [
+        {
+          id: fullId,
+          name: "Full",
+          exercises: Array.from({ length: MAX_EXERCISES_PER_SECTION }, (_, index) =>
+            newExercise(crypto.randomUUID(), `Exercise ${index}`)),
+        },
+        { id: spareId, name: "Spare", exercises: [newExercise(movingId, "Movable")] },
+      ],
+    };
+    envelope.context = {
+      ...fixtureContext,
+      routines: [full],
+      currentPhaseByRoutineId: { [full.id]: "base" },
+      routineContentHashByRoutineId: { [full.id]: "c1-0011223344556677" },
+      routineStateHashByRoutineId: { [full.id]: "s1-0011223344556677" },
+    } as unknown as typeof fixtureContext;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const patchWith = (operations: unknown[]) => ({
+      schemaVersion: 3,
+      routineId: full.id,
+      baseContentHash: "c1-0011223344556677",
+      rationale: "Reorder around a full section.",
+      operations,
+    });
+
+    const within = await validate(envelope.contextId, patchWith([
+      { kind: "moveExercise", exerciseId: full.sections[0]!.exercises[0]!.id, targetSectionId: fullId },
+    ]));
+    expect(within.status).toBe(200);
+    expect((await json(within)).valid).toBe(true);
+
+    const into = await validate(envelope.contextId, patchWith([
+      { kind: "moveExercise", exerciseId: movingId, targetSectionId: fullId },
+    ]));
+    expect(into.status).toBe(422);
+    expect((await json(into)).problems.map((problem: any) => problem.message))
+      .toContain(`a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises`);
+  });
+
   it("does not refuse a patch against a routine that was already empty", async () => {
     const envelope = capableSnapshot();
     const empty = { ...fixtureContext.routines[0]!, id: crypto.randomUUID(), name: "Empty Draft", sections: [] };
