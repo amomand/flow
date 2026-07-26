@@ -389,6 +389,9 @@ final class CoachBridgeSync {
                   storedId == envelope.contextId.uuidString else {
                 return finish(.failure(.identityMismatch))
             }
+            // The mailbox stored what Flow sent and echoed the identity back,
+            // which settles a pairing saved offline and never checked (#58).
+            pairingStore.markVerified(pairing.endpoint)
             let receipt = CoachBridgeSnapshotReceipt(
                 contextId: envelope.contextId,
                 uploadedAt: envelope.createdAt,
@@ -497,6 +500,12 @@ final class CoachBridgeSync {
                 pairing: pairing,
                 credential: credential
             )
+            // The same recognition the pairing probe uses: a patch list means
+            // this really is the device edge, so it can settle an unverified
+            // pairing where a bare 2xx cannot (#58).
+            if payload["patches"] is [Any] {
+                pairingStore.markVerified(pairing.endpoint)
+            }
             let pulled = Self.decodePulledPatches(from: payload)
             var newCount = 0
             var failedWrite: String?
@@ -653,7 +662,12 @@ final class CoachBridgeSync {
         pairing: CoachBridgePairing,
         credential: String
     ) async throws -> [String: Any] {
-        let payload = try await CoachBridgeEdge.request(
+        // Deliberately does not settle an unverified pairing. A 2xx on its own
+        // is not proof this endpoint is the mailbox: an offline pairing can
+        // hold a wrong address, and a wrong https host can answer 200 with
+        // anything. Only the callers that recognise the response as the device
+        // edge mark it verified.
+        try await CoachBridgeEdge.request(
             endpoint: pairing.endpoint,
             path: path,
             method: method,
@@ -661,10 +675,6 @@ final class CoachBridgeSync {
             credential: credential,
             transport: transport
         )
-        // A request the mailbox accepted is proof the pairing works, which
-        // settles a pairing that was saved offline and never checked (#58).
-        pairingStore.markVerified(pairing.endpoint)
-        return payload
     }
 
     static func decodePulledPatches(from payload: [String: Any]) -> [CoachBridgePulledPatch] {

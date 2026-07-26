@@ -317,6 +317,39 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertTrue(store.pairing?.isVerified == true)
     }
 
+    func testABare200FromSomethingElseDoesNotSettleAnUnverifiedPairing() async throws {
+        // An offline pairing can hold a wrong address, and a wrong https host
+        // can answer 200 with anything. Only a response Flow recognises as the
+        // device edge counts as proof.
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe([.offline]))
+        await store.pair(label: "x", endpointText: "https://not-a-mailbox.example.com", credential: "c")
+
+        let transport = StubBridgeTransport()
+        await transport.stub("GET /device/pending-patches", status: 200, json: "{\"hello\":\"world\"}")
+        let sync = try await makeSync(pairingStore: store, transport: transport)
+        _ = await sync.pullPendingPatches()
+
+        XCTAssertFalse(store.pairing?.isVerified == true)
+    }
+
+    func testASnapshotThatFailsIdentityDoesNotSettleAnUnverifiedPairing() async throws {
+        let store = CoachBridgePairingStore(vault: InMemoryBridgeVault(), probe: StubPairingProbe([.offline]))
+        await store.pair(label: "x", endpointText: "https://coach.example.com", credential: "c")
+
+        let transport = StubBridgeTransport()
+        await transport.stub(
+            "PUT /device/snapshots",
+            status: 201,
+            json: "{\"stored\":true,\"contextId\":\"11111111-1111-1111-1111-111111111111\"}"
+        )
+        let sync = try await makeSync(pairingStore: store, transport: transport)
+        sync.approveSharing()
+        let result = await sync.syncToCoach(routines: [], strengthWorkouts: [], cardioWorkouts: [])
+
+        XCTAssertEqual(result, .failure(.identityMismatch))
+        XCTAssertFalse(store.pairing?.isVerified == true, "a response Flow did not trust cannot settle the pairing")
+    }
+
     func testRotationWithARejectedCredentialKeepsTheWorkingOne() async {
         let store = CoachBridgePairingStore(
             vault: InMemoryBridgeVault(),
