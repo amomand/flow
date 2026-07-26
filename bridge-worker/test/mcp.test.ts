@@ -147,7 +147,13 @@ describe("Flow Coach bridge MCP edge", () => {
     const tools = body.result.tools as Array<Record<string, any>>;
     for (const name of ["validate_flow_routine_patch", "create_pending_routine_patch"]) {
       const patchSchema = tools.find((tool) => tool.name === name)!.inputSchema.properties.patch;
-      expect(patchSchema.required).toContain("baseContentHash");
+      // baseContentHash is required on the existingRoutine branch only, so it
+      // is published as a property with the branch rule in the description
+      // rather than as a top-level requirement a valid create would fail.
+      expect(patchSchema.properties.baseContentHash.pattern).toBe("^c1-[0-9a-f]{16}$");
+      expect(patchSchema.required).not.toContain("baseContentHash");
+      expect(patchSchema.description).toContain("newRoutine");
+      expect(patchSchema.description).toContain("no baseContentHash");
       const operation = patchSchema.properties.operations.items;
       // Compared against the source of truth rather than a count, so a new
       // operation kind that never reaches the published schema is a failure

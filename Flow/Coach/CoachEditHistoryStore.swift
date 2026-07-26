@@ -9,9 +9,12 @@ import Foundation
 struct CoachEditRecord: Codable, Equatable, Identifiable {
     enum Outcome: String, Codable {
         case applied
-        /// The edit was rolled back by restoring `previousSections`.
+        /// The edit was rolled back by restoring `previousSections`, or for a
+        /// create, by removing the routine it added.
         case restored
     }
+
+    var wasCreate: Bool { createdRoutine == true }
 
     let id: UUID
     let appliedAt: Date
@@ -35,6 +38,10 @@ struct CoachEditRecord: Codable, Equatable, Identifiable {
     /// be undone. Absent on records written before schema 3, where no patch
     /// could change a name and there is nothing to put back.
     let previousName: String?
+    /// True when this edit brought the routine into existence. Undoing it
+    /// removes the routine rather than putting sections back, because there
+    /// were none: absent on every record written before creates existed.
+    let createdRoutine: Bool?
     let provenance: CoachEditProvenance?
     var outcome: Outcome
     var restoredAt: Date?

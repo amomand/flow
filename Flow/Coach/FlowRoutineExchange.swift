@@ -62,7 +62,11 @@ enum FlowRoutineExchange {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .unknown
         }
-        if object["operations"] != nil, object["routineId"] != nil {
+        // Keyed on `operations` alone. A patch that creates a routine carries
+        // no `routineId`, and requiring one would send a pasted create off to
+        // the routine importer to fail with a decode error rather than a
+        // pointer to the right screen.
+        if object["operations"] != nil {
             return .coachPatch
         }
         if object["routines"] != nil, object["schemaVersion"] != nil {

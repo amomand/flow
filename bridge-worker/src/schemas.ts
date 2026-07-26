@@ -222,6 +222,7 @@ const operationSchema = z.object({
   newPhaseOverride: phaseOverride.optional(),
   removePhaseOverride: z.boolean().optional(),
   exercise: exerciseSchema.optional(),
+  routine: routineSchema.optional(),
 }).strict();
 
 export const routinePatchSchema = z.object({
@@ -230,12 +231,33 @@ export const routinePatchSchema = z.object({
   schemaVersion: z.number().int().refine((version) => PATCH_SCHEMA_VERSIONS.includes(version), {
     message: `must be one of ${PATCH_SCHEMA_VERSIONS.join(", ")}`,
   }),
-  routineId: UUID,
-  baseContentHash: CONTENT_HASH,
+  // Absent in schema 2, where every patch edited a routine that existed.
+  target: z.enum(["existingRoutine", "newRoutine"]).default("existingRoutine"),
+  routineId: UUID.optional(),
+  baseContentHash: CONTENT_HASH.optional(),
   exportedAt: ISO_DATE.optional(),
   rationale: z.string().trim().min(1).max(2000),
   operations: z.array(operationSchema).min(1).max(50),
-}).strict();
+}).strict().superRefine((patch, issue) => {
+  // The two branches need different fields, so the discriminator is what
+  // keeps both of them strict rather than making the anchor optional for
+  // everyone and hoping.
+  if (patch.target === "newRoutine") {
+    if (patch.routineId !== undefined) {
+      issue.addIssue({ code: "custom", path: ["routineId"], message: "a newRoutine patch anchors to nothing and carries no routineId" });
+    }
+    if (patch.baseContentHash !== undefined) {
+      issue.addIssue({ code: "custom", path: ["baseContentHash"], message: "a newRoutine patch anchors to nothing and carries no baseContentHash" });
+    }
+    return;
+  }
+  if (patch.routineId === undefined) {
+    issue.addIssue({ code: "custom", path: ["routineId"], message: "required unless target is newRoutine" });
+  }
+  if (patch.baseContentHash === undefined) {
+    issue.addIssue({ code: "custom", path: ["baseContentHash"], message: "required unless target is newRoutine" });
+  }
+});
 
 export const patchEnvelopeSchema = z.object({
   contextId: UUID,
@@ -345,6 +367,79 @@ function anchorProblem(
   return [];
 }
 
+/**
+ * A new routine arrives whole: exactly one `createRoutine` and nothing else.
+ *
+ * Not a create followed by a stream of `addExercise` operations, because the
+ * preview would then have to render intermediate states of a routine that
+ * never existed in any of them, and the person approving would be reading a
+ * history rather than a routine.
+ */
+function validateCreate(
+  patch: RoutinePatch,
+  context: CoachContext,
+  capabilities: Capabilities,
+): PatchProblem[] {
+  if (patch.operations.length !== 1 || patch.operations[0]!.kind !== "createRoutine") {
+    return [{ path: "operations", message: "a newRoutine patch contains exactly one createRoutine operation" }];
+  }
+  const operation = patch.operations[0]!;
+  if (!capabilities.operationKinds.includes("createRoutine")) {
+    return [{ path: "operations.0.kind", message: "Flow does not report support for createRoutine" }];
+  }
+  if (OPERATION_KIND_MIN_SCHEMA.createRoutine > patch.schemaVersion) {
+    return [{
+      path: "operations.0.kind",
+      message: `createRoutine was introduced in schema ${OPERATION_KIND_MIN_SCHEMA.createRoutine}; this patch declares schema ${patch.schemaVersion}`,
+    }];
+  }
+  const routine = operation.routine;
+  if (!routine) return [{ path: "operations.0.routine", message: "routine is required" }];
+
+  const problems: PatchProblem[] = [];
+  // Reported first, because the ordinary cause is a retry of a draft that
+  // already landed rather than a patch that is wrong.
+  if (context.routines.some((existing) => existing.id === routine.id)) {
+    return [{ path: "operations.0.routine.id", message: "a routine with this id already exists" }];
+  }
+  const name = routine.name.trim();
+  if (!name || name.length > 100) {
+    problems.push({ path: "operations.0.routine.name", message: "name must be 1 to 100 characters" });
+  }
+  if (routine.sections.length === 0) {
+    problems.push({ path: "operations.0.routine.sections", message: "a routine needs at least one section" });
+  }
+
+  const sectionIds = new Set<string>();
+  const exerciseIds = new Set<string>();
+  // Checked across every routine in the snapshot, not just this one: whole
+  // routine import has always reassigned ids on the way in, so globally fresh
+  // ids are what the rest of the app already assumes.
+  const idsElsewhere = new Set(
+    context.routines.flatMap((existing) => existing.sections.flatMap((section) => section.exercises.map((entry) => entry.id))),
+  );
+  let totalExercises = 0;
+  routine.sections.forEach((section, sectionIndex) => {
+    const at = (field: string) => `operations.0.routine.sections.${sectionIndex}.${field}`;
+    if (sectionIds.has(section.id)) problems.push({ path: at("id"), message: "section id is repeated in this routine" });
+    sectionIds.add(section.id);
+    if (section.exercises.length > MAX_EXERCISES_PER_SECTION) {
+      problems.push({ path: at("exercises"), message: `a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises` });
+    }
+    totalExercises += section.exercises.length;
+    section.exercises.forEach((exercise, exerciseIndex) => {
+      const path = `${at("exercises")}.${exerciseIndex}.id`;
+      if (exerciseIds.has(exercise.id)) problems.push({ path, message: "exercise id is repeated in this routine" });
+      if (idsElsewhere.has(exercise.id)) problems.push({ path, message: "exercise id already exists in another routine" });
+      exerciseIds.add(exercise.id);
+    });
+  });
+  if (totalExercises === 0) {
+    problems.push({ path: "operations.0.routine.sections", message: "a routine needs at least one exercise" });
+  }
+  return problems;
+}
+
 export function validatePatch(raw: unknown, context: CoachContext, capabilities: Capabilities): {
   valid: boolean;
   problems: PatchProblem[];
@@ -372,10 +467,22 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
       problems: [{ path: "schemaVersion", message: `Flow reports ${supported}; this patch declares ${patch.schemaVersion}` }],
     };
   }
+  if (patch.target === "newRoutine") {
+    const createProblems = validateCreate(patch, context, capabilities);
+    return { valid: createProblems.length === 0, patch, problems: createProblems };
+  }
+
   const routine = context.routines.find((candidate) => candidate.id === patch.routineId);
   if (!routine) return { valid: false, patch, problems: [{ path: "routineId", message: "routine is absent from this snapshot" }] };
-  if (context.routineContentHashByRoutineId[patch.routineId] !== patch.baseContentHash) {
+  if (context.routineContentHashByRoutineId[patch.routineId!] !== patch.baseContentHash) {
     problems.push({ path: "baseContentHash", message: "patch does not match this snapshot's routine content hash" });
+  }
+  if (patch.operations.some((operation) => operation.kind === "createRoutine")) {
+    return {
+      valid: false,
+      patch,
+      problems: [{ path: "target", message: "createRoutine belongs to a patch with target newRoutine" }],
+    };
   }
   const working = workingRoutine(routine);
   const startedWithExercises = working.exercises.size > 0;

@@ -182,6 +182,20 @@ struct CoachWorkflowSheet: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 readinessChip(summary.readiness)
+                // A create adds a routine that is not in the list yet, so
+                // without this the row reads as an edit to a routine the user
+                // would go looking for and not find.
+                if summary.isCreate {
+                    Text("NEW")
+                        .terminalFont(10, weight: .bold)
+                        .foregroundColor(TN.blue)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(TN.blue.opacity(0.6), lineWidth: 1)
+                        )
+                }
                 Text(summary.routineName ?? "Unknown routine")
                     .terminalFont(12, weight: .bold)
                     .foregroundColor(TN.fg)
@@ -221,6 +235,8 @@ struct CoachWorkflowSheet: View {
             case .ready: return ("READY", TN.green)
             case .rebase: return ("REBASE", TN.yellow)
             case .conflict: return ("CONFLICT", TN.red)
+            // Not red: the routine is here, which is what the draft wanted.
+            case .superseded: return ("ALREADY APPLIED", TN.comment)
             case .invalid: return ("INVALID", TN.red)
             }
         }()
@@ -275,9 +291,21 @@ struct CoachWorkflowSheet: View {
                         .foregroundColor(TN.yellow)
                 }
 
+                if preview.isCreate {
+                    Text("NEW ROUTINE: nothing existing is changed. Applying adds this to your routines.")
+                        .terminalFont(12)
+                        .foregroundColor(TN.blue)
+                }
+
                 Text(preview.updatedRoutine.name)
                     .terminalFont(14, weight: .bold)
                     .foregroundColor(TN.fg)
+
+                if preview.isCreate {
+                    Text("Starts in \(preview.updatedRoutine.currentPhase.displayName) · \(preview.updatedRoutine.sections.count) sections · \(preview.updatedRoutine.sections.reduce(0) { $0 + $1.exercises.count }) exercises")
+                        .terminalFont(11)
+                        .foregroundColor(TN.comment)
+                }
 
                 if !preview.patch.rationale.isEmpty {
                     Text(preview.patch.rationale)
@@ -516,7 +544,9 @@ struct CoachWorkflowSheet: View {
         // rather than rejected, so the mailbox records why it went away.
         let isStale: Bool = selected.map { patch in
             switch inbox.summary(for: patch, routines: store.routines).readiness {
-            case .conflict, .invalid: return true
+            // A superseded create is the clearest stale case there is: the
+            // routine it proposed is already here.
+            case .conflict, .invalid, .superseded: return true
             case .ready, .rebase: return false
             }
         } ?? false

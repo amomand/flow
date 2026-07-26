@@ -164,7 +164,7 @@ final class CoachWorkflowTests: XCTestCase {
         let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
 
         XCTAssertEqual(routine.sections[0].exercises[0].reps, 8)
-        XCTAssertEqual(preview.originalRoutine.sections[0].exercises[0].reps, 8)
+        XCTAssertEqual(preview.originalRoutine?.sections[0].exercises[0].reps, 8)
         XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
         XCTAssertEqual(preview.diffs.first?.before, "Press: 8 reps")
     }
@@ -1683,6 +1683,299 @@ final class CoachWorkflowTests: XCTestCase {
             return XCTFail("Expected restore to succeed")
         }
         XCTAssertEqual(store.routines[0].sections.map(\.name), ["Main"])
+    }
+
+    // MARK: - Schema 3: createRoutine
+
+    func testCreateRoutinePreviewsAsAdditionsAndApplies() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let created = newRoutine(name: "Lower A", phase: .deload)
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(createPatch(created))) else {
+            return XCTFail("Expected the create to preview")
+        }
+        XCTAssertTrue(preview.isCreate)
+        XCTAssertNil(preview.originalRoutine)
+        XCTAssertEqual(preview.diffs.first?.title, "Create routine")
+        XCTAssertTrue(preview.diffs.allSatisfy { $0.before == "[not present]" })
+        // One row for the routine, one per section, one per exercise.
+        XCTAssertEqual(preview.diffs.count, 1 + 2 + 3)
+        XCTAssertEqual(Set(preview.diffs.map(\.id)).count, preview.diffs.count)
+        XCTAssertTrue(store.routines.isEmpty)
+
+        guard case .success(let applied) = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the create to apply")
+        }
+        XCTAssertEqual(store.routines.count, 1)
+        XCTAssertEqual(applied.id, created.id)
+        XCTAssertEqual(store.routines[0].name, "Lower A")
+        XCTAssertEqual(store.routines[0].currentPhase, .deload)
+        XCTAssertEqual(store.routines[0].sections.map(\.name), ["Main Lifts", "Accessories"])
+        XCTAssertTrue(store.routines[0].canStartWorkout)
+    }
+
+    /// The client supplies every id, which is what makes a create idempotent:
+    /// the second attempt has nothing new to add.
+    func testApplyingTheSameCreateTwiceLeavesOneRoutine() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let created = newRoutine(name: "Lower A")
+        let json = try patchJSON(createPatch(created))
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(json),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the first create to apply")
+        }
+        XCTAssertEqual(store.routines.count, 1)
+
+        // Re-applying the preview object that is still on screen.
+        guard case .failure(let staleApply) = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the second apply to refuse")
+        }
+        XCTAssertEqual(staleApply, .routineAlreadyExists(created.id))
+
+        // And previewing the same patch text again, which is what a retried
+        // bridge delivery looks like.
+        guard case .failure(let stalePreview) = store.previewRoutinePatchJSON(json) else {
+            return XCTFail("Expected the second preview to refuse")
+        }
+        XCTAssertEqual(stalePreview, .routineAlreadyExists(created.id))
+        XCTAssertEqual(store.routines.count, 1)
+    }
+
+    /// A retry that already landed is not a failure, and the inbox should not
+    /// dress it up as one.
+    func testASupersededCreateIsReportedAsAlreadyApplied() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let created = newRoutine(name: "Lower A")
+        let json = try patchJSON(createPatch(created))
+        let inbox = CoachPatchInbox(fileURL: fixture.directory.appendingPathComponent("inbox.json"))
+        inbox.enqueue(rawJSON: json, source: .paste)
+
+        let before = try XCTUnwrap(inbox.pending.first)
+        let readyState = inbox.summary(for: before, routines: store.routines)
+        XCTAssertEqual(readyState.readiness, .ready)
+        XCTAssertTrue(readyState.isCreate)
+        XCTAssertEqual(readyState.routineName, "Lower A")
+
+        store.addRoutine(created)
+
+        let summary = inbox.summary(for: before, routines: store.routines)
+        guard case .superseded = summary.readiness else {
+            return XCTFail("Expected superseded, got \(summary.readiness)")
+        }
+        XCTAssertTrue(summary.isCreate)
+    }
+
+    func testUndoingACreateRemovesTheRoutine() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let created = newRoutine(name: "Lower A")
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(createPatch(created))),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the create to apply")
+        }
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        XCTAssertTrue(record.wasCreate)
+        guard case .success(let removed) = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected undo to remove the routine")
+        }
+        XCTAssertEqual(removed.id, created.id)
+        XCTAssertTrue(store.routines.isEmpty)
+        XCTAssertEqual(history.newestFirst.first?.outcome, .restored)
+        XCTAssertNil(history.mostRecentRestorable)
+    }
+
+    /// Undo of a create deletes, so the guard against later edits matters more
+    /// here than anywhere else.
+    func testUndoingACreateRefusesOnceTheRoutineHasBeenEdited() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let created = newRoutine(name: "Lower A")
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(createPatch(created))),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the create to apply")
+        }
+
+        var edited = store.routines[0]
+        edited.sections[0].exercises[0].sets = 5
+        store.updateRoutine(edited)
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .failure(let error) = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected undo to refuse a routine edited since the create")
+        }
+        XCTAssertEqual(error, .routineChangedSinceEdit("Lower A"))
+        XCTAssertEqual(store.routines.count, 1)
+
+        guard case .success = store.restoreCoachEdit(record, allowingOverwrite: true) else {
+            return XCTFail("Expected an explicit overwrite to remove it")
+        }
+        XCTAssertTrue(store.routines.isEmpty)
+    }
+
+    func testCreateMustCarryExactlyOneCreateOperation() throws {
+        let created = newRoutine(name: "Lower A")
+        var patch = createPatch(created)
+        patch = FlowRoutinePatch(
+            schemaVersion: 3,
+            target: .newRoutine,
+            rationale: patch.rationale,
+            operations: patch.operations + [
+                FlowRoutinePatchOperation(
+                    kind: .addSection,
+                    section: FlowRoutinePatchSection(id: UUID(), name: "Core")
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [])) { error in
+            guard case FlowRoutinePatchError.createMustStandAlone = error else {
+                return XCTFail("Expected createMustStandAlone, got \(error)")
+            }
+        }
+    }
+
+    func testACreateCarriesNoAnchor() throws {
+        let created = newRoutine(name: "Lower A")
+        let patch = FlowRoutinePatch(
+            schemaVersion: 3,
+            target: .newRoutine,
+            routineId: UUID(),
+            rationale: "Anchored to something it cannot be anchored to.",
+            operations: createPatch(created).operations
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("target", _) = error else {
+                return XCTFail("Expected invalidValue on target, got \(error)")
+            }
+        }
+    }
+
+    func testCreateRoutineIsRejectedInAnExistingRoutinePatch() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let patch = sectionPatch(for: routine, operations: createPatch(newRoutine(name: "Lower A")).operations)
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("target", _) = error else {
+                return XCTFail("Expected invalidValue on target, got \(error)")
+            }
+        }
+    }
+
+    func testCreatedRoutineExerciseIdsMustBeFreshEverywhere() throws {
+        let borrowedId = UUID()
+        let existing = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(id: borrowedId, name: "Press")])
+        ])
+        var created = newRoutine(name: "Lower A")
+        created.sections[0].exercises[0].id = borrowedId
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(created), routines: [existing])) { error in
+            guard case FlowRoutinePatchError.duplicateExerciseId(borrowedId) = error else {
+                return XCTFail("Expected duplicateExerciseId, got \(error)")
+            }
+        }
+    }
+
+    func testCreatedRoutineMustHaveSomethingToDo() throws {
+        var created = newRoutine(name: "Lower A")
+        created.sections = [Section(name: "Empty", exercises: [])]
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(created), routines: [])) { error in
+            guard case FlowRoutinePatchError.wouldEmptyRoutine = error else {
+                return XCTFail("Expected wouldEmptyRoutine, got \(error)")
+            }
+        }
+
+        var noSections = newRoutine(name: "Lower A")
+        noSections.sections = []
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(noSections), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("routine.sections", _) = error else {
+                return XCTFail("Expected invalidValue on routine.sections, got \(error)")
+            }
+        }
+    }
+
+    func testCreateIsRejectedInASchemaTwoPatch() throws {
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            target: .newRoutine,
+            rationale: "A create under the version that predates creates.",
+            operations: createPatch(newRoutine(name: "Lower A")).operations
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [])) { error in
+            guard case FlowRoutinePatchError.operationNeedsNewerSchema("createRoutine", 3, 2) = error else {
+                return XCTFail("Expected operationNeedsNewerSchema, got \(error)")
+            }
+        }
+    }
+
+    /// A pasted create has no routineId, so detection keyed on one would send
+    /// it to the routine importer to fail with a decode error.
+    func testAPastedCreateIsRecognisedAsACoachPatch() throws {
+        let json = try patchJSON(createPatch(newRoutine(name: "Lower A")))
+
+        XCTAssertEqual(FlowRoutineExchange.detectPayload(in: json), .coachPatch)
+
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        guard case .failure(let error) = store.importRoutineFromJSON(json) else {
+            return XCTFail("Expected the routine importer to refuse a coach patch")
+        }
+        guard case .looksLikeCoachPatch = error else {
+            return XCTFail("Expected looksLikeCoachPatch, got \(error)")
+        }
+    }
+
+    private func newRoutine(name: String, phase: WorkoutPhase = .base) -> Routine {
+        Routine(
+            id: UUID(),
+            name: name,
+            sections: [
+                Section(name: "Main Lifts", exercises: [
+                    ExerciseBlock(name: "Trap Bar Deadlift", sets: 3, reps: 5),
+                    ExerciseBlock(name: "Split Squat", sets: 3, reps: 8)
+                ]),
+                Section(name: "Accessories", exercises: [
+                    ExerciseBlock(name: "Calf Raise", sets: 3, reps: 12)
+                ])
+            ],
+            currentPhase: phase
+        )
+    }
+
+    private func createPatch(_ routine: Routine) -> FlowRoutinePatch {
+        FlowRoutinePatch(
+            schemaVersion: 3,
+            target: .newRoutine,
+            rationale: "The split needs a lower day that does not exist yet.",
+            operations: [FlowRoutinePatchOperation(kind: .createRoutine, routine: routine)]
+        )
     }
 
     private func sectionPatch(

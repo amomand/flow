@@ -60,9 +60,32 @@ Routine patches are typed operations against one routine. They must include `sch
 }
 ```
 
-Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, `replacePhaseOverride`, `renameRoutine`, and `addSection`.
+Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, `replacePhaseOverride`, `renameRoutine`, `addSection`, and `createRoutine`.
 
-An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine` and `addSection` arrived in schema 3, so they are rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
+An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine`, `addSection` and `createRoutine` arrived in schema 3, so they are rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
+
+### Creating a routine
+
+A patch aims at one of two things, chosen by `target`. The default, `existingRoutine`, is everything above: it edits a routine that is already there and carries `routineId` and `baseContentHash`. The other, `newRoutine`, proposes a routine that does not exist yet:
+
+```json
+{
+  "schemaVersion": 3,
+  "target": "newRoutine",
+  "rationale": "The split needs a lower day that does not exist yet.",
+  "operations": [{ "kind": "createRoutine", "routine": { "id": "UUID", "name": "Lower A", "currentPhase": "deload", "sections": [ ... ] } }]
+}
+```
+
+It carries no `routineId` and no `baseContentHash`, because there is nothing to anchor to. Modelling that as a discriminated union rather than making the anchor optional for everybody keeps both branches strict: an anchor on a create is refused, and a missing anchor on an edit still is too.
+
+A `newRoutine` patch holds exactly one operation. A new routine arrives whole rather than as a create followed by a stream of `addExercise` operations, because the preview would then have to render intermediate states of a routine that never existed in any of them, and the person approving it would be reading a history rather than a routine.
+
+The coach generates every id: the routine's, each section's, and each exercise's. That is what makes a create idempotent. Applying the same create twice leaves one routine, because the second attempt finds the id already there and is reported as already applied rather than as a failure, which is what a retry of a draft that landed actually is. Exercise ids must be fresh across every routine, not just the new one, matching what whole-routine import has always done by reassigning ids on the way in.
+
+A created routine needs at least one section and at least one exercise, a name of 1 to 100 characters, and the same section and per-section exercise ceilings as any other routine. It lands in the phase the patch names, defaulting to `base`.
+
+Undoing an applied create removes the routine it added, since there are no sections to put back and an empty husk would be a worse answer than either keeping it or removing it. As with any undo, that refuses if the routine has changed since, and requires an explicit second tap to overwrite.
 
 ### Operations apply in order
 

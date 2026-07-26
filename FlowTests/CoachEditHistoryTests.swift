@@ -352,6 +352,7 @@ final class CoachEditHistoryTests: XCTestCase {
             diffs: [],
             previousSections: [],
             previousName: routineName,
+            createdRoutine: false,
             provenance: nil,
             outcome: .applied,
             restoredAt: nil
