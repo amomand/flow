@@ -161,9 +161,13 @@ struct CoachBridgeSyncView: View {
         let names = tiers.map(tierName)
         let list = names.isEmpty ? "nothing" : names.joined(separator: ", ")
         if needsReview { return "\(list) — needs review" }
-        let extra = tiersBeyondRecommended(tiers)
-        guard !extra.isEmpty else { return list }
-        return "\(list) — wider than recommended, includes \(Self.list(extra))"
+        guard !tiersBeyondRecommended(tiers).isEmpty else { return list }
+        // Wider means the recommended pair plus something. A selection that
+        // takes an opt-in but drops part of the pair is a different shape, not
+        // a wider one, and the list already names the tiers either way.
+        return coversRecommended(tiers)
+            ? "\(list) — wider than recommended"
+            : "\(list) — not the recommended pair"
     }
 
     private var sharingSummaryColor: Color {
@@ -278,6 +282,17 @@ struct CoachBridgeSyncView: View {
 
     static func isRecommendedSelection(_ tiers: Set<FlowCoachDataTier>) -> Bool {
         tiers == Set(recommendedTiers)
+    }
+
+    /// Whether the selection contains the whole recommended pair, which is what
+    /// makes an opt-in on top of it a widening rather than a swap.
+    static func coversRecommended(_ tiers: [FlowCoachDataTier]) -> Bool {
+        Set(recommendedTiers).isSubset(of: Set(tiers))
+    }
+
+    /// The recommended tiers a selection leaves out.
+    static func recommendedTiersMissing(from tiers: [FlowCoachDataTier]) -> [FlowCoachDataTier] {
+        recommendedTiers.filter { !tiers.contains($0) }
     }
 
     static func list(_ tiers: [FlowCoachDataTier]) -> String {
@@ -623,8 +638,14 @@ private struct CoachSharingApprovalSheet: View {
                 : "Narrower than the recommended pair.")
                 .terminalFont(11)
                 .foregroundColor(TN.comment)
-        } else {
+        } else if CoachBridgeSyncView.coversRecommended(Array(selected)) {
             Text("Wider than recommended: this also sends \(CoachBridgeSyncView.list(extra)).")
+                .terminalFont(11)
+                .foregroundColor(TN.orange)
+        } else {
+            // An opt-in taken while part of the recommended pair is left out.
+            // Saying "wider" here would be wrong in both directions.
+            Text("Not the recommended pair: this sends \(CoachBridgeSyncView.list(extra)) and leaves out \(CoachBridgeSyncView.list(CoachBridgeSyncView.recommendedTiersMissing(from: Array(selected)))).")
                 .terminalFont(11)
                 .foregroundColor(TN.orange)
         }
