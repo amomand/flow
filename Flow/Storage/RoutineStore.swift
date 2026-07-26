@@ -219,9 +219,14 @@ class RoutineStore {
             return applyCreatedRoutine(fresh, provenance: provenance)
         }
 
-        guard let routineId = fresh.patch.routineId,
-              let index = routines.firstIndex(where: { $0.id == routineId }) else {
-            return .failure(.routineNotFound(fresh.patch.routineId ?? UUID()))
+        // Separated so the error names what is actually wrong. An invented id
+        // in a "no routine matches" message would send someone looking for a
+        // routine that was never referred to.
+        guard let routineId = fresh.patch.routineId else {
+            return .failure(.missingField("routineId"))
+        }
+        guard let index = routines.firstIndex(where: { $0.id == routineId }) else {
+            return .failure(.routineNotFound(routineId))
         }
 
         let current = routines[index]

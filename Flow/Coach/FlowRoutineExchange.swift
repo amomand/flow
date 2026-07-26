@@ -62,11 +62,13 @@ enum FlowRoutineExchange {
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return .unknown
         }
-        // Keyed on `operations` alone. A patch that creates a routine carries
-        // no `routineId`, and requiring one would send a pasted create off to
-        // the routine importer to fail with a decode error rather than a
-        // pointer to the right screen.
-        if object["operations"] != nil {
+        // Keyed on `operations` plus `schemaVersion` rather than on
+        // `routineId`, which a patch that creates a routine does not carry:
+        // requiring one would send a pasted create off to the routine importer
+        // to fail with a decode error rather than a pointer to the right
+        // screen. Both keys, not just `operations`, so unrelated JSON that
+        // happens to have an operations list is not claimed as a patch.
+        if object["operations"] != nil, object["schemaVersion"] != nil {
             return .coachPatch
         }
         if object["routines"] != nil, object["schemaVersion"] != nil {

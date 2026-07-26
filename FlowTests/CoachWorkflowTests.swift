@@ -2034,6 +2034,12 @@ final class CoachWorkflowTests: XCTestCase {
 
         XCTAssertEqual(FlowRoutineExchange.detectPayload(in: json), .coachPatch)
 
+        // And unrelated JSON that happens to list operations is not claimed.
+        XCTAssertEqual(
+            FlowRoutineExchange.detectPayload(in: #"{"operations": ["backup", "restore"]}"#),
+            .unknown
+        )
+
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
         let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
