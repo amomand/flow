@@ -292,7 +292,7 @@ struct CoachWorkflowSheet: View {
                 }
 
                 if preview.isCreate {
-                    Text("NEW ROUTINE: nothing existing is changed. Applying adds this to your routines.")
+                    Text("NEW ROUTINE: applying adds this to your routines. Nothing you already have is touched.")
                         .terminalFont(12)
                         .foregroundColor(TN.blue)
                 }
