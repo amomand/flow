@@ -494,6 +494,75 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertFalse(reloaded.requiresSharingApproval)
     }
 
+    // MARK: - Sharing escalation (#60)
+
+    func testEscalationTiersAreTheTwoOptInsAndNothingElse() {
+        XCTAssertEqual(CoachBridgeSyncView.recommendedTiers, [.routines, .strengthHistory])
+        XCTAssertEqual(CoachBridgeSyncView.escalationTiers, [.cardioHistory, .healthMetrics])
+        XCTAssertEqual(
+            CoachBridgeSyncView.tiersBeyondRecommended([.routines, .strengthHistory]),
+            [],
+            "the recommended pair is not an escalation of itself"
+        )
+        XCTAssertEqual(
+            CoachBridgeSyncView.tiersBeyondRecommended(FlowCoachDataTier.allCases),
+            [.cardioHistory, .healthMetrics]
+        )
+        XCTAssertTrue(CoachBridgeSyncView.isRecommendedSelection([.routines, .strengthHistory]))
+        XCTAssertFalse(CoachBridgeSyncView.isRecommendedSelection([.routines]))
+        XCTAssertFalse(CoachBridgeSyncView.isRecommendedSelection([.routines, .strengthHistory, .cardioHistory]))
+    }
+
+    func testMailboxSharingLineNamesAWiderThanRecommendedSelection() {
+        let recommended = CoachBridgeSyncView.sharingSummary(
+            for: [.routines, .strengthHistory],
+            needsReview: false
+        )
+        let widened = CoachBridgeSyncView.sharingSummary(
+            for: FlowCoachDataTier.allCases,
+            needsReview: false
+        )
+        let unreviewed = CoachBridgeSyncView.sharingSummary(
+            for: FlowCoachDataTier.allCases,
+            needsReview: true
+        )
+
+        XCTAssertFalse(recommended.contains("wider"))
+        XCTAssertTrue(widened.contains("wider than recommended"))
+        XCTAssertTrue(widened.contains("cardio totals"))
+
+        // An opt-in taken while half the recommended pair is dropped is a
+        // different shape, not a wider one, so it must not claim to be wider.
+        let swapped = CoachBridgeSyncView.sharingSummary(for: [.cardioHistory], needsReview: false)
+        XCTAssertFalse(swapped.contains("wider"))
+        XCTAssertTrue(swapped.contains("not the recommended pair"))
+        XCTAssertEqual(
+            swapped.components(separatedBy: "cardio totals").count - 1,
+            1,
+            "the tier is named once, by the list itself"
+        )
+        XCTAssertTrue(CoachBridgeSyncView.coversRecommended([.routines, .strengthHistory, .healthMetrics]))
+        XCTAssertFalse(CoachBridgeSyncView.coversRecommended([.routines, .healthMetrics]))
+        // Needing review and being wider than recommended are different states
+        // and must not read as the same thing.
+        XCTAssertTrue(unreviewed.contains("needs review"))
+        XCTAssertFalse(unreviewed.contains("wider"))
+    }
+
+    func testWideningTheSelectionStillRevokesApprovalAfterTheSheetChange() async throws {
+        let sync = try await makeSync()
+        sync.updateSharingProfile(FlowCoachSharingProfile(dataTiers: [.routines, .strengthHistory]))
+        sync.approveSharing()
+
+        sync.updateSharingProfile(FlowCoachSharingProfile(dataTiers: [.routines, .strengthHistory, .healthMetrics]))
+        XCTAssertTrue(sync.requiresSharingApproval)
+
+        // And narrowing it back is also a change, so it is re-approved too.
+        sync.approveSharing()
+        sync.updateSharingProfile(FlowCoachSharingProfile(dataTiers: [.routines, .strengthHistory]))
+        XCTAssertTrue(sync.requiresSharingApproval)
+    }
+
     // MARK: - Snapshot upload
 
     func testSyncUploadsEnvelopeAndRecordsReceipt() async throws {
