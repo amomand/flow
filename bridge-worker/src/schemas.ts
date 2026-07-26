@@ -1,4 +1,5 @@
 import { z } from "zod";
+import contract from "./patch-operations.json";
 
 export const UUID = z.string().uuid();
 export const ISO_DATE = z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
@@ -121,11 +122,29 @@ export const sharingProfileSchema = z.object({
   }),
 }).strict();
 
+/**
+ * What the Flow build that produced this snapshot can apply. Optional: builds
+ * that predate capability advertisement send no such field, and the bridge
+ * falls back to the schema 2 baseline for them rather than assuming they can
+ * apply anything newer.
+ *
+ * Deliberately not `.strict()`, unlike every other schema here. This is the
+ * one field a newer Flow build is expected to grow, and the bridge and the app
+ * ship on separate cycles: a strict schema here would mean that the first app
+ * build to add a capability field could not upload a snapshot at all until the
+ * bridge caught up. Unknown keys are dropped and the known ones still read.
+ */
+export const deviceCapabilitiesSchema = z.object({
+  patchSchemaVersions: z.array(z.number().int()).min(1).max(16),
+  operationKinds: z.array(z.string().max(64)).max(64),
+});
+
 export const snapshotEnvelopeSchema = z.object({
   contextId: UUID,
   createdAt: ISO_DATE,
   expiresAt: ISO_DATE,
   sharingProfile: sharingProfileSchema,
+  deviceCapabilities: deviceCapabilitiesSchema.optional(),
   context: coachContextSchema,
 }).strict().superRefine((envelope, issue) => {
   const dataTiers = new Set(envelope.sharingProfile.dataTiers);
@@ -145,11 +164,25 @@ export const snapshotEnvelopeSchema = z.object({
   }
 });
 
-const operationKinds = z.enum([
-  "replaceExerciseReps", "replaceExerciseSets", "replaceTimedDuration",
-  "replaceRestBetweenSets", "replaceRestAfterExercise", "updateExerciseNotes",
-  "addExercise", "removeExercise", "moveExercise", "replacePhaseOverride",
-]);
+/**
+ * Every operation kind this build accepts, mapped to the schema version that
+ * introduced it. A patch may only use operations its declared schema version
+ * knows about, so "schema 2" names one fixed operation set and the capability
+ * list can mean something.
+ *
+ * Read from `patch-operations.json` rather than written out here, because the
+ * Swift patcher has to agree operation for operation and a list maintained by
+ * hand in two languages drifts. FlowTests asserts the app against the same
+ * file.
+ */
+export const OPERATION_KIND_MIN_SCHEMA = contract.operationKindMinimumSchema;
+
+/** Still a union of literal kinds: TypeScript reads the JSON keys precisely. */
+export type OperationKind = keyof typeof OPERATION_KIND_MIN_SCHEMA;
+export const OPERATION_KINDS = Object.keys(OPERATION_KIND_MIN_SCHEMA) as OperationKind[];
+export const PATCH_SCHEMA_VERSIONS: number[] = contract.patchSchemaVersions;
+
+const operationKinds = z.enum(OPERATION_KINDS as [OperationKind, ...OperationKind[]]);
 const operationSchema = z.object({
   kind: operationKinds,
   exerciseId: UUID.optional(),
@@ -168,7 +201,7 @@ const operationSchema = z.object({
 }).strict();
 
 export const routinePatchSchema = z.object({
-  schemaVersion: z.literal(2),
+  schemaVersion: z.union([z.literal(2), z.literal(3)]),
   routineId: UUID,
   baseContentHash: CONTENT_HASH,
   exportedAt: ISO_DATE.optional(),
@@ -189,7 +222,47 @@ export type CoachContext = z.infer<typeof coachContextSchema>;
 export type SnapshotEnvelope = z.infer<typeof snapshotEnvelopeSchema>;
 export type Routine = z.infer<typeof routineSchema>;
 export type RoutinePatch = z.infer<typeof routinePatchSchema>;
+export type DeviceCapabilities = z.infer<typeof deviceCapabilitiesSchema>;
 export type PatchProblem = { path: string; message: string };
+export type Capabilities = {
+  patchSchemaVersions: number[];
+  operationKinds: OperationKind[];
+  /** False when the snapshot came from a build that declares nothing. */
+  deviceReported: boolean;
+};
+
+/**
+ * What a build that predates capability advertisement is known to handle.
+ * Every shipped Flow build understands schema 2 and its ten operations, so
+ * this is the floor, never a guess upwards.
+ */
+const BASELINE: Capabilities = {
+  patchSchemaVersions: [2],
+  operationKinds: OPERATION_KINDS.filter((kind) => OPERATION_KIND_MIN_SCHEMA[kind] <= 2),
+  deviceReported: false,
+};
+
+/**
+ * What the coach may actually propose against one snapshot: the intersection
+ * of what this bridge validates and what the device that sent the snapshot
+ * says it can apply. Advertising the bridge's own list alone would just move
+ * the discover-by-rejection problem one step later, to a phone on an older
+ * build.
+ */
+export function effectiveCapabilities(device: DeviceCapabilities | null | undefined): Capabilities {
+  if (!device) return { ...BASELINE, operationKinds: [...BASELINE.operationKinds] };
+  const patchSchemaVersions = PATCH_SCHEMA_VERSIONS.filter((version) => device.patchSchemaVersions.includes(version));
+  const declared = new Set(device.operationKinds);
+  return {
+    patchSchemaVersions,
+    // An operation stays available in every version after the one that
+    // introduced it, so this asks whether any agreed version is new enough,
+    // not whether the introducing version is itself on the list.
+    operationKinds: OPERATION_KINDS.filter((kind) =>
+      declared.has(kind) && patchSchemaVersions.some((version) => version >= OPERATION_KIND_MIN_SCHEMA[kind])),
+    deviceReported: true,
+  };
+}
 
 function findExercise(routine: Routine, id: string | undefined) {
   if (!id) return undefined;
@@ -200,7 +273,7 @@ function findExercise(routine: Routine, id: string | undefined) {
   return undefined;
 }
 
-export function validatePatch(raw: unknown, context: CoachContext): {
+export function validatePatch(raw: unknown, context: CoachContext, capabilities: Capabilities): {
   valid: boolean;
   problems: PatchProblem[];
   patch?: RoutinePatch;
@@ -214,6 +287,19 @@ export function validatePatch(raw: unknown, context: CoachContext): {
   }
   const patch = parsed.data;
   const problems: PatchProblem[] = [];
+  // Checked before anything else: a patch the phone cannot apply is not
+  // "mostly valid", and saying so here is the whole point of advertising
+  // capabilities in the first place.
+  if (!capabilities.patchSchemaVersions.includes(patch.schemaVersion)) {
+    return {
+      valid: false,
+      patch,
+      problems: [{
+        path: "schemaVersion",
+        message: `Flow reports support for patch schema ${capabilities.patchSchemaVersions.join(", ")}; this patch declares ${patch.schemaVersion}`,
+      }],
+    };
+  }
   const routine = context.routines.find((candidate) => candidate.id === patch.routineId);
   if (!routine) return { valid: false, patch, problems: [{ path: "routineId", message: "routine is absent from this snapshot" }] };
   if (context.routineContentHashByRoutineId[patch.routineId] !== patch.baseContentHash) {
@@ -226,7 +312,18 @@ export function validatePatch(raw: unknown, context: CoachContext): {
   };
   patch.operations.forEach((operation, index) => {
     const path = (field: string) => `operations.${index}.${field}`;
-    const needsExercise = !["addExercise"].includes(operation.kind);
+    if (!capabilities.operationKinds.includes(operation.kind)) {
+      problems.push({ path: path("kind"), message: `Flow does not report support for ${operation.kind}` });
+      return;
+    }
+    if (OPERATION_KIND_MIN_SCHEMA[operation.kind] > patch.schemaVersion) {
+      problems.push({
+        path: path("kind"),
+        message: `${operation.kind} was introduced in schema ${OPERATION_KIND_MIN_SCHEMA[operation.kind]}; this patch declares schema ${patch.schemaVersion}`,
+      });
+      return;
+    }
+    const needsExercise = !["addExercise", "renameRoutine"].includes(operation.kind);
     const located = findExercise(routine, operation.exerciseId);
     if (needsExercise && !located) problems.push({ path: path("exerciseId"), message: "exercise is required and must exist in this routine" });
     const range = ranges[operation.kind];
@@ -244,6 +341,19 @@ export function validatePatch(raw: unknown, context: CoachContext): {
       if (!operation.sectionId || !sectionIds.has(operation.sectionId)) problems.push({ path: path("sectionId"), message: "target section must exist" });
       if (!operation.exercise) problems.push({ path: path("exercise"), message: "exercise is required" });
       if (operation.exercise && findExercise(routine, operation.exercise.id)) problems.push({ path: path("exercise.id"), message: "exercise id already exists" });
+    }
+    if (operation.kind === "renameRoutine") {
+      // The routine name is outside the content hash, so the expected value
+      // is the only staleness guard a rename has.
+      if (operation.expectedStringValue === undefined) {
+        problems.push({ path: path("expectedStringValue"), message: "the current routine name is required" });
+      } else if (operation.expectedStringValue !== routine.name) {
+        problems.push({ path: path("expectedStringValue"), message: `routine is named "${routine.name}" in this snapshot` });
+      }
+      const proposed = operation.newStringValue?.trim();
+      if (!proposed || proposed.length > 100) {
+        problems.push({ path: path("newStringValue"), message: "new name must be 1 to 100 characters" });
+      }
     }
     if (operation.kind === "moveExercise" && (!operation.targetSectionId || !sectionIds.has(operation.targetSectionId))) problems.push({ path: path("targetSectionId"), message: "target section must exist" });
     if (operation.afterExerciseId && !findExercise(routine, operation.afterExerciseId)) problems.push({ path: path("afterExerciseId"), message: "anchor exercise must exist" });

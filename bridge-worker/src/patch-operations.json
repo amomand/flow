@@ -1,0 +1,17 @@
+{
+  "comment": "The routine patch operation contract, shared by the bridge and the Flow app. The bridge derives OPERATION_KIND_MIN_SCHEMA from this file directly; FlowTests asserts that the Swift patcher's own operation kinds and minimum schema versions match it. Both sides have to agree on what a schema version means for capability advertisement to be worth anything, and a list kept by hand in two languages drifts. Add a new operation here first.",
+  "patchSchemaVersions": [2, 3],
+  "operationKindMinimumSchema": {
+    "replaceExerciseReps": 2,
+    "replaceExerciseSets": 2,
+    "replaceTimedDuration": 2,
+    "replaceRestBetweenSets": 2,
+    "replaceRestAfterExercise": 2,
+    "updateExerciseNotes": 2,
+    "addExercise": 2,
+    "removeExercise": 2,
+    "moveExercise": 2,
+    "replacePhaseOverride": 2,
+    "renameRoutine": 3
+  }
+}

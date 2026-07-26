@@ -282,6 +282,7 @@ final class RoutineStoreTests: XCTestCase {
             rationale: "Exercise restore rollback failure.",
             diffs: [],
             previousSections: original.sections,
+            previousName: original.name,
             provenance: nil,
             outcome: .applied,
             restoredAt: nil
