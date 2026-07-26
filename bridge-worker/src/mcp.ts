@@ -121,6 +121,16 @@ const exerciseProperty = {
   required: ["id", "name", "sets", "reps", "restBetweenSetsSeconds", "restAfterExerciseSeconds", "notes", "perSide"],
   additionalProperties: false,
 };
+const sectionProperty = {
+  type: "object",
+  description: "A new, empty section, only for addSection. Give it a fresh UUID and add exercises to it with later addExercise operations.",
+  properties: {
+    id: uuidProperty,
+    name: { type: "string", minLength: 1, maxLength: 200 },
+  },
+  required: ["id", "name"],
+  additionalProperties: false,
+};
 const patchProperty = {
   type: "object",
   description:
@@ -158,6 +168,12 @@ const patchProperty = {
         "snapshot shows it) and newStringValue (1 to 100 characters); it takes no exerciseId. A routine " +
         "name sits outside baseContentHash, so expectedStringValue is the only staleness guard a rename " +
         "has and a wrong one is a conflict, not a detail. " +
+        "addSection (schema 3) needs section ({ id: a fresh UUID, name }), optionally afterSectionId to " +
+        "place it after an existing section rather than at the end. Sections arrive empty; fill one with " +
+        "addExercise operations later in the same patch, referencing the id you just generated. " +
+        "Operations apply in array order and each sees what the ones before it did, so addSection then " +
+        "addExercise into that section is valid, as is addExercise then moveExercise on the exercise you " +
+        "just added. " +
         "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps. " +
         "Base-value operations (replaceExerciseReps, replaceExerciseSets, replaceTimedDuration) change the " +
         "base value only and do not cascade into phaseOverrides: an exercise with a peak or deload override " +
@@ -170,7 +186,9 @@ const patchProperty = {
           exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise and renameRoutine; must exist in the routine." },
           sectionId: { ...uuidProperty, description: "For addExercise: the section to add into." },
           targetSectionId: { ...uuidProperty, description: "For moveExercise: the destination section." },
+          afterSectionId: { ...uuidProperty, description: "Optional anchor for addSection: place after this section." },
           afterExerciseId: { ...uuidProperty, description: "Optional anchor: place after this exercise." },
+          section: sectionProperty,
           phase: { ...phaseProperty, description: "For replacePhaseOverride: peak or deload only." },
           expectedIntValue: { type: "integer", description: "The current value as shown in the snapshot." },
           newIntValue: {

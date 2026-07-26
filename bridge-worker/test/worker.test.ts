@@ -420,6 +420,155 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
     expect((await json(pulled)).patches[0].patch.schemaVersion).toBe(2);
   });
 
+  function sectionPatch(operations: unknown[]) {
+    const routine = fixtureContext.routines[0]!;
+    return {
+      schemaVersion: 3,
+      routineId: routine.id,
+      baseContentHash: fixtureContext.routineContentHashByRoutineId[routine.id as keyof typeof fixtureContext.routineContentHashByRoutineId],
+      rationale: "Restructure the block rather than just its numbers.",
+      operations,
+    };
+  }
+
+  function newExercise(id: string, name: string) {
+    return {
+      id, name, sets: 3, reps: 8,
+      restBetweenSetsSeconds: 90, restAfterExerciseSeconds: 120,
+      notes: "", perSide: false, phaseOverrides: {},
+    };
+  }
+
+  /**
+   * The reason addSection exists: addExercise needs somewhere to go, and
+   * validating every reference against the immutable snapshot made a section
+   * created in the same patch invisible.
+   */
+  it("lets an addExercise target a section created earlier in the same patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const sectionId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: sectionId, name: "Core" } },
+      { kind: "addExercise", sectionId, exercise: newExercise(crypto.randomUUID(), "Hanging Leg Raise") },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  /**
+   * Latent before this change: the exercise was in the patch but not in the
+   * snapshot, so the move was rejected for referencing something absent.
+   */
+  it("lets a moveExercise reference an exercise added earlier in the same patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const exerciseId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addExercise", sectionId: routine.sections[0]!.id, exercise: newExercise(exerciseId, "Face Pull") },
+      { kind: "moveExercise", exerciseId, targetSectionId: routine.sections[0]!.id },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  it("names the field when an addSection anchors on a section that does not exist", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      {
+        kind: "addSection",
+        section: { id: crypto.randomUUID(), name: "Core" },
+        afterSectionId: crypto.randomUUID(),
+      },
+    ]));
+
+    expect(checked.status).toBe(422);
+    const problems = (await json(checked)).problems;
+    expect(problems.map((problem: any) => problem.path)).toContain("operations.0.afterSectionId");
+  });
+
+  it("refuses a section that anchors on itself", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const sectionId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: sectionId, name: "Core" }, afterSectionId: sectionId },
+    ]));
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.path)).toContain("operations.0.afterSectionId");
+  });
+
+  it("refuses a section id that already exists, in the snapshot or in the patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+
+    const existing = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: routine.sections[0]!.id, name: "Core" } },
+    ]));
+    expect(existing.status).toBe(422);
+    expect((await json(existing)).problems.map((problem: any) => problem.path)).toContain("operations.0.section.id");
+
+    const twice = crypto.randomUUID();
+    const repeated = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: twice, name: "Core" } },
+      { kind: "addSection", section: { id: twice, name: "Also Core" } },
+    ]));
+    expect(repeated.status).toBe(422);
+    expect((await json(repeated)).problems.map((problem: any) => problem.path)).toContain("operations.1.section.id");
+  });
+
+  /**
+   * The app refuses this and the bridge used not to, so a coach could store a
+   * draft that could never be applied.
+   */
+  it("refuses a patch that would leave the routine with no exercises", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const everyExercise = routine.sections.flatMap((section) => section.exercises);
+
+    const checked = await validate(envelope.contextId, sectionPatch(
+      everyExercise.map((exercise) => ({
+        kind: "removeExercise",
+        exerciseId: exercise.id,
+        expectedStringValue: exercise.name,
+      })),
+    ));
+
+    expect(checked.status).toBe(422);
+    const problems = (await json(checked)).problems;
+    expect(problems.map((problem: any) => problem.message)).toContain("patch would leave the routine with no exercises");
+  });
+
+  it("allows a patch that empties a section and refills it", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const everyExercise = routine.sections.flatMap((section) => section.exercises);
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      ...everyExercise.map((exercise) => ({
+        kind: "removeExercise",
+        exerciseId: exercise.id,
+        expectedStringValue: exercise.name,
+      })),
+      { kind: "addExercise", sectionId: routine.sections[0]!.id, exercise: newExercise(crypto.randomUUID(), "Trap Bar Deadlift") },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
   /**
    * The one path that runs against Durable Objects that already exist.
    * `createSchema` is CREATE TABLE IF NOT EXISTS, so an object created before

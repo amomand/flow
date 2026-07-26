@@ -1334,6 +1334,245 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(history.records[0].routineName, "Upper A")
     }
 
+    // MARK: - Schema 3: addSection
+
+    /// Sections arrive empty, so the point of adding one is that a later
+    /// operation in the same patch can fill it.
+    func testAddSectionThenAddExerciseIntoItAppliesInOrder() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        let sectionId = UUID()
+        let exerciseId = UUID()
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                section: FlowRoutinePatchSection(id: sectionId, name: "Core")
+            ),
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: sectionId,
+                exercise: ExerciseBlock(id: exerciseId, name: "Hanging Leg Raise", sets: 3, reps: 12)
+            )
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        XCTAssertEqual(preview.updatedRoutine.sections.map(\.name), ["Main", "Core"])
+        XCTAssertEqual(preview.updatedRoutine.sections[1].exercises.map(\.name), ["Hanging Leg Raise"])
+        XCTAssertEqual(preview.diffs.map(\.title), ["Add section", "Add exercise"])
+        XCTAssertEqual(preview.diffs[0].after, "Core (empty)")
+    }
+
+    func testAddSectionHonoursItsAnchor() throws {
+        let first = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(id: first, name: "Main", exercises: [ExerciseBlock(name: "Press")]),
+            Section(name: "Accessories", exercises: [ExerciseBlock(name: "Curl")])
+        ])
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                afterSectionId: first,
+                section: FlowRoutinePatchSection(id: UUID(), name: "Volume")
+            )
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+
+        XCTAssertEqual(preview.updatedRoutine.sections.map(\.name), ["Main", "Volume", "Accessories"])
+    }
+
+    func testAddSectionWithAnUnknownAnchorIsRejected() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let unknown = UUID()
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                afterSectionId: unknown,
+                section: FlowRoutinePatchSection(id: UUID(), name: "Core")
+            )
+        ])
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.sectionNotFound(unknown) = error else {
+                return XCTFail("Expected sectionNotFound, got \(error)")
+            }
+        }
+    }
+
+    func testAddSectionRefusesAnIdThatAlreadyExists() throws {
+        let existing = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(id: existing, name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                section: FlowRoutinePatchSection(id: existing, name: "Main again")
+            )
+        ])
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.duplicateSectionId(existing) = error else {
+                return XCTFail("Expected duplicateSectionId, got \(error)")
+            }
+        }
+
+        // And an id repeated within one patch, which the second operation only
+        // sees because the first has already been applied to the working copy.
+        let repeated = UUID()
+        let twice = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(kind: .addSection, section: FlowRoutinePatchSection(id: repeated, name: "Core")),
+            FlowRoutinePatchOperation(kind: .addSection, section: FlowRoutinePatchSection(id: repeated, name: "Core again"))
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: twice, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.duplicateSectionId(repeated) = error else {
+                return XCTFail("Expected duplicateSectionId, got \(error)")
+            }
+        }
+    }
+
+    func testAddSectionRefusesToPushPastTheSectionCeiling() throws {
+        let sections = (0..<FlowRoutinePatcher.maximumSections).map {
+            Section(name: "Section \($0)", exercises: [ExerciseBlock(name: "Press")])
+        }
+        let routine = Routine(name: "Upper A", sections: sections)
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                section: FlowRoutinePatchSection(id: UUID(), name: "One too many")
+            )
+        ])
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.tooManySections(FlowRoutinePatcher.maximumSections) = error else {
+                return XCTFail("Expected tooManySections, got \(error)")
+            }
+        }
+    }
+
+    func testAddSectionBoundsAndTrimsItsName() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+
+        for candidate in ["   ", String(repeating: "x", count: 201)] {
+            let patch = sectionPatch(for: routine, operations: [
+                FlowRoutinePatchOperation(
+                    kind: .addSection,
+                    section: FlowRoutinePatchSection(id: UUID(), name: candidate)
+                )
+            ])
+            XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+                guard case FlowRoutinePatchError.invalidValue("section.name", _) = error else {
+                    return XCTFail("Expected invalidValue for \"\(candidate)\", got \(error)")
+                }
+            }
+        }
+
+        let padded = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                section: FlowRoutinePatchSection(id: UUID(), name: "  Core  ")
+            )
+        ])
+        let preview = try FlowRoutinePatcher.preview(patch: padded, routines: [routine])
+        XCTAssertEqual(preview.updatedRoutine.sections.last?.name, "Core")
+    }
+
+    func testAddSectionIsRejectedInASchemaTwoPatch() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "A section under the version that predates sections.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .addSection,
+                    section: FlowRoutinePatchSection(id: UUID(), name: "Core")
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.operationNeedsNewerSchema("addSection", 3, 2) = error else {
+                return XCTFail("Expected operationNeedsNewerSchema, got \(error)")
+            }
+        }
+    }
+
+    /// An empty section adds no steps, so it must not make a routine that
+    /// could start a workout look like one that cannot.
+    func testAddingAnEmptySectionKeepsTheRoutineStartable() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addSection,
+                section: FlowRoutinePatchSection(id: UUID(), name: "Core")
+            )
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+        XCTAssertTrue(preview.updatedRoutine.canStartWorkout)
+    }
+
+    func testAddSectionAppliesThroughTheStoreAndIsRestorable() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        store.addRoutine(routine)
+
+        let sectionId = UUID()
+        let patch = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(kind: .addSection, section: FlowRoutinePatchSection(id: sectionId, name: "Core")),
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: sectionId,
+                exercise: ExerciseBlock(name: "Hanging Leg Raise", sets: 3, reps: 12)
+            )
+        ])
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(patch)),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the section patch to apply")
+        }
+        XCTAssertEqual(store.routines[0].sections.map(\.name), ["Main", "Core"])
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .success = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected restore to succeed")
+        }
+        XCTAssertEqual(store.routines[0].sections.map(\.name), ["Main"])
+    }
+
+    private func sectionPatch(
+        for routine: Routine,
+        operations: [FlowRoutinePatchOperation]
+    ) -> FlowRoutinePatch {
+        FlowRoutinePatch(
+            schemaVersion: 3,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Restructure the block rather than just its numbers.",
+            operations: operations
+        )
+    }
+
     private func renamePatch(for routine: Routine, to newName: String) -> FlowRoutinePatch {
         FlowRoutinePatch(
             schemaVersion: 3,

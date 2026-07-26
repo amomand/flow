@@ -60,9 +60,17 @@ Routine patches are typed operations against one routine. They must include `sch
 }
 ```
 
-Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, `replacePhaseOverride`, and `renameRoutine`.
+Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, `replacePhaseOverride`, `renameRoutine`, and `addSection`.
 
-An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine` arrived in schema 3, so it is rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
+An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine` and `addSection` arrived in schema 3, so they are rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
+
+### Operations apply in order
+
+Operations run in array order, and each one sees what the ones before it did. A section added by the first operation is a valid target for an `addExercise` in the second, and an exercise added by one operation can be moved by a later one. Flow has always worked this way, since it applies operations to a mutable copy of the routine; the bridge validates the same way rather than checking every reference against the snapshot as it arrived.
+
+`addSection` takes `section` (a fresh `id` and a `name` of 1 to 200 characters, stored trimmed) and an optional `afterSectionId` to place it after an existing section rather than at the end. Sections arrive empty; fill one with `addExercise` operations later in the same patch. A section cannot anchor on itself, an id already in the routine is refused, and a routine cannot be pushed past 50 sections, which is the most the snapshot format will carry back to the coach.
+
+A patch that would leave a routine with no exercises is refused by both the bridge and the app. A routine that was already empty is not refused, since a patch cannot make it emptier, and a patch that clears a section and refills it in the same operations array is fine.
 
 `renameRoutine` takes `expectedStringValue` (the routine's current name) and `newStringValue` (1 to 100 characters, stored trimmed), and no `exerciseId`. The routine name sits outside `baseContentHash`, which covers sections only, so a rename cannot be rebased the way a numeric change can: `expectedStringValue` is its entire concurrency guard, and a mismatch is a conflict rather than something to work around. For the same reason, undoing an applied edit checks the name as well as the content hash before it puts an old name back.
 
