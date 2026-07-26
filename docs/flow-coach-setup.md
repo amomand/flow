@@ -27,17 +27,19 @@ On the phone, in Flow Coach, under COACH MAILBOX:
 3. Enter the hostname and paste the device credential. Typing 64 characters by hand on a phone is a bad idea: put the credential in the password manager first and paste it from there.
 4. Tap PAIR.
 
-Pairing is local. It writes the endpoint and credential to the Keychain and makes no network call, so a successful pairing screen is not yet proof the credential works. The first sync is that proof. See [#58](https://github.com/amomand/flow/issues/58).
+Flow checks the address and the credential against the mailbox before it saves anything, so a screen that says paired is one that has worked at least once. The three ways it can fail need different things from you and say which: a rejected credential names the credential, an address nothing answers at names the address, and a deployment with no mailbox configured yet is neither, and not fixable from the phone. Nothing is written unless the check passes, so a failed attempt leaves an existing pairing exactly as it was.
+
+Pairing with no connection still works. It is saved unchecked, the mailbox section says so until something proves it, and the first successful sync settles it. Rotating a credential is the exception: Flow will not replace a working credential it cannot check, so rotate when you have a connection.
 
 ## 2. Choose and approve what leaves the device
 
 Nothing uploads until the categories have been seen and approved.
 
 1. Tap REVIEW next to SHARING.
-2. Routines and strength history are the recommended default. Cardio totals and Apple Health derived figures are separate opt-ins, off unless chosen.
+2. Routines and strength history sit under RECOMMENDED and are already selected. Cardio totals and Apple Health derived figures sit under A STEP FURTHER, off unless chosen; turning on health metrics asks again and shows what that tier covers before it goes on.
 3. Tap APPROVE THESE CATEGORIES.
 
-Changing the selection later revokes the approval, so a widened selection is always re-confirmed. Narrowing it does not retroactively shrink a snapshot already uploaded: delete the snapshot and sync again. The four categories currently present as four equal rows, which makes it easy to approve more than intended. See [#60](https://github.com/amomand/flow/issues/60).
+Changing the selection later revokes the approval, so a widened selection is always re-confirmed. Narrowing it does not retroactively shrink a snapshot already uploaded: delete the snapshot and sync again. If the selection ends up wider than the recommended pair, the mailbox section says so without anyone having to open the sheet, and one tap in the sheet gets back to exactly the recommendation.
 
 ## 3. Sync
 
@@ -101,13 +103,18 @@ Three things that will come up:
 - A snapshot older than 24 hours is gone, so sync again before asking for changes.
 - Editing a routine in Flow after a draft was proposed can make that draft stale. Flow shows it as a conflict and clearing it reports `stale` rather than `rejected`.
 - Two drafts for the same routine from separate conversations are both kept. Flow warns that applying one makes the others stale.
+- A change to a base value does not carry into the phase overrides. Where the exercise overrides the same field, the preview lists what each phase ends up doing and says when one has stopped being a step up from base. It reports rather than blocks: a peak that matches base on sets and carries the progression on reps is a fine thing to want.
 
 ## If something goes wrong
 
 | Symptom | Cause |
 |---|---|
-| Sync says the credential was rejected | wrong or rotated device credential; rotate it in PAIRING |
-| Sync cannot reach the mailbox | wrong hostname, or no network |
+| Pairing says the credential was rejected | wrong device credential, or it was rotated on the bridge |
+| Pairing says nothing answered at that address | wrong hostname |
+| Pairing says the mailbox is not set up | that deployment has no mailbox configured; nothing to fix on the phone |
+| The mailbox says the pairing has not been checked | paired with no connection; the first sync settles it |
+| Sync says the credential was rejected | rotated on the bridge since pairing; rotate it in PAIRING |
+| Sync cannot reach the mailbox | no network, or the Worker is down |
 | Consent page says the phrase is not right | wrong connect phrase for that mailbox |
 | Consent page sits there after approving | see [#59](https://github.com/amomand/flow/pull/59); fixed, but a stale deployment would reproduce it |
 | Assistant says there is no snapshot | nothing synced, or the snapshot expired |
