@@ -310,7 +310,9 @@ private struct CoachBridgePairingSheet: View {
                         .foregroundColor(TN.comment)
 
                     field("NAME", text: $label, placeholder: "Alex's coach mailbox")
-                    field("ADDRESS", text: $endpoint, placeholder: "flow-coach-bridge-primary.workers.dev")
+                    // Includes the account subdomain: without it the hint reads
+                    // like a complete address that does not resolve.
+                    field("ADDRESS", text: $endpoint, placeholder: "your-mailbox.your-account.workers.dev")
                     field("DEVICE CREDENTIAL", text: $credential, placeholder: "paste the device secret", secure: true)
 
                     if let problem {

@@ -1,6 +1,13 @@
 # Flow Coach bridge runbook
 
-Deployment needs Alex's Cloudflare approval and fresh secrets entered out of band. The #46 connector spike passed on a fixture-only primary deployment; the production shape (#38) replaces the spike's no-auth MCP mount with OAuth 2.1, described under "Claude connector (OAuth)" below.
+Both environments are deployed and carrying real data for one person. The spike's no-auth MCP mount is gone, replaced by the OAuth 2.1 edge described under "Claude connector (OAuth)" below.
+
+| Environment | Hostname | Mailbox | State |
+|---|---|---|---|
+| `primary` | `flow-coach-bridge-primary.aomand.workers.dev` | `primary-v1` | paired, in use |
+| `partner` | `flow-coach-bridge-partner.aomand.workers.dev` | `partner-v1` | deployed, not yet paired |
+
+Credentials live only in the operator's password manager. Three secrets per environment, all generated with `openssl rand -hex 32` and never reused across edges or people: `FLOW_COACH_DEVICE_SECRET` for the paired Flow installation, `FLOW_COACH_CONNECT_SECRET` for the connector consent page, and `FLOW_COACH_ACTIONS_SECRET` for smoke tests. Pipe them in with `printf '%s'` rather than `echo`, because a trailing newline inside a stored secret produces 401s that are miserable to diagnose.
 
 ## Local setup
 

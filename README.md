@@ -24,6 +24,8 @@ The one concession to other intelligences. Flow exports a routine context JSON y
 
 The full contract, with the patch schema, revision hashing, rebase rules, and edit history, lives in [docs/flow-coach.md](docs/flow-coach.md). It is longer than this README, which tells you something about how much the app trusts its coaches.
 
+There is also a bridge, so the assistant can read the routines and post a draft without anything being copied and pasted through a phone keyboard. Flow uploads a snapshot that expires in a day, Claude reads it through a connector and proposes edits into a mailbox, and Flow pulls those in as ordinary inbox entries subject to exactly the same preview and apply. One deployment per person, because two people sharing a mailbox is how you end up doing someone else's deadlifts. The mailbox cannot change a routine, and the sharing tiers are opt-in per category. Architecture in [docs/flow-coach-bridge-architecture.md](docs/flow-coach-bridge-architecture.md), setting it up in [docs/flow-coach-setup.md](docs/flow-coach-setup.md), and the server in [bridge-worker/](bridge-worker/).
+
 ## Data
 
 Strength routines are JSON in the app documents directory:
@@ -72,6 +74,8 @@ Flow/
 |   |-- FlowRoutinePatch.swift
 |   |-- FlowRoutineExchange.swift
 |   |-- CoachPatchInbox.swift
+|   |-- CoachBridgePairing.swift        # Keychain pairing with one remote mailbox
+|   |-- CoachBridgeSync.swift           # snapshot upload, draft pull, ack retries
 |   |-- FlowCoachDeepLink.swift
 |   `-- CoachEditHistoryStore.swift
 |-- Storage/

@@ -12,7 +12,9 @@ The Durable Object keeps multiple unexpired snapshots, correlates every proposal
 
 `FLOW_COACH_MAILBOX_ID` is trusted deployment configuration used to select the Durable Object. It is not a secret, a display name, or an authorization mechanism, and no request may override it. Do not point two people's Flow installations or coach clients at one deployment. A future authenticated router can select among mailbox objects without changing the stored schema; the first household deployment deliberately avoids that account-system complexity.
 
-This is not deployed and does not complete either issue. A synthetic remote smoke test and the MCP connector edge live in this directory; the Claude desktop/iOS proof (#46), the Cloudflare account/secrets, the Flow URLSession/Keychain/UI client, and OAuth remain explicit follow-up work. Per the pivot recorded on #37, MCP is the primary LLM-facing edge and uses this domain store rather than a provider-specific fork; the GPT Actions route is deferred to #49, with its artefacts archived on that issue.
+Both environments are deployed and in real use. The Claude connector proof passed on desktop and iOS (#46), the Flow sync client shipped (#39), and the two-environment isolation proof runs as one command (`npm run smoke:isolation`). Per the pivot recorded on #37, MCP is the primary LLM-facing edge and uses this domain store rather than a provider-specific fork; the GPT Actions route is deferred to #49, with its artefacts archived on that issue.
+
+See [RUNBOOK.md](RUNBOOK.md) for deploying, connecting a person's Claude, rotation, and teardown.
 
 ## Local verification
 
