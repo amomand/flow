@@ -2016,8 +2016,45 @@ final class CoachWorkflowTests: XCTestCase {
         created.sections[0].exercises[0].id = borrowedId
 
         XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(created), routines: [existing])) { error in
-            guard case FlowRoutinePatchError.duplicateExerciseId(borrowedId) = error else {
-                return XCTFail("Expected duplicateExerciseId, got \(error)")
+            guard case FlowRoutinePatchError.exerciseIdUsedByAnotherRoutine(borrowedId, "Upper A") = error else {
+                return XCTFail("Expected exerciseIdUsedByAnotherRoutine, got \(error)")
+            }
+            // The remedy here is a fresh id, not removing a repeat, so the
+            // message must not say the id is repeated within this routine.
+            XCTAssertTrue(
+                (error as? FlowRoutinePatchError)?.errorDescription?.contains("Upper A") == true
+            )
+        }
+    }
+
+    /// The bridge caps exercise names at 200 and the app did not, so a patch
+    /// could store a name the next snapshot upload would refuse, taking the
+    /// whole routine out of the coach's view.
+    func testExerciseNamesAreBoundedTheWayTheBridgeBoundsThem() throws {
+        let sectionId = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(id: sectionId, name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let tooLong = String(repeating: "x", count: 201)
+
+        let added = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: sectionId,
+                exercise: ExerciseBlock(name: tooLong)
+            )
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: added, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("exercise.name", _) = error else {
+                return XCTFail("Expected invalidValue on exercise.name, got \(error)")
+            }
+        }
+
+        var created = newRoutine(name: "Lower A")
+        created.sections[0].exercises[0].name = tooLong
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(created), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("exercise.name", _) = error else {
+                return XCTFail("Expected invalidValue on exercise.name, got \(error)")
             }
         }
     }

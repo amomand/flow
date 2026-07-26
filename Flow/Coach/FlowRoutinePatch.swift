@@ -265,6 +265,10 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case exerciseNotFound(UUID)
     case sectionNotFound(UUID)
     case duplicateExerciseId(UUID)
+    /// An id the created routine borrowed from a routine that already exists.
+    /// Distinct from the within-routine case: the remedy is a fresh id, not
+    /// removing a repeat.
+    case exerciseIdUsedByAnotherRoutine(id: UUID, routineName: String)
     case beforeValueMismatch(field: String, expected: String, actual: String)
     case invalidValue(field: String, message: String)
     case noOperations
@@ -303,6 +307,8 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "No section matches \(id.uuidString)."
         case .duplicateExerciseId(let id):
             return "Exercise id \(id.uuidString) already exists in this routine."
+        case .exerciseIdUsedByAnotherRoutine(_, let routineName):
+            return "This draft reuses an exercise id that already belongs to \(routineName). Ask the coach for a fresh draft with new exercise ids."
         case .beforeValueMismatch(let field, let expected, let actual):
             return "\(field) changed before import. Expected \(expected), found \(actual)."
         case .invalidValue(let field, let message):
@@ -585,9 +591,17 @@ enum FlowRoutinePatcher {
         // the rest of the app already assumes, and history reads more simply
         // when an id means one exercise. After the collision check, so a retry
         // is not reported as borrowing its own exercise ids.
-        let idsElsewhere = Set(routines.flatMap { $0.sections.flatMap { $0.exercises.map(\.id) } })
-        if let borrowed = created.sections.flatMap({ $0.exercises }).first(where: { idsElsewhere.contains($0.id) }) {
-            throw FlowRoutinePatchError.duplicateExerciseId(borrowed.id)
+        var ownerByExerciseId: [UUID: String] = [:]
+        for existing in routines {
+            for exercise in existing.sections.flatMap(\.exercises) {
+                ownerByExerciseId[exercise.id] = existing.name
+            }
+        }
+        if let borrowed = created.sections.flatMap({ $0.exercises }).first(where: { ownerByExerciseId[$0.id] != nil }) {
+            throw FlowRoutinePatchError.exerciseIdUsedByAnotherRoutine(
+                id: borrowed.id,
+                routineName: ownerByExerciseId[borrowed.id] ?? "another routine"
+            )
         }
 
         var diffs = [FlowRoutinePatchDiff(
@@ -1070,8 +1084,16 @@ enum FlowRoutinePatcher {
     }
 
     private static func validateExercise(_ exercise: ExerciseBlock) throws {
-        guard !exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must not be empty")
+        }
+        // The bridge caps this at 200 and the app did not, so a patch could
+        // store a name the next snapshot upload would refuse, taking the whole
+        // routine out of the coach's view. Bounded on the trimmed name, which
+        // is what the bridge measures.
+        guard name.count <= 200 else {
+            throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must be 200 characters or fewer")
         }
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
         try validate(exercise.reps, field: "exercise.reps", range: 1...100)
