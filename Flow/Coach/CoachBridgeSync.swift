@@ -295,12 +295,15 @@ final class CoachBridgeSync {
 
     init(
         inbox: CoachPatchInbox,
-        pairingStore: CoachBridgePairingStore = CoachBridgePairingStore(),
+        // Built inside the initialiser rather than as a default argument:
+        // default arguments are evaluated in a nonisolated context, and the
+        // store is main-actor isolated.
+        pairingStore: CoachBridgePairingStore? = nil,
         transport: CoachBridgeTransport = URLSessionBridgeTransport(),
         fileURL: URL? = nil
     ) {
         self.inbox = inbox
-        self.pairingStore = pairingStore
+        self.pairingStore = pairingStore ?? CoachBridgePairingStore()
         self.transport = transport
         if let fileURL {
             self.fileURL = fileURL

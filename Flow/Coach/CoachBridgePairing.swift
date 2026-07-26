@@ -116,6 +116,12 @@ final class InMemoryBridgeVault: CoachBridgeVault {
 /// mailboxes is how coach data would cross between people, so the store
 /// reports what a switch will discard rather than silently re-pointing sync at
 /// a new endpoint.
+///
+/// Main-actor isolated, like `CoachBridgeSync`: `pair` and `rotateCredential`
+/// mutate observable state that SwiftUI reads, and they now do it after an
+/// await, so without isolation those writes would resume off the main actor.
+/// The network call itself still happens inside the probe's transport.
+@MainActor
 @Observable
 final class CoachBridgePairingStore {
     private(set) var pairing: CoachBridgePairing?

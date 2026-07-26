@@ -413,7 +413,10 @@ private struct CoachBridgePairingSheet: View {
 
     private func commitPair() {
         isChecking = true
-        Task {
+        // Explicitly main-actor: this closure writes @State and calls
+        // dismiss() after the await, and an unstructured Task started from a
+        // nonisolated view method would otherwise resume off the main actor.
+        Task { @MainActor in
             let result = await sync.pairingStore.pair(label: label, endpointText: endpoint, credential: credential)
             isChecking = false
             switch result {
@@ -430,7 +433,7 @@ private struct CoachBridgePairingSheet: View {
     private func rotate() {
         problem = nil
         isChecking = true
-        Task {
+        Task { @MainActor in
             let result = await sync.pairingStore.rotateCredential(credential)
             isChecking = false
             switch result {
