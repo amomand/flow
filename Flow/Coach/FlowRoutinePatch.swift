@@ -1152,10 +1152,9 @@ enum FlowRoutinePatcher {
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must not be empty")
         }
-        // The bridge caps this at 200 and the app did not, so a patch could
-        // store a name the next snapshot upload would refuse, taking the whole
-        // routine out of the coach's view. Bounded on the trimmed name, which
-        // is what the bridge measures.
+        // Bounded and stored on the trimmed name, which is what the bridge
+        // measures and what it will hold. The snapshot is validated whole, so
+        // one name over this ceiling costs the coach every routine, not one.
         try check(name, atMost: 200, field: "exercise.name")
         stored.name = name
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
