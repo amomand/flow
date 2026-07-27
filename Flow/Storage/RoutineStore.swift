@@ -122,6 +122,29 @@ class RoutineStore {
         return .success(())
     }
 
+    /// Reorder the routine list.
+    ///
+    /// Order is the array's own order, which is what `routines.json` stores and
+    /// what every screen reads, so there is nothing to sort by and no field to
+    /// keep in step. Takes `IndexSet` and a destination because that is the
+    /// shape SwiftUI's `onMove` hands over.
+    ///
+    /// Nothing here changes a routine's content, so no content hash moves and
+    /// no coach patch is staled by a reorder.
+    @discardableResult
+    func moveRoutines(fromOffsets offsets: IndexSet, toOffset destination: Int) -> Result<Void, PersistenceError> {
+        let previous = routines
+        routines.move(fromOffsets: offsets, toOffset: destination)
+        // A drag that ends where it started still calls through, and writing
+        // the same array again is work for nothing.
+        guard routines != previous else { return .success(()) }
+        let result = save()
+        if case .failure = result {
+            routines = previous
+        }
+        return result
+    }
+
     @discardableResult
     func deleteRoutine(at offsets: IndexSet) -> Result<Void, PersistenceError> {
         let previous = routines

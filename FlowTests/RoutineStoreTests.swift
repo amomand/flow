@@ -138,6 +138,136 @@ final class RoutineStoreTests: XCTestCase {
         XCTAssertEqual(store.routines.count, 1)
     }
 
+    // MARK: - Reordering (#70)
+
+    func testMovingARoutineSurvivesReloadingFromDisk() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        for name in ["Upper A", "Lower A", "Upper B"] {
+            store.addRoutine(namedRoutine(name))
+        }
+
+        // Last to first, which is the move a drag the length of the list makes.
+        let result = store.moveRoutines(fromOffsets: IndexSet(integer: 2), toOffset: 0)
+
+        guard case .success = result else {
+            return XCTFail("Expected the move to save")
+        }
+        XCTAssertEqual(store.routines.map(\.name), ["Upper B", "Upper A", "Lower A"])
+
+        let reopened = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        XCTAssertEqual(reopened.routines.map(\.name), ["Upper B", "Upper A", "Lower A"])
+    }
+
+    func testARoutineCanBeMovedToAnyPosition() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        for name in ["A", "B", "C", "D"] {
+            store.addRoutine(namedRoutine(name))
+        }
+
+        // SwiftUI's destination is an index in the list as it stands before the
+        // move, so moving down means naming the index past the target.
+        store.moveRoutines(fromOffsets: IndexSet(integer: 0), toOffset: 3)
+        XCTAssertEqual(store.routines.map(\.name), ["B", "C", "A", "D"])
+
+        store.moveRoutines(fromOffsets: IndexSet(integer: 3), toOffset: 1)
+        XCTAssertEqual(store.routines.map(\.name), ["B", "D", "C", "A"])
+
+        store.moveRoutines(fromOffsets: IndexSet(integer: 0), toOffset: 4)
+        XCTAssertEqual(store.routines.map(\.name), ["D", "C", "A", "B"])
+    }
+
+    func testMovingARoutineChangesNothingElseAboutIt() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        for name in ["Upper A", "Lower A"] {
+            store.addRoutine(namedRoutine(name))
+        }
+        let before = store.routines
+        let hashesBefore = before.map { FlowRoutineRevision.contentHash(for: $0) }
+
+        store.moveRoutines(fromOffsets: IndexSet(integer: 1), toOffset: 0)
+
+        // Same routines, same content hashes, so a reorder cannot stale a
+        // coach patch written against any of them.
+        XCTAssertEqual(Set(store.routines.map(\.id)), Set(before.map(\.id)))
+        XCTAssertEqual(
+            Set(store.routines.map { FlowRoutineRevision.contentHash(for: $0) }),
+            Set(hashesBefore)
+        )
+        XCTAssertEqual(store.routines.map(\.sections), [before[1].sections, before[0].sections])
+    }
+
+    func testFailedMoveWriteLeavesTheOrderAsItWas() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        // The two seeding writes land; the move's write is the one that fails.
+        var writes = 0
+        let store = RoutineStore(
+            fileURL: fixture.fileURL,
+            defaults: fixture.defaults,
+            fileWriter: { data, url in
+                writes += 1
+                guard writes > 2 else { return try data.write(to: url, options: .atomic) }
+                throw SimulatedWriteError.failed
+            }
+        )
+        store.routines = []
+        for name in ["Upper A", "Lower A"] {
+            store.addRoutine(namedRoutine(name))
+        }
+
+        let result = store.moveRoutines(fromOffsets: IndexSet(integer: 1), toOffset: 0)
+
+        guard case .failure = result else {
+            return XCTFail("Expected the write to fail")
+        }
+        XCTAssertEqual(store.routines.map(\.name), ["Upper A", "Lower A"])
+        XCTAssertNotNil(store.saveError)
+
+        let reopened = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        XCTAssertEqual(reopened.routines.map(\.name), ["Upper A", "Lower A"])
+    }
+
+    /// A drag that lands back where it started still calls through, and
+    /// rewriting the file for nothing is a write that can fail for nothing.
+    func testAMoveThatChangesNothingDoesNotWrite() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        var writes = 0
+        let store = RoutineStore(
+            fileURL: fixture.fileURL,
+            defaults: fixture.defaults,
+            fileWriter: { data, url in
+                writes += 1
+                try data.write(to: url, options: .atomic)
+            }
+        )
+        store.routines = []
+        for name in ["Upper A", "Lower A"] {
+            store.addRoutine(namedRoutine(name))
+        }
+        let seedingWrites = writes
+
+        let result = store.moveRoutines(fromOffsets: IndexSet(integer: 0), toOffset: 0)
+
+        guard case .success = result else {
+            return XCTFail("Expected a no-op move to succeed")
+        }
+        XCTAssertEqual(writes, seedingWrites)
+        XCTAssertEqual(store.routines.map(\.name), ["Upper A", "Lower A"])
+    }
+
+    private func namedRoutine(_ name: String) -> Routine {
+        Routine(name: name, sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "\(name) press", sets: 3, reps: 8)])
+        ])
+    }
+
     func testSaveFailureIsReportedAndDoesNotLeaveUnsavedMutationInMemory() throws {
         let fixture = try makeFixture()
         let unwritableURL = fixture.directory
