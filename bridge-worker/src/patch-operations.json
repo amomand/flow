@@ -13,6 +13,7 @@
     "moveExercise": 2,
     "replacePhaseOverride": 2,
     "renameRoutine": 3,
-    "addSection": 3
+    "addSection": 3,
+    "createRoutine": 3
   }
 }

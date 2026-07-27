@@ -56,6 +56,9 @@ struct PendingCoachPatchSummary: Equatable {
         case rebase
         /// Content hash is stale and an operation no longer matches.
         case conflict(String)
+        /// A create whose routine is already here. Usually a retry of a draft
+        /// that landed, so it is not a failure and says so.
+        case superseded(String)
         case invalid(String)
     }
 
@@ -63,6 +66,9 @@ struct PendingCoachPatchSummary: Equatable {
     let routineName: String?
     let rationale: String?
     let operationCount: Int
+    /// Whether this draft would add a routine rather than edit one. Two edit
+    /// drafts and one create draft otherwise look identical until opened.
+    var isCreate: Bool = false
 }
 
 /// Durable local inbox for coach routine patches.
@@ -227,7 +233,12 @@ final class CoachPatchInbox {
             FlowRoutinePatch.self,
             from: Data(FlowRoutineExchange.sanitizedJSON(from: patch.rawJSON).utf8)
         )
-        let routineName = decoded.flatMap { patch in routines.first { $0.id == patch.routineId }?.name }
+        let isCreate = decoded?.target == .newRoutine
+        // A create names the routine it would add; there is nothing in the
+        // store yet to look it up in.
+        let routineName = isCreate
+            ? decoded?.operations.first?.routine?.name
+            : decoded.flatMap { patch in routines.first { $0.id == patch.routineId }?.name }
         let rationale = decoded.map(\.rationale)
         let operationCount = decoded?.operations.count ?? 0
 
@@ -235,29 +246,40 @@ final class CoachPatchInbox {
             let preview = try FlowRoutinePatcher.preview(json: patch.rawJSON, routines: routines)
             return PendingCoachPatchSummary(
                 readiness: preview.rebasedFromHash == nil ? .ready : .rebase,
-                routineName: preview.originalRoutine.name,
+                routineName: preview.originalRoutine?.name ?? preview.updatedRoutine.name,
                 rationale: preview.patch.rationale,
-                operationCount: preview.patch.operations.count
+                operationCount: preview.patch.operations.count,
+                isCreate: preview.isCreate
             )
         } catch let error as FlowRoutinePatchError {
             let readiness: PendingCoachPatchSummary.Readiness
-            if case .staleConflict = error {
+            switch error {
+            case .staleConflict:
                 readiness = .conflict(error.localizedDescription)
-            } else {
+            case .routineAlreadyExists:
+                readiness = .superseded(error.localizedDescription)
+            // A revision that reused its own earlier id is a conflict, not a
+            // completed retry: there is something here to look at and decide
+            // about, and calling it "already applied" would lose it.
+            case .routineIdReused:
+                readiness = .conflict(error.localizedDescription)
+            default:
                 readiness = .invalid(error.localizedDescription)
             }
             return PendingCoachPatchSummary(
                 readiness: readiness,
                 routineName: routineName,
                 rationale: rationale,
-                operationCount: operationCount
+                operationCount: operationCount,
+                isCreate: isCreate
             )
         } catch {
             return PendingCoachPatchSummary(
                 readiness: .invalid(error.localizedDescription),
                 routineName: routineName,
                 rationale: rationale,
-                operationCount: operationCount
+                operationCount: operationCount,
+                isCreate: isCreate
             )
         }
     }

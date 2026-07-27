@@ -381,7 +381,7 @@ type SnapshotRow = {
   device_capabilities_json: string | null;
 };
 type PatchRow = {
-  seq: number; patch_id: string; context_id: string; routine_id: string; base_hash: string;
+  seq: number; patch_id: string; context_id: string; routine_id: string | null; base_hash: string | null;
   created_at: number; expires_at: number; status: string; provenance: string; principal_id: string;
   rationale: string | null; patch_json: string | null; pulled_at: number | null; terminal_at: number | null;
   tombstone_expires_at: number | null; idempotency_digest: string | null; proposal_digest: string; payload_digest: string;
@@ -413,6 +413,75 @@ export class FlowCoachMailbox extends DurableObject<Env> {
     if (!columns("snapshots").has("device_capabilities_json")) {
       this.ctx.storage.sql.exec("ALTER TABLE snapshots ADD COLUMN device_capabilities_json TEXT");
     }
+    this.relaxPatchAnchorColumns();
+  }
+
+  /**
+   * Drops NOT NULL from `patches.routine_id` and `patches.base_hash`.
+   *
+   * A patch that creates a routine anchors to nothing: there is no routine id
+   * to pin to and no content to hash. SQLite cannot relax a constraint with
+   * ALTER, so this is the standard table rebuild, run inside a transaction so
+   * a failure part-way leaves the old table intact rather than a half-copied
+   * new one. Detected by reading the constraint rather than by a version
+   * counter, so it is a no-op on every object already in the new shape.
+   */
+  private relaxPatchAnchorColumns(): void {
+    const anchored = this.ctx.storage.sql
+      .exec<{ name: string; notnull: number }>("PRAGMA table_info(patches)")
+      .toArray()
+      .some((column) => (column.name === "routine_id" || column.name === "base_hash") && column.notnull === 1);
+    if (!anchored) return;
+
+    // Copying rows with their explicit `seq` leaves the rebuilt table's
+    // AUTOINCREMENT counter at the highest surviving row rather than the
+    // highest ever issued, so a seq already handed out to a since-expired
+    // patch could be issued again. Pull cursors are ordered by seq, so that
+    // would quietly break their monotonicity.
+    const previousSequence = this.ctx.storage.sql
+      .exec<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'patches'")
+      .toArray()[0]?.seq;
+
+    this.ctx.storage.transactionSync(() => {
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE patches_rebuilt (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          patch_id TEXT NOT NULL UNIQUE,
+          context_id TEXT NOT NULL,
+          routine_id TEXT,
+          base_hash TEXT,
+          created_at INTEGER NOT NULL,
+          expires_at INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          provenance TEXT NOT NULL,
+          principal_id TEXT NOT NULL,
+          rationale TEXT,
+          patch_json TEXT,
+          pulled_at INTEGER,
+          terminal_at INTEGER,
+          tombstone_expires_at INTEGER,
+          idempotency_digest TEXT UNIQUE,
+          proposal_digest TEXT NOT NULL UNIQUE,
+          payload_digest TEXT NOT NULL
+        );
+        INSERT INTO patches_rebuilt SELECT
+          seq, patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
+          provenance, principal_id, rationale, patch_json, pulled_at, terminal_at,
+          tombstone_expires_at, idempotency_digest, proposal_digest, payload_digest
+        FROM patches;
+        DROP TABLE patches;
+        ALTER TABLE patches_rebuilt RENAME TO patches;
+        CREATE INDEX IF NOT EXISTS patches_pull ON patches(seq, status);
+        CREATE INDEX IF NOT EXISTS patches_context ON patches(context_id);
+        CREATE INDEX IF NOT EXISTS patches_expiry ON patches(expires_at, tombstone_expires_at);
+      `);
+      if (previousSequence !== undefined) {
+        // Replaced rather than upserted: sqlite_sequence carries no unique
+        // constraint on `name`, so there is nothing for ON CONFLICT to match.
+        this.ctx.storage.sql.exec("DELETE FROM sqlite_sequence WHERE name = 'patches'");
+        this.ctx.storage.sql.exec("INSERT INTO sqlite_sequence(name, seq) VALUES ('patches', ?)", previousSequence);
+      }
+    });
   }
 
   private createSchema(): void {
@@ -437,8 +506,9 @@ export class FlowCoachMailbox extends DurableObject<Env> {
         seq INTEGER PRIMARY KEY AUTOINCREMENT,
         patch_id TEXT NOT NULL UNIQUE,
         context_id TEXT NOT NULL,
-        routine_id TEXT NOT NULL,
-        base_hash TEXT NOT NULL,
+        -- Null for a patch that creates a routine: it anchors to nothing.
+        routine_id TEXT,
+        base_hash TEXT,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL,
         status TEXT NOT NULL,
@@ -682,7 +752,7 @@ export class FlowCoachMailbox extends DurableObject<Env> {
     this.ctx.storage.sql.exec(
       `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status, provenance, principal_id, rationale, patch_json, idempotency_digest, proposal_digest, payload_digest)
        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
-      patchId, snapshot.context_id, patch.routineId, patch.baseContentHash, now, now + PATCH_LIFETIME_MS,
+      patchId, snapshot.context_id, patch.routineId ?? null, patch.baseContentHash ?? null, now, now + PATCH_LIFETIME_MS,
       provenance, principal, patch.rationale, JSON.stringify(patch), idempotencyDigest, proposalDigest, payloadDigest,
     );
     const row = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE patch_id = ?", patchId).one();

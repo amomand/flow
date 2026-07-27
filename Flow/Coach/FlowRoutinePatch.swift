@@ -17,12 +17,57 @@ struct FlowRoutinePatch: Codable, Equatable {
     static let currentSchemaVersion = 3
     static let supportedSchemaVersions: Set<Int> = [2, 3]
 
+    /// What a patch is aimed at.
+    ///
+    /// A routine that does not exist yet has no id to anchor to and no content
+    /// to hash, so the two branches genuinely need different required fields.
+    /// Modelling that as a discriminator keeps both branches strict, rather
+    /// than making the anchor optional for everyone and hoping.
+    enum Target: String, Codable, Equatable {
+        case existingRoutine
+        case newRoutine
+    }
+
     let schemaVersion: Int
-    let routineId: UUID
-    let baseContentHash: String
+    /// Absent in schema 2, where every patch edited a routine that existed.
+    let target: Target
+    /// Both nil exactly when `target` is `.newRoutine`.
+    let routineId: UUID?
+    let baseContentHash: String?
     let exportedAt: Date?
     let rationale: String
     let operations: [FlowRoutinePatchOperation]
+
+    init(
+        schemaVersion: Int,
+        target: Target = .existingRoutine,
+        routineId: UUID? = nil,
+        baseContentHash: String? = nil,
+        exportedAt: Date? = nil,
+        rationale: String,
+        operations: [FlowRoutinePatchOperation]
+    ) {
+        self.schemaVersion = schemaVersion
+        self.target = target
+        self.routineId = routineId
+        self.baseContentHash = baseContentHash
+        self.exportedAt = exportedAt
+        self.rationale = rationale
+        self.operations = operations
+    }
+
+    /// Schema 2 patches carry no `target`, and there was only one thing a
+    /// patch could be aimed at, so their absence is not ambiguous.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        target = try container.decodeIfPresent(Target.self, forKey: .target) ?? .existingRoutine
+        routineId = try container.decodeIfPresent(UUID.self, forKey: .routineId)
+        baseContentHash = try container.decodeIfPresent(String.self, forKey: .baseContentHash)
+        exportedAt = try container.decodeIfPresent(Date.self, forKey: .exportedAt)
+        rationale = try container.decode(String.self, forKey: .rationale)
+        operations = try container.decode([FlowRoutinePatchOperation].self, forKey: .operations)
+    }
 }
 
 /// A section arriving with a patch.
@@ -53,6 +98,10 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
     var newPhaseOverride: PhaseOverride? = nil
     var removePhaseOverride: Bool? = nil
     var exercise: ExerciseBlock? = nil
+    /// A whole routine, only for `createRoutine`. It reuses `Routine` because
+    /// a created routine is exactly a routine; there is no partial shape to
+    /// model and nothing to leave out.
+    var routine: Routine? = nil
 
     enum Kind: String, Codable, Equatable, CaseIterable {
         case replaceExerciseReps
@@ -67,6 +116,7 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
         case replacePhaseOverride
         case renameRoutine
         case addSection
+        case createRoutine
 
         /// The first schema version this operation belongs to. A patch may
         /// only use operations its declared version knows about, so a coach
@@ -74,7 +124,7 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
         /// operation through under the older version number.
         var minimumSchemaVersion: Int {
             switch self {
-            case .renameRoutine, .addSection:
+            case .renameRoutine, .addSection, .createRoutine:
                 return 3
             default:
                 return 2
@@ -85,9 +135,12 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
 
 struct FlowRoutinePatchPreview {
     let patch: FlowRoutinePatch
-    let originalRoutine: Routine
+    /// Nil for a create, which has nothing to have been before.
+    let originalRoutine: Routine?
     let updatedRoutine: Routine
     let diffs: [FlowRoutinePatchDiff]
+
+    var isCreate: Bool { originalRoutine == nil }
     /// The patch's stale `baseContentHash` when the routine changed after the
     /// patch was written but every operation's expected before-value still
     /// matched, so Flow rebased it onto the current content. `nil` when the
@@ -97,6 +150,11 @@ struct FlowRoutinePatchPreview {
 
 struct FlowRoutinePatchDiff: Identifiable, Equatable, Codable {
     let operationIndex: Int
+    /// Position within one operation's rows. A create is a single operation
+    /// that produces a row per section and per exercise, and two identical
+    /// exercises would otherwise share an id and confuse the list they are
+    /// rendered into. Zero for every operation that produces one row.
+    var sequence: Int = 0
     let title: String
     let before: String
     let after: String
@@ -108,11 +166,11 @@ struct FlowRoutinePatchDiff: Identifiable, Equatable, Codable {
     var phaseConsequences: [FlowRoutinePhaseConsequence] = []
 
     var id: String {
-        "\(operationIndex)-\(title)-\(before)-\(after)"
+        "\(operationIndex)-\(sequence)-\(title)-\(before)-\(after)"
     }
 
     enum CodingKeys: String, CodingKey {
-        case operationIndex, title, before, after, phaseConsequences
+        case operationIndex, sequence, title, before, after, phaseConsequences
     }
 }
 
@@ -122,6 +180,7 @@ extension FlowRoutinePatchDiff {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         operationIndex = try container.decode(Int.self, forKey: .operationIndex)
+        sequence = try container.decodeIfPresent(Int.self, forKey: .sequence) ?? 0
         title = try container.decode(String.self, forKey: .title)
         before = try container.decode(String.self, forKey: .before)
         after = try container.decode(String.self, forKey: .after)
@@ -206,13 +265,25 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case exerciseNotFound(UUID)
     case sectionNotFound(UUID)
     case duplicateExerciseId(UUID)
+    /// An id the created routine borrowed from a routine that already exists.
+    /// Distinct from the within-routine case: the remedy is a fresh id, not
+    /// removing a repeat.
+    case exerciseIdUsedByAnotherRoutine(id: UUID, routineName: String)
     case beforeValueMismatch(field: String, expected: String, actual: String)
     case invalidValue(field: String, message: String)
     case noOperations
     case wouldEmptyRoutine
     case duplicateSectionId(UUID)
     case tooManySections(Int)
+    case tooManyRoutines(Int)
     case tooManyExercisesInSection(section: String, limit: Int)
+    /// A create whose routine is already here. Usually a retry of something
+    /// that landed, so it is reported as superseded rather than broken.
+    case routineAlreadyExists(UUID)
+    /// A create whose id is here but whose content is not the content that
+    /// landed. A revision that reused its own earlier id, not a retry.
+    case routineIdReused(name: String)
+    case createMustStandAlone
     case operationNeedsNewerSchema(kind: String, minimum: Int, declared: Int)
     case persistenceFailed(String)
 
@@ -236,6 +307,8 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "No section matches \(id.uuidString)."
         case .duplicateExerciseId(let id):
             return "Exercise id \(id.uuidString) already exists in this routine."
+        case .exerciseIdUsedByAnotherRoutine(_, let routineName):
+            return "This draft reuses an exercise id that already belongs to \(routineName). Ask the coach for a fresh draft with new exercise ids."
         case .beforeValueMismatch(let field, let expected, let actual):
             return "\(field) changed before import. Expected \(expected), found \(actual)."
         case .invalidValue(let field, let message):
@@ -248,8 +321,16 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Section id \(id.uuidString) already exists in this routine."
         case .tooManySections(let limit):
             return "Routine patch would take the routine past \(limit) sections."
+        case .tooManyRoutines(let limit):
+            return "You already have \(limit) routines, which is as many as the coach can be sent. Remove one before adding another."
         case .tooManyExercisesInSection(let section, let limit):
             return "Routine patch would take \(section) past \(limit) exercises."
+        case .routineAlreadyExists:
+            return "This routine is already here, so this draft has already been applied."
+        case .routineIdReused(let name):
+            return "\(name) already uses this draft's routine id, but it is not the same routine. If this draft is the one you want, ask the coach for a fresh one with a new routine id."
+        case .createMustStandAlone:
+            return "A patch that creates a routine must contain that one operation and nothing else."
         case .persistenceFailed(let message):
             return "The routine patch was not saved: \(message)"
         }
@@ -267,6 +348,12 @@ enum FlowRoutinePatcher {
     /// pushed past this stops fitting in a snapshot, so the routine would drop
     /// out of the coach's view at the next sync.
     static let maximumExercisesPerSection = 100
+
+    /// A snapshot carries at most this many routines. `createRoutine` is the
+    /// first operation that can grow the count, and going past it is worse
+    /// than the other ceilings: the next snapshot upload fails whole, so the
+    /// coach stops seeing anything at all rather than losing one routine.
+    static let maximumRoutines = 50
 
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
@@ -295,7 +382,10 @@ enum FlowRoutinePatcher {
                !FlowRoutinePatch.supportedSchemaVersions.contains(version) {
                 throw FlowRoutinePatchError.unsupportedSchema(version)
             }
-            if object["baseContentHash"] == nil {
+            // A create has no routine to anchor to, so the anchor is only
+            // required on the branch that edits one.
+            if object["target"] as? String != FlowRoutinePatch.Target.newRoutine.rawValue,
+               object["baseContentHash"] == nil {
                 throw FlowRoutinePatchError.missingField("baseContentHash")
             }
         }
@@ -327,8 +417,27 @@ enum FlowRoutinePatcher {
                 declared: patch.schemaVersion
             )
         }
-        guard let routine = routines.first(where: { $0.id == patch.routineId }) else {
-            throw FlowRoutinePatchError.routineNotFound(patch.routineId)
+        if patch.target == .newRoutine {
+            return try previewCreate(patch: patch, routines: routines)
+        }
+
+        guard let routineId = patch.routineId else {
+            throw FlowRoutinePatchError.missingField("routineId")
+        }
+        guard patch.baseContentHash != nil else {
+            throw FlowRoutinePatchError.missingField("baseContentHash")
+        }
+        // A create arriving without its discriminator would otherwise be read
+        // as an edit to a routine that happens not to exist, and reported as a
+        // missing routine rather than as the malformed patch it is.
+        if patch.operations.contains(where: { $0.kind == .createRoutine }) {
+            throw FlowRoutinePatchError.invalidValue(
+                field: "target",
+                message: "createRoutine belongs to a patch with target newRoutine"
+            )
+        }
+        guard let routine = routines.first(where: { $0.id == routineId }) else {
+            throw FlowRoutinePatchError.routineNotFound(routineId)
         }
 
         // A stale content hash is not an automatic rejection. Every operation
@@ -373,6 +482,170 @@ enum FlowRoutinePatcher {
             diffs: diffs,
             rebasedFromHash: isRebasing ? patch.baseContentHash : nil
         )
+    }
+
+    /// A new routine arrives whole.
+    ///
+    /// Deliberately not a create followed by a stream of `addExercise`
+    /// operations: the preview would then have to render intermediate states
+    /// of a routine that never existed in any of them, and the person
+    /// approving it would be reading a history rather than a routine.
+    private static func previewCreate(
+        patch: FlowRoutinePatch,
+        routines: [Routine]
+    ) throws -> FlowRoutinePatchPreview {
+        guard patch.routineId == nil, patch.baseContentHash == nil else {
+            throw FlowRoutinePatchError.invalidValue(
+                field: "target",
+                message: "a newRoutine patch anchors to nothing, so it carries no routineId or baseContentHash"
+            )
+        }
+        guard patch.operations.count == 1, let operation = patch.operations.first,
+              operation.kind == .createRoutine else {
+            throw FlowRoutinePatchError.createMustStandAlone
+        }
+        guard let routine = operation.routine else {
+            throw FlowRoutinePatchError.missingField("routine")
+        }
+
+        let name = routine.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must not be empty")
+        }
+        guard name.count <= 100 else {
+            throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must be 100 characters or fewer")
+        }
+        guard !routine.sections.isEmpty else {
+            throw FlowRoutinePatchError.invalidValue(field: "routine.sections", message: "must contain at least one section")
+        }
+        guard routine.sections.count <= maximumSections else {
+            throw FlowRoutinePatchError.tooManySections(maximumSections)
+        }
+
+        var sectionIds: Set<UUID> = []
+        var exerciseIds: Set<UUID> = []
+        var created = routine
+        created.name = name
+
+        for index in created.sections.indices {
+            // The field name reaches the person reading the error, and a
+            // create can carry many sections, so it has to say which one.
+            let field = "routine.sections[\(index)].name"
+            let sectionName = created.sections[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !sectionName.isEmpty else {
+                throw FlowRoutinePatchError.invalidValue(field: field, message: "must not be empty")
+            }
+            guard sectionName.count <= 200 else {
+                throw FlowRoutinePatchError.invalidValue(field: field, message: "must be 200 characters or fewer")
+            }
+            created.sections[index].name = sectionName
+
+            guard sectionIds.insert(created.sections[index].id).inserted else {
+                throw FlowRoutinePatchError.duplicateSectionId(created.sections[index].id)
+            }
+            guard created.sections[index].exercises.count <= maximumExercisesPerSection else {
+                throw FlowRoutinePatchError.tooManyExercisesInSection(
+                    section: sectionName,
+                    limit: maximumExercisesPerSection
+                )
+            }
+            for exerciseIndex in created.sections[index].exercises.indices {
+                var exercise = created.sections[index].exercises[exerciseIndex]
+                exercise.phaseOverrides = exercise.phaseOverrides.filter { !$0.value.isEmpty }
+                try validateExercise(exercise)
+                guard exerciseIds.insert(exercise.id).inserted else {
+                    throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
+                }
+                created.sections[index].exercises[exerciseIndex] = exercise
+            }
+        }
+
+        guard created.canStartWorkout else {
+            throw FlowRoutinePatchError.wouldEmptyRoutine
+        }
+
+        // Checked against the normalised routine, not the raw draft. What an
+        // earlier apply stored was `created`, with names trimmed and empty
+        // phase overrides dropped, so hashing the draft as it arrived would
+        // make a byte-identical retry of a landed draft look like a revision.
+        //
+        // "Already applied" has to mean the same routine, not merely the same
+        // id: a coach revising its own earlier draft will happily reuse the id
+        // it generated, and treating that as a completed retry would swallow
+        // the revision behind a reassuring chip. Compared on sections and
+        // name, not phase, which is state the user owns once the routine is
+        // theirs; a toggled phase does not make a retry into a revision.
+        if let existing = routines.first(where: { $0.id == created.id }) {
+            let sameContent = FlowRoutineRevision.contentHash(for: existing)
+                == FlowRoutineRevision.contentHash(for: created)
+            guard sameContent, existing.name == created.name else {
+                throw FlowRoutinePatchError.routineIdReused(name: existing.name)
+            }
+            throw FlowRoutinePatchError.routineAlreadyExists(created.id)
+        }
+
+        guard routines.count < maximumRoutines else {
+            throw FlowRoutinePatchError.tooManyRoutines(maximumRoutines)
+        }
+
+        // Exercise ids are checked against every other routine, not just this
+        // one. Nothing in the store enforces it, but whole-routine import has
+        // always reassigned ids on the way in, so globally fresh ids are what
+        // the rest of the app already assumes, and history reads more simply
+        // when an id means one exercise. After the collision check, so a retry
+        // is not reported as borrowing its own exercise ids.
+        var ownerByExerciseId: [UUID: String] = [:]
+        for existing in routines {
+            for exercise in existing.sections.flatMap(\.exercises) {
+                ownerByExerciseId[exercise.id] = existing.name
+            }
+        }
+        if let borrowed = created.sections.flatMap({ $0.exercises }).first(where: { ownerByExerciseId[$0.id] != nil }) {
+            throw FlowRoutinePatchError.exerciseIdUsedByAnotherRoutine(
+                id: borrowed.id,
+                routineName: ownerByExerciseId[borrowed.id] ?? "another routine"
+            )
+        }
+
+        var diffs = [FlowRoutinePatchDiff(
+            operationIndex: 1,
+            sequence: 0,
+            title: "Create routine",
+            before: "[not present]",
+            after: "\(created.name) — starts in \(created.currentPhase.displayName)"
+        )]
+        for section in created.sections {
+            diffs.append(FlowRoutinePatchDiff(
+                operationIndex: 1,
+                sequence: diffs.count,
+                title: "Add section",
+                before: "[not present]",
+                after: section.name
+            ))
+            for exercise in section.exercises {
+                diffs.append(FlowRoutinePatchDiff(
+                    operationIndex: 1,
+                    sequence: diffs.count,
+                    title: "Add exercise",
+                    before: "[not present]",
+                    after: "\(section.name): \(summary(of: exercise))"
+                ))
+            }
+        }
+
+        return FlowRoutinePatchPreview(
+            patch: patch,
+            originalRoutine: nil,
+            updatedRoutine: created,
+            diffs: diffs
+        )
+    }
+
+    private static func summary(of exercise: ExerciseBlock) -> String {
+        if let duration = exercise.durationSeconds {
+            return "\(exercise.name) \(exercise.sets)x\(duration)s"
+        }
+        return "\(exercise.name) \(exercise.sets)x\(exercise.reps)"
     }
 
     private static func apply(
@@ -564,6 +837,13 @@ enum FlowRoutinePatcher {
                 before: "\(routine.sections[source.sectionIndex].name): \(moving.name)",
                 after: "\(routine.sections[targetSectionIndex].name): \(moving.name)"
             )
+
+        case .createRoutine:
+            // Unreachable: `previewCreate` owns this operation, and the
+            // existing-routine branch refuses a patch containing one. Stated
+            // rather than left to a default, so adding an operation kind still
+            // fails to compile until it is handled here.
+            throw FlowRoutinePatchError.createMustStandAlone
 
         case .addSection:
             guard let section = operation.section else {
@@ -807,8 +1087,16 @@ enum FlowRoutinePatcher {
     }
 
     private static func validateExercise(_ exercise: ExerciseBlock) throws {
-        guard !exercise.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must not be empty")
+        }
+        // The bridge caps this at 200 and the app did not, so a patch could
+        // store a name the next snapshot upload would refuse, taking the whole
+        // routine out of the coach's view. Bounded on the trimmed name, which
+        // is what the bridge measures.
+        guard name.count <= 200 else {
+            throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must be 200 characters or fewer")
         }
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
         try validate(exercise.reps, field: "exercise.reps", range: 1...100)

@@ -106,26 +106,36 @@ struct CoachEditHistorySheet: View {
             }
 
             if record.outcome == .applied {
+                // Undoing a create removes the routine rather than putting
+                // sections back, so the button has to say so. A person about
+                // to delete a routine should not be reading the word restore.
                 if confirmingOverwriteId == record.id {
-                    Text("This routine changed after the edit was applied. Restoring will overwrite those later changes.")
+                    Text(record.wasCreate
+                        ? "This routine changed after it was added. Removing it will take those later changes with it."
+                        : "This routine changed after the edit was applied. Restoring will overwrite those later changes.")
                         .terminalFont(11)
                         .foregroundColor(TN.yellow)
                     Button {
                         restore(record, allowingOverwrite: true)
                     } label: {
-                        Text("[ RESTORE ANYWAY ]")
+                        Text(record.wasCreate ? "[ REMOVE ANYWAY ]" : "[ RESTORE ANYWAY ]")
                     }
                     .buttonStyle(TerminalButtonStyle(color: TN.red))
                 } else {
+                    if record.wasCreate {
+                        Text("This edit added the routine. Undoing it removes the routine.")
+                            .terminalFont(11)
+                            .foregroundColor(TN.comment)
+                    }
                     Button {
                         restore(record, allowingOverwrite: false)
                     } label: {
-                        Text("[ RESTORE ]")
+                        Text(record.wasCreate ? "[ REMOVE ROUTINE ]" : "[ RESTORE ]")
                     }
-                    .buttonStyle(TerminalButtonStyle(color: TN.yellow))
+                    .buttonStyle(TerminalButtonStyle(color: record.wasCreate ? TN.red : TN.yellow))
                 }
             } else if let restoredAt = record.restoredAt {
-                Text("Restored \(restoredAt.formatted(date: .abbreviated, time: .shortened))")
+                Text("\(record.wasCreate ? "Removed" : "Restored") \(restoredAt.formatted(date: .abbreviated, time: .shortened))")
                     .terminalFont(11)
                     .foregroundColor(TN.comment)
             }
@@ -176,7 +186,9 @@ struct CoachEditHistorySheet: View {
         switch store.restoreCoachEdit(record, allowingOverwrite: allowingOverwrite) {
         case .success(let routine):
             confirmingOverwriteId = nil
-            statusMessage = "Restored \(routine.name) to its pre-edit exercises."
+            statusMessage = record.wasCreate
+                ? "Removed \(routine.name)."
+                : "Restored \(routine.name) to its pre-edit exercises."
         case .failure(.routineChangedSinceEdit):
             // Surface the warning inline on this entry; the next tap must be
             // the explicit overwrite.
