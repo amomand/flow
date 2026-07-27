@@ -2249,6 +2249,67 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(stored.utf16.count, 200)
     }
 
+    /// U+FEFF is whitespace to JavaScript and not to Swift, so a name made
+    /// only of it was not empty to the app and was empty to the bridge, which
+    /// refuses the whole snapshot rather than the one routine.
+    func testANameThatIsOnlyABOMIsEmpty() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        let bom = "\u{FEFF}"
+        XCTAssertFalse(bom.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+
+        let added = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: routine.sections[0].id,
+                exercise: ExerciseBlock(name: bom, sets: 3, reps: 5)
+            )
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: added, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("exercise.name", _) = error else {
+                return XCTFail("Expected invalidValue on exercise.name, got \(error)")
+            }
+        }
+
+        let renamed = renamePatch(for: routine, to: bom)
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: renamed, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("routine name", _) = error else {
+                return XCTFail("Expected invalidValue on routine name, got \(error)")
+            }
+        }
+
+        let sectioned = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(kind: .addSection, section: FlowRoutinePatchSection(id: UUID(), name: bom))
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: sectioned, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("section.name", _) = error else {
+                return XCTFail("Expected invalidValue on section.name, got \(error)")
+            }
+        }
+    }
+
+    /// Trimming a superset of what the bridge trims is what makes the two
+    /// sides agree: the bridge's own trim is then a no-op on a stored name.
+    func testAStoredNameHasNothingLeftForTheBridgeToTrim() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+
+        let preview = try FlowRoutinePatcher.preview(
+            patch: sectionPatch(for: routine, operations: [
+                FlowRoutinePatchOperation(
+                    kind: .addExercise,
+                    sectionId: routine.sections[0].id,
+                    exercise: ExerciseBlock(name: "\u{FEFF} Trap Bar Deadlift \u{0085}", sets: 3, reps: 5)
+                )
+            ]),
+            routines: [routine]
+        )
+
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises.last?.name, "Trap Bar Deadlift")
+    }
+
     func testCreatedRoutineExerciseNamesAreStoredTrimmed() throws {
         var routine = newRoutine(name: "Lower A")
         routine.sections[0].exercises[0].name = "  Trap Bar Deadlift  "

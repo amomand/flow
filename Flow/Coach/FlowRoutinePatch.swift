@@ -508,7 +508,7 @@ enum FlowRoutinePatcher {
             throw FlowRoutinePatchError.missingField("routine")
         }
 
-        let name = routine.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedName(routine.name)
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must not be empty")
         }
@@ -529,7 +529,7 @@ enum FlowRoutinePatcher {
             // The field name reaches the person reading the error, and a
             // create can carry many sections, so it has to say which one.
             let field = "routine.sections[\(index)].name"
-            let sectionName = created.sections[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let sectionName = trimmedName(created.sections[index].name)
             guard !sectionName.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: field, message: "must not be empty")
             }
@@ -843,7 +843,7 @@ enum FlowRoutinePatcher {
             guard let section = operation.section else {
                 throw FlowRoutinePatchError.missingField("section")
             }
-            let name = section.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = trimmedName(section.name)
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must not be empty")
             }
@@ -873,7 +873,7 @@ enum FlowRoutinePatcher {
 
         case .renameRoutine:
             let value = try requireString(operation.newStringValue, "newStringValue")
-            let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = trimmedName(value)
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must not be empty")
             }
@@ -1077,6 +1077,28 @@ enum FlowRoutinePatcher {
     }
 
     /**
+     What counts as padding around a name, on both sides at once.
+
+     Swift's `whitespacesAndNewlines` and JavaScript's `trim` very nearly
+     agree. The one character JavaScript strips and Swift does not is U+FEFF,
+     and Swift strips U+0085 and U+200B where JavaScript does not. Adding
+     U+FEFF here makes the app's set a superset of the bridge's, which is what
+     makes the two sides agree rather than merely trim similarly: a name
+     trimmed with this set has nothing left at either end that the bridge would
+     strip, so the bridge's own trim is a no-op on it, and the length the app
+     measured is the length the bridge measures.
+
+     Without that, a name of a single U+FEFF was not empty to the app, was
+     stored, and was then empty to the bridge, which refuses the whole snapshot
+     rather than one routine.
+     */
+    private static let namePadding = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}"))
+
+    private static func trimmedName(_ value: String) -> String {
+        value.trimmingCharacters(in: namePadding)
+    }
+
+    /**
      Bound a string the way the bridge bounds it: in UTF-16 code units.
 
      Swift's `count` is grapheme clusters and the bridge's `length` is UTF-16
@@ -1126,7 +1148,7 @@ enum FlowRoutinePatcher {
      */
     private static func validatedExercise(_ exercise: ExerciseBlock) throws -> ExerciseBlock {
         var stored = exercise
-        let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedName(exercise.name)
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must not be empty")
         }
