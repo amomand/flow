@@ -16,6 +16,10 @@ struct RoutineListView: View {
     @State private var showingHistory = false
     @State private var exportedJSON: String?
     @State private var showExportCopied = false
+    /// Reordering is a mode rather than a long-press, because long-press is
+    /// already the routine card's context menu and a card holds its own
+    /// buttons. A mode also gives the list somewhere to put drag handles.
+    @State private var isReordering = false
 
     var body: some View {
         NavigationStack {
@@ -23,16 +27,37 @@ struct RoutineListView: View {
                 TN.bg.ignoresSafeArea()
 
                 VStack(alignment: .leading, spacing: 0) {
-                    FlowScreenHeader(title: "STRENGTH", subtitle: "select routine to begin") {
+                    FlowScreenHeader(
+                        title: "STRENGTH",
+                        subtitle: isReordering ? "drag to reorder" : "select routine to begin"
+                    ) {
                         HStack(spacing: 8) {
-                            Button {
-                                showingNewRoutine = true
-                            } label: {
-                                HeaderIcon(systemName: "plus", color: TN.green)
+                            if isReordering {
+                                Button {
+                                    isReordering = false
+                                } label: {
+                                    HeaderIcon(systemName: "checkmark", color: TN.green)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Done reordering")
+                            } else {
+                                Button {
+                                    showingNewRoutine = true
+                                } label: {
+                                    HeaderIcon(systemName: "plus", color: TN.green)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("New routine")
                             }
-                            .buttonStyle(.plain)
 
                             Menu {
+                                // Reordering needs two routines to mean
+                                // anything, and the mode has no exit worth
+                                // entering for one.
+                                Button("Reorder Routines") {
+                                    isReordering = true
+                                }
+                                .disabled(store.routines.count < 2)
                                 Button("Workout History") {
                                     showingHistory = true
                                 }
@@ -58,46 +83,66 @@ struct RoutineListView: View {
                         .background(TN.comment.opacity(0.3))
                         .padding(.vertical, 12)
 
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            ForEach(store.routines) { routine in
-                                RoutineRow(
-                                    routine: routine,
-                                    onSelectPhase: { phase in
-                                        var updated = routine
-                                        updated.currentPhase = phase
-                                        store.updateRoutine(updated)
+                    // A List rather than a LazyVStack, so dragging a routine
+                    // into place is the platform's own reorder rather than a
+                    // hand-rolled gesture, and the accessible way through it is
+                    // the standard edit-mode reorder control rather than
+                    // something this screen has to invent. The chrome is
+                    // stripped back so the terminal cards look as they did.
+                    List {
+                        ForEach(store.routines) { routine in
+                            RoutineRow(
+                                routine: routine,
+                                onSelectPhase: { phase in
+                                    var updated = routine
+                                    updated.currentPhase = phase
+                                    store.updateRoutine(updated)
+                                }
+                            )
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    // Reordering is a whole-list mode, so a tap
+                                    // is a grab at the row rather than a
+                                    // request to start a workout.
+                                    guard !isReordering, routine.canStartWorkout else { return }
+                                    // Use the latest stored version so currentPhase is fresh.
+                                    selectedRoutine = store.routines.first(where: { $0.id == routine.id }) ?? routine
+                                }
+                                .contextMenu {
+                                    Button("Edit") {
+                                        editingRoutine = routine
                                     }
-                                )
-                                    .contentShape(Rectangle())
-                                    .onTapGesture {
-                                        guard routine.canStartWorkout else { return }
-                                        // Use the latest stored version so currentPhase is fresh.
-                                        selectedRoutine = store.routines.first(where: { $0.id == routine.id }) ?? routine
-                                    }
-                                    .contextMenu {
-                                        Button("Edit") {
-                                            editingRoutine = routine
-                                        }
-                                        Button("Export JSON") {
-                                            if let json = store.exportRoutineJSON(routine) {
-                                                UIPasteboard.general.string = json
-                                                showExportCopied = true
-                                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                                    showExportCopied = false
-                                                }
+                                    Button("Export JSON") {
+                                        if let json = store.exportRoutineJSON(routine) {
+                                            UIPasteboard.general.string = json
+                                            showExportCopied = true
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                                showExportCopied = false
                                             }
                                         }
-                                        Button("Delete", role: .destructive) {
-                                            if let idx = store.routines.firstIndex(where: { $0.id == routine.id }) {
-                                                store.deleteRoutine(at: IndexSet(integer: idx))
-                                            }
+                                    }
+                                    Button("Delete", role: .destructive) {
+                                        if let idx = store.routines.firstIndex(where: { $0.id == routine.id }) {
+                                            store.deleteRoutine(at: IndexSet(integer: idx))
                                         }
                                     }
-                            }
+                                }
+                                // After the tap and the context menu, so
+                                // reordering suppresses both. The row's own
+                                // drag chrome belongs to the List, not to this
+                                // content, so dragging still works.
+                                .allowsHitTesting(!isReordering)
+                                .listRowBackground(Color.clear)
+                                .listRowSeparator(.hidden)
+                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         }
-                        .padding(.horizontal)
+                        .onMove { offsets, destination in
+                            store.moveRoutines(fromOffsets: offsets, toOffset: destination)
+                        }
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .environment(\.editMode, .constant(isReordering ? .active : .inactive))
                 }
             }
             .navigationBarHidden(true)
@@ -168,6 +213,22 @@ private struct HeaderIcon: View {
     }
 }
 
+/// Icon hard against its text.
+///
+/// A `List` row gives its labels row-wide icon alignment, which pushes each
+/// icon away from its own text and wraps the stats line over two. The card
+/// wants the three stats reading as three tight pairs, the way they did before
+/// the list became a `List`.
+private struct StatLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon
+            configuration.title
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct RoutineRow: View {
     let routine: Routine
     let onSelectPhase: (WorkoutPhase) -> Void
@@ -188,6 +249,7 @@ struct RoutineRow: View {
                 Label("\(exerciseCount) exercises", systemImage: "figure.strengthtraining.traditional")
                 Label("\(setCount) sets", systemImage: "repeat")
             }
+            .labelStyle(StatLabelStyle())
             .terminalFont(12)
             .foregroundColor(TN.comment)
 
