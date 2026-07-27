@@ -2117,6 +2117,116 @@ final class CoachWorkflowTests: XCTestCase {
         }
     }
 
+    // MARK: - String bounds are UTF-16 code units (#72)
+
+    /// One grapheme, two UTF-16 code units, so 50 of these fill a 100-unit
+    /// bound and 51 overflow it. `count` would see 51 characters and let it
+    /// through, and the bridge would then refuse the patch.
+    private static let twoUnitGrapheme = "😀"
+    /// A combining acute accent: still one grapheme, still two code units,
+    /// and far likelier to turn up in a routine name than an emoji is.
+    private static let decomposedE = "e\u{0301}"
+
+    func testRoutineNameIsBoundedInUTF16CodeUnits() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+
+        let atTheBound = String(repeating: Self.twoUnitGrapheme, count: 50)
+        XCTAssertEqual(atTheBound.utf16.count, 100)
+        let accepted = try FlowRoutinePatcher.preview(
+            patch: renamePatch(for: routine, to: atTheBound),
+            routines: [routine]
+        )
+        XCTAssertEqual(accepted.updatedRoutine.name, atTheBound)
+
+        for overflowing in [
+            String(repeating: Self.twoUnitGrapheme, count: 51),
+            String(repeating: Self.decomposedE, count: 51)
+        ] {
+            XCTAssertEqual(overflowing.count, 51)
+            XCTAssertGreaterThan(overflowing.utf16.count, 100)
+            let patch = renamePatch(for: routine, to: overflowing)
+            XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+                guard case FlowRoutinePatchError.invalidValue("routine name", _) = error else {
+                    return XCTFail("Expected invalidValue on routine name, got \(error)")
+                }
+            }
+        }
+    }
+
+    func testSectionAndExerciseNamesAndNotesAreBoundedInUTF16CodeUnits() throws {
+        let exerciseId = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])
+        ])
+        let over200 = String(repeating: Self.twoUnitGrapheme, count: 101)
+        let over500 = String(repeating: Self.twoUnitGrapheme, count: 251)
+
+        let section = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(kind: .addSection, section: FlowRoutinePatchSection(id: UUID(), name: over200))
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: section, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("section.name", _) = error else {
+                return XCTFail("Expected invalidValue on section.name, got \(error)")
+            }
+        }
+
+        let exercise = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .addExercise,
+                sectionId: routine.sections[0].id,
+                exercise: ExerciseBlock(name: over200, sets: 3, reps: 8)
+            )
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: exercise, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("exercise.name", _) = error else {
+                return XCTFail("Expected invalidValue on exercise.name, got \(error)")
+            }
+        }
+
+        let notes = sectionPatch(for: routine, operations: [
+            FlowRoutinePatchOperation(
+                kind: .updateExerciseNotes,
+                exerciseId: exerciseId,
+                expectedStringValue: "",
+                newStringValue: over500
+            )
+        ])
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: notes, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.invalidValue("notes", _) = error else {
+                return XCTFail("Expected invalidValue on notes, got \(error)")
+            }
+        }
+    }
+
+    func testCreatedRoutineNamesAreBoundedInUTF16CodeUnits() throws {
+        var routine = newRoutine(name: String(repeating: Self.twoUnitGrapheme, count: 51))
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(routine), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("routine.name", _) = error else {
+                return XCTFail("Expected invalidValue on routine.name, got \(error)")
+            }
+        }
+
+        routine = newRoutine(name: "Lower A")
+        routine.sections[0].name = String(repeating: Self.twoUnitGrapheme, count: 101)
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(routine), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("routine.sections[0].name", _) = error else {
+                return XCTFail("Expected invalidValue on routine.sections[0].name, got \(error)")
+            }
+        }
+
+        routine = newRoutine(name: "Lower A")
+        routine.sections[0].exercises[0].notes = String(repeating: Self.twoUnitGrapheme, count: 251)
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(routine), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("exercise.notes", _) = error else {
+                return XCTFail("Expected invalidValue on exercise.notes, got \(error)")
+            }
+        }
+    }
+
     private func newRoutine(name: String, phase: WorkoutPhase = .base) -> Routine {
         Routine(
             id: UUID(),

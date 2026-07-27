@@ -64,6 +64,16 @@ Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `rep
 
 An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine`, `addSection` and `createRoutine` arrived in schema 3, so they are rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
 
+### How strings are bounded
+
+Bounded strings on the patch path are routine names (100), section names (200), exercise names (200) and notes (500). Every name is bounded after trimming. Routine and section names are also stored trimmed; an exercise name is bounded trimmed but stored as it arrived, which is a gap rather than a decision.
+
+The unit is UTF-16 code units on both sides, not characters. The two counts agree for most text and part company only where one character spans more than one code unit: anything outside the Basic Multilingual Plane, which is most emoji, and anything written as a base character plus combining marks, which covers accents typed as a sequence, joined emoji, decomposed Hangul, and scripts that hang dependent signs off a base letter such as Devanagari, Thai, and vocalised Arabic or Hebrew. Everyday Cyrillic, Greek, Arabic, Hebrew and CJK sit in the BMP at one code unit per letter and count the same either way. A name of 51 emoji is 51 characters and 102 code units, and it is over the 100 bound.
+
+UTF-16 is the unit because it is what the bridge's JavaScript measures without being asked. Note that `maxLength` in the published JSON schemas is formally a count of code points, so for emoji it promises the coach slightly more room than the bridge will actually take; that gap is between the coach and the bridge rather than between the app and the bridge. Swift bounds the same fields on `utf16.count` rather than `count`, so a name the app accepts is never one the coach is refused for proposing.
+
+Two differences are left standing, deliberately, and in both the refusal happens rather than something wrong being accepted. Swift compares strings under Unicode canonical equivalence and the bridge compares code unit for code unit, so an `expectedStringValue` written in a decomposed form conflicts at the bridge where it would have matched on the device. And the two sides trim slightly different whitespace: Swift's `whitespacesAndNewlines` takes U+0085 and JavaScript's `trim` does not, JavaScript's takes U+FEFF and Swift's does not. In both cases the fix is to copy the value out of the snapshot rather than retyping it.
+
 ### Creating a routine
 
 A patch aims at one of two things, chosen by `target`. The default, `existingRoutine`, is everything above: it edits a routine that is already there and carries `routineId` and `baseContentHash`. The other, `newRoutine`, proposes a routine that does not exist yet:
