@@ -213,6 +213,22 @@ private struct HeaderIcon: View {
     }
 }
 
+/// Icon hard against its text.
+///
+/// A `List` row gives its labels row-wide icon alignment, which pushes each
+/// icon away from its own text and wraps the stats line over two. The card
+/// wants the three stats reading as three tight pairs, the way they did before
+/// the list became a `List`.
+private struct StatLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 5) {
+            configuration.icon
+            configuration.title
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct RoutineRow: View {
     let routine: Routine
     let onSelectPhase: (WorkoutPhase) -> Void
@@ -233,6 +249,7 @@ struct RoutineRow: View {
                 Label("\(exerciseCount) exercises", systemImage: "figure.strengthtraining.traditional")
                 Label("\(setCount) sets", systemImage: "repeat")
             }
+            .labelStyle(StatLabelStyle())
             .terminalFont(12)
             .foregroundColor(TN.comment)
 
