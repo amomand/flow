@@ -12,6 +12,7 @@
     "removeExercise": 2,
     "moveExercise": 2,
     "replacePhaseOverride": 2,
-    "renameRoutine": 3
+    "renameRoutine": 3,
+    "addSection": 3
   }
 }

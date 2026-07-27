@@ -121,6 +121,19 @@ const exerciseProperty = {
   required: ["id", "name", "sets", "reps", "restBetweenSetsSeconds", "restAfterExerciseSeconds", "notes", "perSide"],
   additionalProperties: false,
 };
+const sectionProperty = {
+  type: "object",
+  description:
+    "A new, empty section, only for addSection. Give it a fresh UUID and add exercises to it with later " +
+    "addExercise operations. The name is stored trimmed, and the 1 to 200 character bound is measured " +
+    "after trimming.",
+  properties: {
+    id: uuidProperty,
+    name: { type: "string", minLength: 1, maxLength: 200 },
+  },
+  required: ["id", "name"],
+  additionalProperties: false,
+};
 const patchProperty = {
   type: "object",
   description:
@@ -158,6 +171,15 @@ const patchProperty = {
         "snapshot shows it) and newStringValue (1 to 100 characters); it takes no exerciseId. A routine " +
         "name sits outside baseContentHash, so expectedStringValue is the only staleness guard a rename " +
         "has and a wrong one is a conflict, not a detail. " +
+        "addSection (schema 3) needs section ({ id: a fresh UUID, name }), optionally afterSectionId to " +
+        "place it after an existing section rather than at the end. Sections arrive empty; fill one with " +
+        "addExercise operations later in the same patch, referencing the id you just generated. " +
+        "Operations apply in array order and each sees what the ones before it did, so addSection then " +
+        "addExercise into that section is valid, as is addExercise then moveExercise on the exercise you " +
+        "just added, and a second renameRoutine reads the name the first one set. " +
+        "Ceilings, which a patch may not push a routine past: 50 sections, and 100 exercises in any one " +
+        "section. A routine beyond either stops fitting in a coach snapshot and would drop out of view " +
+        "entirely at the next sync. A patch may also not leave a routine with no exercises at all. " +
         "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps. " +
         "Base-value operations (replaceExerciseReps, replaceExerciseSets, replaceTimedDuration) change the " +
         "base value only and do not cascade into phaseOverrides: an exercise with a peak or deload override " +
@@ -167,10 +189,23 @@ const patchProperty = {
         type: "object",
         properties: {
           kind: { type: "string", enum: OPERATION_KINDS },
-          exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise and renameRoutine; must exist in the routine." },
+          exerciseId: {
+            ...uuidProperty,
+            description:
+              "The exercise being changed; it must already exist in the routine, or have been added " +
+              "earlier in this same patch. Not used by addExercise, addSection, or renameRoutine.",
+          },
           sectionId: { ...uuidProperty, description: "For addExercise: the section to add into." },
           targetSectionId: { ...uuidProperty, description: "For moveExercise: the destination section." },
-          afterExerciseId: { ...uuidProperty, description: "Optional anchor: place after this exercise." },
+          afterSectionId: { ...uuidProperty, description: "Optional anchor for addSection: place after this section." },
+          afterExerciseId: {
+            ...uuidProperty,
+            description:
+              "Optional anchor for addExercise and moveExercise: place after this exercise. It must be an " +
+              "exercise in the section being added to or moved into, and it cannot be the exercise the " +
+              "operation is itself adding or moving. Ignored by every other kind.",
+          },
+          section: sectionProperty,
           phase: { ...phaseProperty, description: "For replacePhaseOverride: peak or deload only." },
           expectedIntValue: { type: "integer", description: "The current value as shown in the snapshot." },
           newIntValue: {

@@ -25,12 +25,25 @@ struct FlowRoutinePatch: Codable, Equatable {
     let operations: [FlowRoutinePatchOperation]
 }
 
+/// A section arriving with a patch.
+///
+/// Deliberately not `Section`: a section a patch adds is always empty, and
+/// carrying exercises here would be a second way to add them, bypassing the
+/// per-exercise validation `addExercise` already does. Fill a new section with
+/// `addExercise` operations later in the same patch.
+struct FlowRoutinePatchSection: Codable, Equatable {
+    let id: UUID
+    let name: String
+}
+
 struct FlowRoutinePatchOperation: Codable, Equatable {
     var kind: Kind
     var exerciseId: UUID? = nil
     var sectionId: UUID? = nil
     var targetSectionId: UUID? = nil
+    var afterSectionId: UUID? = nil
     var afterExerciseId: UUID? = nil
+    var section: FlowRoutinePatchSection? = nil
     var phase: WorkoutPhase? = nil
     var expectedIntValue: Int? = nil
     var newIntValue: Int? = nil
@@ -53,6 +66,7 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
         case moveExercise
         case replacePhaseOverride
         case renameRoutine
+        case addSection
 
         /// The first schema version this operation belongs to. A patch may
         /// only use operations its declared version knows about, so a coach
@@ -60,7 +74,7 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
         /// operation through under the older version number.
         var minimumSchemaVersion: Int {
             switch self {
-            case .renameRoutine:
+            case .renameRoutine, .addSection:
                 return 3
             default:
                 return 2
@@ -196,6 +210,9 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case invalidValue(field: String, message: String)
     case noOperations
     case wouldEmptyRoutine
+    case duplicateSectionId(UUID)
+    case tooManySections(Int)
+    case tooManyExercisesInSection(section: String, limit: Int)
     case operationNeedsNewerSchema(kind: String, minimum: Int, declared: Int)
     case persistenceFailed(String)
 
@@ -227,6 +244,12 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Routine patch does not include any operations."
         case .wouldEmptyRoutine:
             return "Routine patch would leave the routine empty."
+        case .duplicateSectionId(let id):
+            return "Section id \(id.uuidString) already exists in this routine."
+        case .tooManySections(let limit):
+            return "Routine patch would take the routine past \(limit) sections."
+        case .tooManyExercisesInSection(let section, let limit):
+            return "Routine patch would take \(section) past \(limit) exercises."
         case .persistenceFailed(let message):
             return "The routine patch was not saved: \(message)"
         }
@@ -234,6 +257,17 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
 }
 
 enum FlowRoutinePatcher {
+    /// Matches the bridge's `routineSchema`, which will not carry a routine
+    /// with more sections than this. A cap here is not about what a training
+    /// block should look like; it is about not letting a patch push a routine
+    /// out of the range the coach can still read back.
+    static let maximumSections = 50
+
+    /// Also from the bridge's `routineSchema`, for the same reason: a section
+    /// pushed past this stops fitting in a snapshot, so the routine would drop
+    /// out of the coach's view at the next sync.
+    static let maximumExercisesPerSection = 100
+
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
         guard let data = cleaned.data(using: .utf8) else {
@@ -458,6 +492,12 @@ enum FlowRoutinePatcher {
             guard findExercise(in: routine, id: exercise.id) == nil else {
                 throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
             }
+            guard routine.sections[sectionIndex].exercises.count < Self.maximumExercisesPerSection else {
+                throw FlowRoutinePatchError.tooManyExercisesInSection(
+                    section: routine.sections[sectionIndex].name,
+                    limit: Self.maximumExercisesPerSection
+                )
+            }
             let insertIndex: Int
             if let afterExerciseId = operation.afterExerciseId {
                 let after = try exerciseLocation(in: routine, id: afterExerciseId)
@@ -498,6 +538,12 @@ enum FlowRoutinePatcher {
             let source = try exerciseLocation(in: routine, id: id)
             let moving = routine.sections[source.sectionIndex].exercises.remove(at: source.exerciseIndex)
             let targetSectionIndex = try sectionIndex(in: routine, id: targetSectionId)
+            guard routine.sections[targetSectionIndex].exercises.count < Self.maximumExercisesPerSection else {
+                throw FlowRoutinePatchError.tooManyExercisesInSection(
+                    section: routine.sections[targetSectionIndex].name,
+                    limit: Self.maximumExercisesPerSection
+                )
+            }
             let insertIndex: Int
             if let afterExerciseId = operation.afterExerciseId {
                 let after = try exerciseLocation(in: routine, id: afterExerciseId)
@@ -517,6 +563,40 @@ enum FlowRoutinePatcher {
                 title: "Move exercise",
                 before: "\(routine.sections[source.sectionIndex].name): \(moving.name)",
                 after: "\(routine.sections[targetSectionIndex].name): \(moving.name)"
+            )
+
+        case .addSection:
+            guard let section = operation.section else {
+                throw FlowRoutinePatchError.missingField("section")
+            }
+            let name = section.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must not be empty")
+            }
+            guard name.count <= 200 else {
+                throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must be 200 characters or fewer")
+            }
+            guard !routine.sections.contains(where: { $0.id == section.id }) else {
+                throw FlowRoutinePatchError.duplicateSectionId(section.id)
+            }
+            // The bridge cannot carry a routine with more sections than this
+            // in a snapshot, so a routine allowed past the ceiling would drop
+            // out of the coach's view entirely at the next sync.
+            guard routine.sections.count < Self.maximumSections else {
+                throw FlowRoutinePatchError.tooManySections(Self.maximumSections)
+            }
+            let insertIndex: Int
+            if let afterSectionId = operation.afterSectionId {
+                insertIndex = try sectionIndex(in: routine, id: afterSectionId) + 1
+            } else {
+                insertIndex = routine.sections.count
+            }
+            routine.sections.insert(Section(id: section.id, name: name, exercises: []), at: insertIndex)
+            return FlowRoutinePatchDiff(
+                operationIndex: operationIndex,
+                title: "Add section",
+                before: "[not present]",
+                after: "\(name) (empty)"
             )
 
         case .renameRoutine:
