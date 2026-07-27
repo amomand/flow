@@ -64,6 +64,14 @@ Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `rep
 
 An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine`, `addSection` and `createRoutine` arrived in schema 3, so they are rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
 
+### How strings are bounded
+
+Bounded strings on the patch path are routine names (100), section names (200), exercise names (200) and notes (500). Names are measured after trimming, which is also how they are stored.
+
+The unit is UTF-16 code units on both sides, not characters. It matters as soon as a string leaves ASCII: an emoji is usually two code units, so is a letter written as a base character plus a combining accent, and so is most of any non-Latin script. A name of 51 emoji is 51 characters and 102 code units, and it is over the 100 bound. UTF-16 is the unit because it is what the JSON schemas the coach reads already describe, and what JavaScript measures without being asked. Swift bounds the same fields on `utf16.count` rather than `count` so a name the app accepts is never one the coach is refused for proposing.
+
+One difference is left standing, deliberately. Swift compares strings under Unicode canonical equivalence and the bridge compares code unit for code unit, so an `expectedStringValue` written in a decomposed form conflicts at the bridge where it would have matched on the device. The bridge is the stricter side, so nothing unsafe passes; the cost is a rejection, and the fix is to copy the value out of the snapshot rather than retyping it.
+
 ### Creating a routine
 
 A patch aims at one of two things, chosen by `target`. The default, `existingRoutine`, is everything above: it edits a routine that is already there and carries `routineId` and `baseContentHash`. The other, `newRoutine`, proposes a routine that does not exist yet:

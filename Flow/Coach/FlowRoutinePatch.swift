@@ -512,9 +512,7 @@ enum FlowRoutinePatcher {
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must not be empty")
         }
-        guard name.count <= 100 else {
-            throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must be 100 characters or fewer")
-        }
+        try check(name, atMost: 100, field: "routine.name")
         guard !routine.sections.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.sections", message: "must contain at least one section")
         }
@@ -535,9 +533,7 @@ enum FlowRoutinePatcher {
             guard !sectionName.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: field, message: "must not be empty")
             }
-            guard sectionName.count <= 200 else {
-                throw FlowRoutinePatchError.invalidValue(field: field, message: "must be 200 characters or fewer")
-            }
+            try check(sectionName, atMost: 200, field: field)
             created.sections[index].name = sectionName
 
             guard sectionIds.insert(created.sections[index].id).inserted else {
@@ -740,9 +736,7 @@ enum FlowRoutinePatcher {
 
         case .updateExerciseNotes:
             let value = try requireString(operation.newStringValue, "newStringValue")
-            guard value.count <= 500 else {
-                throw FlowRoutinePatchError.invalidValue(field: "notes", message: "must be 500 characters or fewer")
-            }
+            try check(value, atMost: 500, field: "notes")
             let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
             var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
             try expectString(operation.expectedStringValue, actual: exercise.notes, field: "\(exercise.name) notes")
@@ -853,9 +847,7 @@ enum FlowRoutinePatcher {
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must not be empty")
             }
-            guard name.count <= 200 else {
-                throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must be 200 characters or fewer")
-            }
+            try check(name, atMost: 200, field: "section.name")
             guard !routine.sections.contains(where: { $0.id == section.id }) else {
                 throw FlowRoutinePatchError.duplicateSectionId(section.id)
             }
@@ -885,9 +877,7 @@ enum FlowRoutinePatcher {
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must not be empty")
             }
-            guard name.count <= 100 else {
-                throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must be 100 characters or fewer")
-            }
+            try check(name, atMost: 100, field: "routine name")
             // The routine name sits outside `contentHash`, which covers
             // sections only, so a stale-hash rebase can never notice a rename
             // that landed in between. `expectedStringValue` is the whole
@@ -1086,6 +1076,29 @@ enum FlowRoutinePatcher {
         }
     }
 
+    /**
+     Bound a string the way the bridge bounds it: in UTF-16 code units.
+
+     Swift's `count` is grapheme clusters, and the bridge's `length` and the
+     JSON schemas the coach reads are UTF-16 code units. The two disagree for
+     emoji, combining marks and most non-Latin scripts, so a name of 100 emoji
+     is 100 to the app and 200 to the bridge. The bridge was the stricter side
+     everywhere, which meant a name the app accepted was one the coach could
+     not propose, and the rejection made no sense to the person who typed it.
+
+     UTF-16 is the contract because it is what the published schemas already
+     describe. Teaching JavaScript about grapheme clusters is the more correct
+     direction and far more work for a difference nobody hits deliberately.
+
+     Every bounded string on the patch path goes through here so the unit is
+     stated once rather than rediscovered per field.
+     */
+    private static func check(_ value: String, atMost limit: Int, field: String) throws {
+        guard value.utf16.count <= limit else {
+            throw FlowRoutinePatchError.invalidValue(field: field, message: "must be \(limit) characters or fewer")
+        }
+    }
+
     private static func validateExercise(_ exercise: ExerciseBlock) throws {
         let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
@@ -1095,9 +1108,7 @@ enum FlowRoutinePatcher {
         // store a name the next snapshot upload would refuse, taking the whole
         // routine out of the coach's view. Bounded on the trimmed name, which
         // is what the bridge measures.
-        guard name.count <= 200 else {
-            throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must be 200 characters or fewer")
-        }
+        try check(name, atMost: 200, field: "exercise.name")
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
         try validate(exercise.reps, field: "exercise.reps", range: 1...100)
         if let duration = exercise.durationSeconds {
@@ -1105,9 +1116,7 @@ enum FlowRoutinePatcher {
         }
         try validate(exercise.restBetweenSetsSeconds, field: "exercise.restBetweenSetsSeconds", range: 0...900)
         try validate(exercise.restAfterExerciseSeconds, field: "exercise.restAfterExerciseSeconds", range: 0...900)
-        guard exercise.notes.count <= 500 else {
-            throw FlowRoutinePatchError.invalidValue(field: "exercise.notes", message: "must be 500 characters or fewer")
-        }
+        try check(exercise.notes, atMost: 500, field: "exercise.notes")
         for override in exercise.phaseOverrides.values {
             try validatePhaseOverride(override)
         }
