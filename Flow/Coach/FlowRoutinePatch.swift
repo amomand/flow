@@ -548,7 +548,7 @@ enum FlowRoutinePatcher {
             for exerciseIndex in created.sections[index].exercises.indices {
                 var exercise = created.sections[index].exercises[exerciseIndex]
                 exercise.phaseOverrides = exercise.phaseOverrides.filter { !$0.value.isEmpty }
-                try validateExercise(exercise)
+                exercise = try validatedExercise(exercise)
                 guard exerciseIds.insert(exercise.id).inserted else {
                     throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
                 }
@@ -755,7 +755,7 @@ enum FlowRoutinePatcher {
             let sectionIndex = try sectionIndex(in: routine, id: sectionId)
             var exercise = try requireExercise(operation.exercise, "exercise")
             exercise.phaseOverrides = exercise.phaseOverrides.filter { !$0.value.isEmpty }
-            try validateExercise(exercise)
+            exercise = try validatedExercise(exercise)
             guard findExercise(in: routine, id: exercise.id) == nil else {
                 throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
             }
@@ -1107,7 +1107,25 @@ enum FlowRoutinePatcher {
         }
     }
 
-    private static func validateExercise(_ exercise: ExerciseBlock) throws {
+    /**
+     Check an exercise and hand back the version that may be stored.
+
+     Returns rather than validating in place because the name has to be stored
+     as it was measured. Bounding the trimmed name and then storing the
+     untrimmed one leaves the app holding a name longer than the bound it just
+     enforced, and the two sides do not trim the same characters: Swift's
+     `whitespacesAndNewlines` takes U+0085 where JavaScript's `trim` does not.
+     A name of 200 letters and a trailing U+0085 passed here at 200 and was
+     stored at 201, and the next snapshot upload then failed whole, taking
+     every routine out of the coach's view rather than failing anywhere the
+     person could see.
+
+     Routine and section names have always been written back this way; this is
+     the exercise name catching up, and it is what the retry check above
+     already assumes when it calls the stored routine "names trimmed".
+     */
+    private static func validatedExercise(_ exercise: ExerciseBlock) throws -> ExerciseBlock {
+        var stored = exercise
         let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must not be empty")
@@ -1117,6 +1135,7 @@ enum FlowRoutinePatcher {
         // routine out of the coach's view. Bounded on the trimmed name, which
         // is what the bridge measures.
         try check(name, atMost: 200, field: "exercise.name")
+        stored.name = name
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
         try validate(exercise.reps, field: "exercise.reps", range: 1...100)
         if let duration = exercise.durationSeconds {
@@ -1128,6 +1147,7 @@ enum FlowRoutinePatcher {
         for override in exercise.phaseOverrides.values {
             try validatePhaseOverride(override)
         }
+        return stored
     }
 
     private static func validatePhaseOverride(_ override: PhaseOverride) throws {

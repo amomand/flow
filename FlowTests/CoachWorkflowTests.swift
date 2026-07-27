@@ -2202,6 +2202,87 @@ final class CoachWorkflowTests: XCTestCase {
         }
     }
 
+    /// Bounding the trimmed name and storing the untrimmed one leaves the app
+    /// holding a name longer than the bound it just enforced. The bridge then
+    /// refuses the whole snapshot, and every routine leaves the coach's view.
+    func testAddedExerciseNameIsStoredTheWayItWasMeasured() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        let padded = "  Trap Bar Deadlift\n"
+
+        let preview = try FlowRoutinePatcher.preview(
+            patch: sectionPatch(for: routine, operations: [
+                FlowRoutinePatchOperation(
+                    kind: .addExercise,
+                    sectionId: routine.sections[0].id,
+                    exercise: ExerciseBlock(name: padded, sets: 3, reps: 5)
+                )
+            ]),
+            routines: [routine]
+        )
+
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises.last?.name, "Trap Bar Deadlift")
+    }
+
+    /// U+0085 is whitespace to Swift and not to JavaScript, so this is the
+    /// name that actually got through at 200 and was stored at 201.
+    func testAnExerciseNameAtTheBoundIsStoredAtTheBound() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        let atTheBound = String(repeating: "x", count: 200) + "\u{0085}"
+        XCTAssertEqual(atTheBound.utf16.count, 201)
+
+        let preview = try FlowRoutinePatcher.preview(
+            patch: sectionPatch(for: routine, operations: [
+                FlowRoutinePatchOperation(
+                    kind: .addExercise,
+                    sectionId: routine.sections[0].id,
+                    exercise: ExerciseBlock(name: atTheBound, sets: 3, reps: 5)
+                )
+            ]),
+            routines: [routine]
+        )
+
+        let stored = try XCTUnwrap(preview.updatedRoutine.sections[0].exercises.last?.name)
+        XCTAssertEqual(stored.utf16.count, 200)
+    }
+
+    func testCreatedRoutineExerciseNamesAreStoredTrimmed() throws {
+        var routine = newRoutine(name: "Lower A")
+        routine.sections[0].exercises[0].name = "  Trap Bar Deadlift  "
+        routine.sections[1].exercises[0].name = "Calf Raise\u{0085}"
+
+        let preview = try FlowRoutinePatcher.preview(patch: createPatch(routine), routines: [])
+
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].name, "Trap Bar Deadlift")
+        XCTAssertEqual(preview.updatedRoutine.sections[1].exercises[0].name, "Calf Raise")
+    }
+
+    /// The retry check hashes the normalised routine, so a redraft that only
+    /// differs by whitespace around an exercise name is the same routine.
+    func testWhitespaceOnlyRedraftOfACreateIsStillTheSameRoutine() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let routine = newRoutine(name: "Lower A")
+
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(createPatch(routine))),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the create to apply")
+        }
+
+        var redraft = routine
+        redraft.sections[0].exercises[0].name = "  \(routine.sections[0].exercises[0].name)  "
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(redraft), routines: store.routines)) { error in
+            guard case FlowRoutinePatchError.routineAlreadyExists = error else {
+                return XCTFail("Expected routineAlreadyExists, got \(error)")
+            }
+        }
+    }
+
     func testCreatedRoutineNamesAreBoundedInUTF16CodeUnits() throws {
         var routine = newRoutine(name: String(repeating: Self.twoUnitGrapheme, count: 51))
         XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(routine), routines: [])) { error in
