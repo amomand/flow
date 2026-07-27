@@ -66,7 +66,7 @@ An operation belongs to the schema version that introduced it, and a patch may o
 
 ### How strings are bounded
 
-Bounded strings on the patch path are routine names (100), section names (200), exercise names (200) and notes (500). Every name is bounded after trimming. Routine and section names are also stored trimmed; an exercise name is bounded trimmed but stored as it arrived, which is a gap rather than a decision.
+Bounded strings on the patch path are routine names (100), section names (200), exercise names (200) and notes (500). Every name is bounded after trimming, and stored the way it was measured. That matters more than it sounds: the two sides do not trim quite the same characters, so a name bounded trimmed and then stored untrimmed can sit above the bound the app has just enforced, and the next snapshot upload fails whole rather than anywhere the person can see.
 
 The unit is UTF-16 code units on both sides, not characters. The two counts agree for most text and part company only where one character spans more than one code unit: anything outside the Basic Multilingual Plane, which is most emoji, and anything written as a base character plus combining marks, which covers accents typed as a sequence, joined emoji, decomposed Hangul, and scripts that hang dependent signs off a base letter such as Devanagari, Thai, and vocalised Arabic or Hebrew. Everyday Cyrillic, Greek, Arabic, Hebrew and CJK sit in the BMP at one code unit per letter and count the same either way. A name of 51 emoji is 51 characters and 102 code units, and it is over the 100 bound.
 
