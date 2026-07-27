@@ -85,10 +85,10 @@ struct RoutineListView: View {
 
                     // A List rather than a LazyVStack, so dragging a routine
                     // into place is the platform's own reorder rather than a
-                    // hand-rolled gesture. That also brings VoiceOver's
-                    // "Reorder" rotor for free, which is the accessible
-                    // alternative to dragging. The chrome is stripped back so
-                    // the terminal cards look exactly as they did.
+                    // hand-rolled gesture, and the accessible way through it is
+                    // the standard edit-mode reorder control rather than
+                    // something this screen has to invent. The chrome is
+                    // stripped back so the terminal cards look as they did.
                     List {
                         ForEach(store.routines) { routine in
                             RoutineRow(
