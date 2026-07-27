@@ -508,7 +508,7 @@ enum FlowRoutinePatcher {
             throw FlowRoutinePatchError.missingField("routine")
         }
 
-        let name = routine.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmedName(routine.name)
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must not be empty")
         }
@@ -529,7 +529,7 @@ enum FlowRoutinePatcher {
             // The field name reaches the person reading the error, and a
             // create can carry many sections, so it has to say which one.
             let field = "routine.sections[\(index)].name"
-            let sectionName = created.sections[index].name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let sectionName = trimmedName(created.sections[index].name)
             guard !sectionName.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: field, message: "must not be empty")
             }
@@ -548,7 +548,7 @@ enum FlowRoutinePatcher {
             for exerciseIndex in created.sections[index].exercises.indices {
                 var exercise = created.sections[index].exercises[exerciseIndex]
                 exercise.phaseOverrides = exercise.phaseOverrides.filter { !$0.value.isEmpty }
-                try validateExercise(exercise)
+                exercise = try validatedExercise(exercise)
                 guard exerciseIds.insert(exercise.id).inserted else {
                     throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
                 }
@@ -755,7 +755,7 @@ enum FlowRoutinePatcher {
             let sectionIndex = try sectionIndex(in: routine, id: sectionId)
             var exercise = try requireExercise(operation.exercise, "exercise")
             exercise.phaseOverrides = exercise.phaseOverrides.filter { !$0.value.isEmpty }
-            try validateExercise(exercise)
+            exercise = try validatedExercise(exercise)
             guard findExercise(in: routine, id: exercise.id) == nil else {
                 throw FlowRoutinePatchError.duplicateExerciseId(exercise.id)
             }
@@ -843,7 +843,7 @@ enum FlowRoutinePatcher {
             guard let section = operation.section else {
                 throw FlowRoutinePatchError.missingField("section")
             }
-            let name = section.name.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = trimmedName(section.name)
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must not be empty")
             }
@@ -873,7 +873,7 @@ enum FlowRoutinePatcher {
 
         case .renameRoutine:
             let value = try requireString(operation.newStringValue, "newStringValue")
-            let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = trimmedName(value)
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must not be empty")
             }
@@ -1077,6 +1077,28 @@ enum FlowRoutinePatcher {
     }
 
     /**
+     What counts as padding around a name, on both sides at once.
+
+     Swift's `whitespacesAndNewlines` and JavaScript's `trim` very nearly
+     agree. The one character JavaScript strips and Swift does not is U+FEFF,
+     and Swift strips U+0085 and U+200B where JavaScript does not. Adding
+     U+FEFF here makes the app's set a superset of the bridge's, which is what
+     makes the two sides agree rather than merely trim similarly: a name
+     trimmed with this set has nothing left at either end that the bridge would
+     strip, so the bridge's own trim is a no-op on it, and the length the app
+     measured is the length the bridge measures.
+
+     Without that, a name of a single U+FEFF was not empty to the app, was
+     stored, and was then empty to the bridge, which refuses the whole snapshot
+     rather than one routine.
+     */
+    private static let namePadding = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}"))
+
+    private static func trimmedName(_ value: String) -> String {
+        value.trimmingCharacters(in: namePadding)
+    }
+
+    /**
      Bound a string the way the bridge bounds it: in UTF-16 code units.
 
      Swift's `count` is grapheme clusters and the bridge's `length` is UTF-16
@@ -1107,16 +1129,34 @@ enum FlowRoutinePatcher {
         }
     }
 
-    private static func validateExercise(_ exercise: ExerciseBlock) throws {
-        let name = exercise.name.trimmingCharacters(in: .whitespacesAndNewlines)
+    /**
+     Check an exercise and hand back the version that may be stored.
+
+     Returns rather than validating in place because the name has to be stored
+     as it was measured. Bounding the trimmed name and then storing the
+     untrimmed one leaves the app holding a name longer than the bound it just
+     enforced, and the two sides do not trim the same characters: Swift's
+     `whitespacesAndNewlines` takes U+0085 where JavaScript's `trim` does not.
+     A name of 200 letters and a trailing U+0085 passed here at 200 and was
+     stored at 201, and the next snapshot upload then failed whole, taking
+     every routine out of the coach's view rather than failing anywhere the
+     person could see.
+
+     Routine and section names have always been written back this way; this is
+     the exercise name catching up, and it is what the retry check above
+     already assumes when it calls the stored routine "names trimmed".
+     */
+    private static func validatedExercise(_ exercise: ExerciseBlock) throws -> ExerciseBlock {
+        var stored = exercise
+        let name = trimmedName(exercise.name)
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "exercise.name", message: "must not be empty")
         }
-        // The bridge caps this at 200 and the app did not, so a patch could
-        // store a name the next snapshot upload would refuse, taking the whole
-        // routine out of the coach's view. Bounded on the trimmed name, which
-        // is what the bridge measures.
+        // Bounded and stored on the trimmed name, which is what the bridge
+        // measures and what it will hold. The snapshot is validated whole, so
+        // one name over this ceiling costs the coach every routine, not one.
         try check(name, atMost: 200, field: "exercise.name")
+        stored.name = name
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
         try validate(exercise.reps, field: "exercise.reps", range: 1...100)
         if let duration = exercise.durationSeconds {
@@ -1128,6 +1168,7 @@ enum FlowRoutinePatcher {
         for override in exercise.phaseOverrides.values {
             try validatePhaseOverride(override)
         }
+        return stored
     }
 
     private static func validatePhaseOverride(_ override: PhaseOverride) throws {
