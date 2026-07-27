@@ -350,6 +350,96 @@ function workingRoutine(routine: Routine) {
 
 type WorkingRoutine = ReturnType<typeof workingRoutine>;
 
+/**
+ * The exercise field each numeric replace reads and writes, with the range the
+ * new value has to sit in.
+ *
+ * Field and range together, because they are the same fact: an operation that
+ * compares `expectedIntValue` against one field has to write `newIntValue`
+ * back to that same field, or a second operation on it later in the patch
+ * would read the snapshot's value while the app reads the first operation's
+ * result.
+ */
+const NUMERIC_REPLACES = {
+  replaceExerciseReps: { field: "reps", range: [1, 100], name: "reps" },
+  replaceExerciseSets: { field: "sets", range: [1, 10], name: "sets" },
+  replaceTimedDuration: { field: "durationSeconds", range: [1, 3600], name: "duration" },
+  replaceRestBetweenSets: { field: "restBetweenSetsSeconds", range: [0, 900], name: "rest between sets" },
+  replaceRestAfterExercise: { field: "restAfterExerciseSeconds", range: [0, 900], name: "rest after exercise" },
+} as const satisfies Record<string, { field: keyof Exercise; range: readonly [number, number]; name: string }>;
+
+/**
+ * Replace one exercise in the working set with a changed copy.
+ *
+ * Copied rather than mutated: the working set holds the snapshot's own
+ * exercise objects, and writing through them would edit the context the
+ * caller passed in, leaving a rejected patch's half-applied values behind for
+ * whatever reads that context next.
+ */
+function recordExerciseChange(working: WorkingRoutine, id: string, change: Partial<Exercise>): void {
+  const entry = working.exercises.get(id);
+  if (!entry) return;
+  working.exercises.set(id, { exercise: { ...entry.exercise, ...change }, sectionId: entry.sectionId });
+}
+
+/**
+ * Notes as Flow shows them in a diff, so an empty value reads as something.
+ *
+ * Quoted by `JSON.stringify` rather than by hand: notes are free text, and a
+ * quote or a newline in them would otherwise close the quoting early and leave
+ * the coach reading a message it cannot tell apart from the value.
+ */
+function describeNotes(notes: string): string {
+  return notes.length === 0 ? "[no notes]" : JSON.stringify(notes);
+}
+
+type PhaseOverride = z.infer<typeof phaseOverride>;
+
+/**
+ * Whether two overrides are the value Flow would call equal.
+ *
+ * Field by field rather than by shape, because JSON distinguishes an absent
+ * key from an explicit `undefined` and Swift's struct does not. Absence is
+ * still not emptiness: Flow compares `Optional<PhaseOverride>`, where no
+ * override at all and an override with nothing set are different values, and
+ * it never stores the empty one. Collapsing them here would accept an
+ * expectation the phone refuses.
+ */
+function sameOverride(left: PhaseOverride | undefined, right: PhaseOverride | undefined): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  return left.sets === right.sets && left.reps === right.reps && left.durationSeconds === right.durationSeconds;
+}
+
+/**
+ * An added exercise's overrides as Flow will actually store them.
+ *
+ * `addExercise` drops empty overrides before inserting, and Flow's decoder
+ * keeps `base`, `peak` and `deload` and silently drops every other key.
+ * Neither is a rejection on the app's side, so the bridge mirrors both rather
+ * than refusing: what matters is that the working copy holds what the phone
+ * would hold, or a later operation in the same patch reads an override the app
+ * has already thrown away.
+ */
+function storedOverrides(overrides: Record<string, PhaseOverride>): Record<string, PhaseOverride> {
+  const kept: Record<string, PhaseOverride> = {};
+  for (const [key, override] of Object.entries(overrides)) {
+    if (!phase.safeParse(key).success) continue;
+    if (Object.values(override).every((value) => value === undefined)) continue;
+    kept[key] = override;
+  }
+  return kept;
+}
+
+function describeOverride(override: PhaseOverride | undefined): string {
+  if (!override) return "no override";
+  const parts = [
+    override.sets === undefined ? undefined : `${override.sets} sets`,
+    override.reps === undefined ? undefined : `${override.reps} reps`,
+    override.durationSeconds === undefined ? undefined : `${override.durationSeconds}s`,
+  ].filter((part) => part !== undefined);
+  return parts.length === 0 ? "an empty override" : parts.join(", ");
+}
+
 function countIn(working: WorkingRoutine, sectionId: string): number {
   let count = 0;
   for (const entry of working.exercises.values()) if (entry.sectionId === sectionId) count += 1;
@@ -540,10 +630,6 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
   const working = workingRoutine(routine);
   const startedWithExercises = working.exercises.size > 0;
   let workingName = routine.name;
-  const ranges: Record<string, [number, number]> = {
-    replaceExerciseReps: [1, 100], replaceExerciseSets: [1, 10], replaceTimedDuration: [1, 3600],
-    replaceRestBetweenSets: [0, 900], replaceRestAfterExercise: [0, 900],
-  };
   patch.operations.forEach((operation, index) => {
     const path = (field: string) => `operations.${index}.${field}`;
     if (!capabilities.operationKinds.includes(operation.kind)) {
@@ -560,18 +646,66 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
     const needsExercise = !["addExercise", "renameRoutine", "addSection"].includes(operation.kind);
     const located = operation.exerciseId ? working.exercises.get(operation.exerciseId) : undefined;
     if (needsExercise && !located) problems.push({ path: path("exerciseId"), message: "exercise is required and must exist in this routine" });
-    const range = ranges[operation.kind];
-    if (range) {
-      if (operation.expectedIntValue === undefined) problems.push({ path: path("expectedIntValue"), message: "expectedIntValue is required" });
-      if (operation.newIntValue === undefined || operation.newIntValue < range[0] || operation.newIntValue > range[1]) {
-        problems.push({ path: path("newIntValue"), message: `newIntValue must be between ${range[0]} and ${range[1]}` });
+    const numeric = operation.kind in NUMERIC_REPLACES
+      ? NUMERIC_REPLACES[operation.kind as keyof typeof NUMERIC_REPLACES]
+      : undefined;
+    // Whether the exercise is timed decides which operation may touch it at
+    // all, so it is read before the numeric checks and reused by them: a
+    // replaceTimedDuration against an untimed exercise has no current value to
+    // compare an expectation with, and saying so twice helps nobody.
+    const timed = located?.exercise.durationSeconds !== undefined;
+    const wrongKindForExercise = (operation.kind === "replaceTimedDuration" && !timed)
+      || (operation.kind === "replaceExerciseReps" && timed);
+    // Both gated on the exercise existing: an absent exercise is already
+    // reported above, and "exercise is not timed" about an exercise that is
+    // not there sends the coach looking for the wrong thing.
+    if (located && operation.kind === "replaceTimedDuration" && !timed) problems.push({ path: path("kind"), message: "exercise is not timed" });
+    if (located && operation.kind === "replaceExerciseReps" && timed) problems.push({ path: path("kind"), message: "timed exercise requires replaceTimedDuration" });
+    if (numeric) {
+      const [low, high] = numeric.range;
+      const current = located?.exercise[numeric.field];
+      if (operation.expectedIntValue === undefined) {
+        problems.push({ path: path("expectedIntValue"), message: `the current ${numeric.name} is required` });
+      } else if (typeof current === "number" && !wrongKindForExercise && operation.expectedIntValue !== current) {
+        // Flow refuses this as `beforeValueMismatch`. Compared against the
+        // working copy rather than the snapshot, so a second operation on the
+        // same field reads what the first one set, exactly as apply does.
+        problems.push({
+          path: path("expectedIntValue"),
+          message: `${located!.exercise.name} has ${numeric.name} ${current} at this point in the patch`,
+        });
+      }
+      const proposed = operation.newIntValue;
+      if (proposed === undefined || proposed < low || proposed > high) {
+        problems.push({ path: path("newIntValue"), message: `newIntValue must be between ${low} and ${high}` });
+      } else if (located && !wrongKindForExercise) {
+        recordExerciseChange(working, located.exercise.id, { [numeric.field]: proposed });
       }
     }
-    if (operation.kind === "replaceTimedDuration" && located?.exercise.durationSeconds === undefined) problems.push({ path: path("kind"), message: "exercise is not timed" });
-    if (operation.kind === "replaceExerciseReps" && located?.exercise.durationSeconds !== undefined) problems.push({ path: path("kind"), message: "timed exercise requires replaceTimedDuration" });
-    if (operation.kind === "updateExerciseNotes" && (operation.expectedStringValue === undefined || operation.newStringValue === undefined || operation.newStringValue.length > 500)) problems.push({ path: path("newStringValue"), message: "expected and new notes are required; new notes may not exceed 500 characters" });
+    if (operation.kind === "updateExerciseNotes") {
+      const proposed = operation.newStringValue;
+      if (operation.expectedStringValue === undefined || proposed === undefined || proposed.length > 500) {
+        problems.push({ path: path("newStringValue"), message: "expected and new notes are required; new notes may not exceed 500 characters" });
+      }
+      if (operation.expectedStringValue !== undefined && located && operation.expectedStringValue !== located.exercise.notes) {
+        problems.push({
+          path: path("expectedStringValue"),
+          message: `${located.exercise.name} has notes ${describeNotes(located.exercise.notes)} at this point in the patch`,
+        });
+      }
+      if (located && proposed !== undefined && proposed.length <= 500) {
+        recordExerciseChange(working, located.exercise.id, { notes: proposed });
+      }
+    }
     if (operation.kind === "removeExercise") {
-      if (operation.expectedStringValue === undefined) problems.push({ path: path("expectedStringValue"), message: "expected exercise name is required" });
+      if (operation.expectedStringValue === undefined) {
+        problems.push({ path: path("expectedStringValue"), message: "expected exercise name is required" });
+      } else if (located && operation.expectedStringValue !== located.exercise.name) {
+        problems.push({
+          path: path("expectedStringValue"),
+          message: `this exercise is named "${located.exercise.name}" at this point in the patch`,
+        });
+      }
       if (operation.exerciseId) working.exercises.delete(operation.exerciseId);
     }
     if (operation.kind === "addExercise") {
@@ -588,7 +722,12 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
       anchorProblem(working, operation.afterExerciseId, operation.sectionId)
         .forEach((message) => problems.push({ path: path("afterExerciseId"), message }));
       if (operation.exercise && operation.sectionId) {
-        working.exercises.set(operation.exercise.id, { exercise: operation.exercise, sectionId: operation.sectionId });
+        working.exercises.set(operation.exercise.id, {
+          // Normalised on the way in, so a later operation in this patch reads
+          // the exercise Flow will hold rather than the one the coach sent.
+          exercise: { ...operation.exercise, phaseOverrides: storedOverrides(operation.exercise.phaseOverrides) },
+          sectionId: operation.sectionId,
+        });
       }
     }
     if (operation.kind === "addSection") {
@@ -648,6 +787,28 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
     if (operation.kind === "replacePhaseOverride") {
       if (!operation.phase || operation.phase === "base") problems.push({ path: path("phase"), message: "peak or deload phase is required" });
       if (operation.removePhaseOverride !== true && !operation.newPhaseOverride) problems.push({ path: path("newPhaseOverride"), message: "new override is required unless removing" });
+      const target = operation.phase && operation.phase !== "base" ? operation.phase : undefined;
+      if (located && target) {
+        const current = located.exercise.phaseOverrides[target];
+        const removing = operation.removePhaseOverride === true;
+        if (!sameOverride(current, operation.expectedPhaseOverride)) {
+          problems.push({
+            path: path("expectedPhaseOverride"),
+            message: `${located.exercise.name} has ${describeOverride(current)} for the ${target} phase at this point in the patch`,
+          });
+        } else if (removing || operation.newPhaseOverride) {
+          // Flow drops an override with nothing in it rather than storing it,
+          // so removing and emptying land in the same place.
+          const replacement = removing ? undefined : operation.newPhaseOverride;
+          const phaseOverrides = { ...located.exercise.phaseOverrides };
+          if (replacement && Object.values(replacement).some((value) => value !== undefined)) {
+            phaseOverrides[target] = replacement;
+          } else {
+            delete phaseOverrides[target];
+          }
+          recordExerciseChange(working, located.exercise.id, { phaseOverrides });
+        }
+      }
     }
   });
   // The app refuses a patch that leaves a routine with nothing to do, and an

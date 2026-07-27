@@ -1,7 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
-import { MAX_EXERCISES_PER_SECTION, MAX_ROUTINES, MAX_SECTIONS, OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
+import {
+  coachContextSchema,
+  effectiveCapabilities,
+  MAX_EXERCISES_PER_SECTION,
+  MAX_ROUTINES,
+  MAX_SECTIONS,
+  OPERATION_KINDS,
+  PATCH_SCHEMA_VERSIONS,
+  validatePatch,
+} from "../src/schemas";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
 const DEVICE_SECRET = "fixture-device-secret";
@@ -96,7 +105,10 @@ describe("Flow Coach bridge Worker", () => {
   });
 
   it("accepts Swift exercises that omit empty phase overrides", async () => {
-    const envelope = snapshot();
+    // Cloned before the key goes: `snapshot()` hands out the imported fixture
+    // itself, so deleting through it would take the overrides away from every
+    // test that runs after this one.
+    const envelope = { ...snapshot(), context: structuredClone(fixtureContext) };
     delete (envelope.context.routines[0]!.sections[0]!.exercises[0]! as { phaseOverrides?: unknown }).phaseOverrides;
 
     expect((await upload(envelope)).status).toBe(201);
@@ -946,9 +958,15 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
   });
 
   it("still calls a retry a retry when the draft carries an empty phase override", async () => {
-    const envelope = capableSnapshot();
+    // The landed routine has no deload override on its first exercise and the
+    // redraft carries an empty one, which Flow drops before storing. So this
+    // is the same routine arriving twice rather than a revision of it. Built
+    // on a clone, because every exercise in the fixture carries both phases.
+    const context = structuredClone(fixtureContext);
+    const landed = context.routines[0]!;
+    delete (landed.sections[0]!.exercises[0]!.phaseOverrides as { deload?: unknown }).deload;
+    const envelope = { ...capableSnapshot(), context };
     expect((await upload(envelope)).status).toBe(201);
-    const landed = fixtureContext.routines[0]!;
 
     const retry = await validate(envelope.contextId, createPatch({}, {
       id: landed.id,
@@ -1224,5 +1242,341 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       const next = state.storage.sql.exec<{ seq: number }>("SELECT seq FROM patches WHERE patch_id = 'patch-4'").one().seq;
       expect(next).toBeGreaterThan(issued);
     });
+  });
+});
+
+/**
+ * Flow refuses a patch whose expected value does not match what the routine
+ * actually holds, as `beforeValueMismatch`. The bridge used to check only that
+ * an expected value was present, so a coach that misread the routine got a
+ * draft stored and delivered, and found out on the phone. These pin the two
+ * sides together.
+ */
+describe("Flow Coach bridge expected values", () => {
+  beforeEach(clearMailbox);
+
+  const routine = fixtureContext.routines[0]!;
+  const baseContentHash = fixtureContext.routineContentHashByRoutineId[routine.id as keyof typeof fixtureContext.routineContentHashByRoutineId];
+  const pressed = routine.sections[0]!.exercises[0]!;
+  const plank = routine.sections[2]!.exercises[0]!;
+
+  function capableSnapshot() {
+    return { ...snapshot(), deviceCapabilities: { patchSchemaVersions: [2, 3], operationKinds: [...OPERATION_KINDS] } };
+  }
+
+  function patch(operations: Record<string, unknown>[]) {
+    return {
+      schemaVersion: 3,
+      routineId: routine.id,
+      baseContentHash,
+      rationale: "Check the expected value against the routine.",
+      operations,
+    };
+  }
+
+  async function validate(contextId: string, body: unknown): Promise<Response> {
+    return SELF.fetch("https://flow.test/actions/patches/validate", {
+      method: "POST",
+      headers: auth(ACTIONS_SECRET),
+      body: JSON.stringify({ contextId, patch: body }),
+    });
+  }
+
+  async function paired(): Promise<string> {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    return envelope.contextId;
+  }
+
+  async function problems(contextId: string, body: unknown): Promise<{ path: string; message: string }[]> {
+    const response = await validate(contextId, body);
+    expect(response.status).toBe(422);
+    return (await json(response)).problems;
+  }
+
+  async function expectValid(contextId: string, body: unknown): Promise<void> {
+    const response = await validate(contextId, body);
+    expect(await json(response)).toMatchObject({ valid: true, problems: [] });
+    expect(response.status).toBe(200);
+  }
+
+  it("refuses each numeric replace whose expected value is not the current one", async () => {
+    const contextId = await paired();
+
+    const cases = [
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, actual: pressed.sets, newIntValue: 5 },
+      { kind: "replaceExerciseReps", exerciseId: pressed.id, actual: pressed.reps, newIntValue: 12 },
+      { kind: "replaceRestBetweenSets", exerciseId: pressed.id, actual: pressed.restBetweenSetsSeconds, newIntValue: 60 },
+      { kind: "replaceRestAfterExercise", exerciseId: pressed.id, actual: pressed.restAfterExerciseSeconds, newIntValue: 60 },
+      { kind: "replaceTimedDuration", exerciseId: plank.id, actual: plank.durationSeconds, newIntValue: 45 },
+    ];
+
+    for (const { kind, exerciseId, actual, newIntValue } of cases) {
+      const stale = await problems(contextId, patch([{ kind, exerciseId, expectedIntValue: actual! + 1, newIntValue }]));
+      expect(stale[0]!.path).toBe("operations.0.expectedIntValue");
+      expect(stale[0]!.message).toContain(`${actual}`);
+
+      await expectValid(contextId, patch([{ kind, exerciseId, expectedIntValue: actual, newIntValue }]));
+    }
+  });
+
+  /**
+   * The case most likely to be got wrong, and the reason the working copy has
+   * to be written to rather than only read: Flow applies operations one after
+   * another, so the second one sees the first one's result.
+   */
+  it("reads a second operation on the same field against the first one's result", async () => {
+    const contextId = await paired();
+
+    await expectValid(contextId, patch([
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: pressed.sets, newIntValue: 5 },
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: 5, newIntValue: 6 },
+    ]));
+
+    const stale = await problems(contextId, patch([
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: pressed.sets, newIntValue: 5 },
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: pressed.sets, newIntValue: 6 },
+    ]));
+    expect(stale[0]!.path).toBe("operations.1.expectedIntValue");
+    expect(stale[0]!.message).toContain("5");
+  });
+
+  /**
+   * A mismatched operation still records its effect, so the operations after
+   * it are read against what the coach believed rather than being drowned in
+   * consequences of the first mistake. The verdict cannot move either way: the
+   * mismatch itself is a problem, so the patch is refused regardless, and Flow
+   * would have stopped at that operation anyway.
+   */
+  it("reports the first wrong expectation without cascading into the rest", async () => {
+    const contextId = await paired();
+
+    const cascade = await problems(contextId, patch([
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: pressed.sets + 1, newIntValue: 5 },
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: 5, newIntValue: 6 },
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: 6, newIntValue: 7 },
+    ]));
+    expect(cascade).toHaveLength(1);
+    expect(cascade[0]!.path).toBe("operations.0.expectedIntValue");
+  });
+
+  it("reads an expectation against an exercise the same patch added", async () => {
+    const contextId = await paired();
+    const added = {
+      id: crypto.randomUUID(),
+      name: "Band pull-apart",
+      sets: 3,
+      reps: 15,
+      restBetweenSetsSeconds: 45,
+      restAfterExerciseSeconds: 60,
+      notes: "",
+      perSide: false,
+      phaseOverrides: {},
+    };
+    const add = { kind: "addExercise", sectionId: routine.sections[1]!.id, exercise: added };
+
+    await expectValid(contextId, patch([
+      add,
+      { kind: "replaceExerciseSets", exerciseId: added.id, expectedIntValue: 3, newIntValue: 4 },
+    ]));
+
+    const stale = await problems(contextId, patch([
+      add,
+      { kind: "replaceExerciseSets", exerciseId: added.id, expectedIntValue: 2, newIntValue: 4 },
+    ]));
+    expect(stale[0]!.path).toBe("operations.1.expectedIntValue");
+  });
+
+  it("checks the expected notes, and chains them", async () => {
+    const contextId = await paired();
+
+    const stale = await problems(contextId, patch([
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: "Something else", newStringValue: "Slow lower." },
+    ]));
+    expect(stale[0]!.path).toBe("operations.0.expectedStringValue");
+    expect(stale[0]!.message).toContain(pressed.notes);
+
+    await expectValid(contextId, patch([
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: pressed.notes, newStringValue: "" },
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: "", newStringValue: "Slow lower." },
+    ]));
+
+    const emptied = await problems(contextId, patch([
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: pressed.notes, newStringValue: "" },
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: pressed.notes, newStringValue: "Slow lower." },
+    ]));
+    expect(emptied[0]!.path).toBe("operations.1.expectedStringValue");
+    expect(emptied[0]!.message).toContain("[no notes]");
+  });
+
+  /**
+   * Notes are free text. Quoting them by hand would let a quote or a newline
+   * inside them close the quoting early, leaving the coach unable to tell the
+   * message apart from the value it is reporting.
+   */
+  it("escapes the notes it quotes back", async () => {
+    const contextId = await paired();
+    const awkward = 'He said "go slow"\nthen \\ stopped';
+
+    const stale = await problems(contextId, patch([
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: pressed.notes, newStringValue: awkward },
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: "wrong", newStringValue: "" },
+    ]));
+    expect(stale[0]!.path).toBe("operations.1.expectedStringValue");
+    expect(stale[0]!.message).toContain(JSON.stringify(awkward));
+    expect(stale[0]!.message).not.toContain("\n");
+  });
+
+  it("checks the expected exercise name on a removal", async () => {
+    const contextId = await paired();
+
+    const wrong = await problems(contextId, patch([
+      { kind: "removeExercise", exerciseId: pressed.id, expectedStringValue: "Bench press" },
+    ]));
+    expect(wrong[0]!.path).toBe("operations.0.expectedStringValue");
+    expect(wrong[0]!.message).toContain(pressed.name);
+
+    await expectValid(contextId, patch([
+      { kind: "removeExercise", exerciseId: pressed.id, expectedStringValue: pressed.name },
+    ]));
+  });
+
+  it("compares the expected phase override as a value, and chains it", async () => {
+    const contextId = await paired();
+    const current = pressed.phaseOverrides.peak;
+
+    const wrong = await problems(contextId, patch([{
+      kind: "replacePhaseOverride",
+      exerciseId: pressed.id,
+      phase: "peak",
+      expectedPhaseOverride: { sets: current.sets + 1, reps: current.reps },
+      newPhaseOverride: { sets: 5, reps: 10 },
+    }]));
+    expect(wrong[0]!.path).toBe("operations.0.expectedPhaseOverride");
+    expect(wrong[0]!.message).toContain(`${current.sets} sets`);
+
+    await expectValid(contextId, patch([{
+      kind: "replacePhaseOverride",
+      exerciseId: pressed.id,
+      phase: "peak",
+      expectedPhaseOverride: current,
+      newPhaseOverride: { sets: 5, reps: 10 },
+    }]));
+
+    // Removed, then expected to be gone: Flow drops the override, so the
+    // second operation has to see nothing there.
+    await expectValid(contextId, patch([
+      { kind: "replacePhaseOverride", exerciseId: pressed.id, phase: "peak", expectedPhaseOverride: current, removePhaseOverride: true },
+      { kind: "replacePhaseOverride", exerciseId: pressed.id, phase: "peak", newPhaseOverride: { sets: 5 } },
+    ]));
+
+    const stillThere = await problems(contextId, patch([
+      { kind: "replacePhaseOverride", exerciseId: pressed.id, phase: "peak", expectedPhaseOverride: current, removePhaseOverride: true },
+      { kind: "replacePhaseOverride", exerciseId: pressed.id, phase: "peak", expectedPhaseOverride: current, newPhaseOverride: { sets: 5 } },
+    ]));
+    expect(stillThere[0]!.path).toBe("operations.1.expectedPhaseOverride");
+    expect(stillThere[0]!.message).toContain("no override");
+  });
+
+  /**
+   * Swift compares `Optional<PhaseOverride>`, where "no override" and "an
+   * override with nothing set" are different values. Collapsing them here
+   * would accept an expectation the phone then refuses.
+   */
+  it("keeps an absent override distinct from an empty one", async () => {
+    const contextId = await paired();
+    const bare = {
+      id: crypto.randomUUID(),
+      name: "Band pull-apart",
+      sets: 3,
+      reps: 15,
+      restBetweenSetsSeconds: 45,
+      restAfterExerciseSeconds: 60,
+      notes: "",
+      perSide: false,
+      phaseOverrides: {},
+    };
+    const add = { kind: "addExercise", sectionId: routine.sections[1]!.id, exercise: bare };
+
+    await expectValid(contextId, patch([
+      add,
+      { kind: "replacePhaseOverride", exerciseId: bare.id, phase: "deload", newPhaseOverride: { sets: 2 } },
+    ]));
+
+    const empty = await problems(contextId, patch([
+      add,
+      { kind: "replacePhaseOverride", exerciseId: bare.id, phase: "deload", expectedPhaseOverride: {}, newPhaseOverride: { sets: 2 } },
+    ]));
+    expect(empty[0]!.path).toBe("operations.1.expectedPhaseOverride");
+  });
+
+  /**
+   * `addExercise` in Flow drops empty overrides before inserting, and Flow's
+   * decoder drops any key that is not a phase it knows. An added exercise has
+   * to enter the working copy the same way, or a later operation reads an
+   * override the phone has already thrown away.
+   */
+  it("normalises an added exercise's overrides the way Flow stores them", async () => {
+    const contextId = await paired();
+    const added = {
+      id: crypto.randomUUID(),
+      name: "Band pull-apart",
+      sets: 3,
+      reps: 15,
+      restBetweenSetsSeconds: 45,
+      restAfterExerciseSeconds: 60,
+      notes: "",
+      perSide: false,
+      phaseOverrides: { deload: {}, warmup: { sets: 2 }, peak: { sets: 4 } },
+    };
+    const add = { kind: "addExercise", sectionId: routine.sections[1]!.id, exercise: added };
+
+    // The empty deload override and the unknown phase both go, so both read
+    // as absent. The real peak override stays.
+    await expectValid(contextId, patch([
+      add,
+      { kind: "replacePhaseOverride", exerciseId: added.id, phase: "deload", newPhaseOverride: { sets: 2 } },
+      { kind: "replacePhaseOverride", exerciseId: added.id, phase: "peak", expectedPhaseOverride: { sets: 4 }, newPhaseOverride: { sets: 5 } },
+    ]));
+
+    const expectingEmpty = await problems(contextId, patch([
+      add,
+      { kind: "replacePhaseOverride", exerciseId: added.id, phase: "deload", expectedPhaseOverride: {}, newPhaseOverride: { sets: 2 } },
+    ]));
+    expect(expectingEmpty[0]!.path).toBe("operations.1.expectedPhaseOverride");
+  });
+
+  it("does not call an exercise untimed when it is simply not there", async () => {
+    const contextId = await paired();
+
+    const missing = await problems(contextId, patch([
+      { kind: "replaceTimedDuration", exerciseId: crypto.randomUUID(), expectedIntValue: 30, newIntValue: 45 },
+    ]));
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.path).toBe("operations.0.exerciseId");
+  });
+
+  /**
+   * Validation walks a working copy of the routine. If that copy shared its
+   * exercises with the snapshot it was built from, a rejected patch would
+   * leave its half-applied values in the context the caller passed in.
+   */
+  it("leaves the context it was given untouched", () => {
+    const context = coachContextSchema.parse(structuredClone(fixtureContext));
+    const before = JSON.stringify(context);
+
+    const result = validatePatch(
+      patch([
+        { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: pressed.sets, newIntValue: 6 },
+        { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: pressed.notes, newStringValue: "Changed." },
+        { kind: "replacePhaseOverride", exerciseId: pressed.id, phase: "peak", expectedPhaseOverride: pressed.phaseOverrides.peak, removePhaseOverride: true },
+        { kind: "removeExercise", exerciseId: plank.id, expectedStringValue: "Wrong name" },
+      ]),
+      context,
+      effectiveCapabilities({ patchSchemaVersions: [2, 3], operationKinds: [...OPERATION_KINDS] }),
+    );
+
+    expect(result.valid).toBe(false);
+    expect(JSON.stringify(context)).toBe(before);
   });
 });

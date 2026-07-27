@@ -251,14 +251,31 @@ const patchProperty = {
           },
           section: sectionProperty,
           phase: { ...phaseProperty, description: "For replacePhaseOverride: peak or deload only." },
-          expectedIntValue: { type: "integer", description: "The current value as shown in the snapshot." },
+          expectedIntValue: {
+            type: "integer",
+            description:
+              "The current value as shown in the snapshot. Checked, not just required: a value that " +
+              "does not match is refused. Where an earlier operation in the same patch changed this " +
+              "field, give the value that operation left behind.",
+          },
           newIntValue: {
             type: "integer",
             description: "The proposed value. Ranges: reps 1-100, sets 1-10, duration 1-3600, rest 0-900.",
           },
-          expectedStringValue: { type: "string" },
+          expectedStringValue: {
+            type: "string",
+            description:
+              "The current value as shown in the snapshot: the notes for updateExerciseNotes, the " +
+              "exercise name for removeExercise, the routine name for renameRoutine. Checked, and " +
+              "read against anything an earlier operation in the same patch changed.",
+          },
           newStringValue: { type: "string", maxLength: 500 },
-          expectedPhaseOverride: phaseOverrideProperty,
+          expectedPhaseOverride: {
+            ...phaseOverrideProperty,
+            description:
+              "The override currently on this exercise for this phase, checked exactly. Omit it when " +
+              "the exercise has no override for the phase; an empty object means something different.",
+          },
           newPhaseOverride: phaseOverrideProperty,
           removePhaseOverride: { type: "boolean" },
           exercise: exerciseProperty,
