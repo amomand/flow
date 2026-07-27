@@ -2289,6 +2289,34 @@ final class CoachWorkflowTests: XCTestCase {
         }
     }
 
+    /// The create path trims its own routine and section names, separately
+    /// from the operations above, so it needs its own guard or a refactor
+    /// could reopen the same route through `createRoutine` alone.
+    func testACreatedRoutineCannotBeNamedOnlyABOM() throws {
+        let bom = "\u{FEFF}"
+
+        var named = newRoutine(name: bom)
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(named), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("routine.name", _) = error else {
+                return XCTFail("Expected invalidValue on routine.name, got \(error)")
+            }
+        }
+
+        named = newRoutine(name: "Lower A")
+        named.sections[0].name = bom
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: createPatch(named), routines: [])) { error in
+            guard case FlowRoutinePatchError.invalidValue("routine.sections[0].name", _) = error else {
+                return XCTFail("Expected invalidValue on routine.sections[0].name, got \(error)")
+            }
+        }
+
+        named = newRoutine(name: "\u{FEFF} Lower A \u{0085}")
+        named.sections[0].name = "\u{FEFF}Main Lifts\u{0085}"
+        let preview = try FlowRoutinePatcher.preview(patch: createPatch(named), routines: [])
+        XCTAssertEqual(preview.updatedRoutine.name, "Lower A")
+        XCTAssertEqual(preview.updatedRoutine.sections[0].name, "Main Lifts")
+    }
+
     /// Trimming a superset of what the bridge trims is what makes the two
     /// sides agree: the bridge's own trim is then a no-op on a stored name.
     func testAStoredNameHasNothingLeftForTheBridgeToTrim() throws {
