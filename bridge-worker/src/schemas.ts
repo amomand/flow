@@ -408,10 +408,11 @@ function sameOverride(left: PhaseOverride | undefined, right: PhaseOverride | un
  * An added exercise's overrides as Flow will actually store them.
  *
  * `addExercise` drops empty overrides before inserting, and Flow's decoder
- * drops any key that is not a phase it knows. Neither is a rejection on the
- * app's side, so the bridge mirrors both rather than refusing: what matters is
- * that the working copy holds what the phone would hold, or a later operation
- * in the same patch reads an override the app has already thrown away.
+ * keeps `base`, `peak` and `deload` and silently drops every other key.
+ * Neither is a rejection on the app's side, so the bridge mirrors both rather
+ * than refusing: what matters is that the working copy holds what the phone
+ * would hold, or a later operation in the same patch reads an override the app
+ * has already thrown away.
  */
 function storedOverrides(overrides: Record<string, PhaseOverride>): Record<string, PhaseOverride> {
   const kept: Record<string, PhaseOverride> = {};
