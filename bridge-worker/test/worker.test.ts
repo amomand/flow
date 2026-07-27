@@ -1474,6 +1474,52 @@ describe("Flow Coach bridge expected values", () => {
   });
 
   /**
+   * `addExercise` in Flow drops empty overrides before inserting, and Flow's
+   * decoder drops any key that is not a phase it knows. An added exercise has
+   * to enter the working copy the same way, or a later operation reads an
+   * override the phone has already thrown away.
+   */
+  it("normalises an added exercise's overrides the way Flow stores them", async () => {
+    const contextId = await paired();
+    const added = {
+      id: crypto.randomUUID(),
+      name: "Band pull-apart",
+      sets: 3,
+      reps: 15,
+      restBetweenSetsSeconds: 45,
+      restAfterExerciseSeconds: 60,
+      notes: "",
+      perSide: false,
+      phaseOverrides: { deload: {}, warmup: { sets: 2 }, peak: { sets: 4 } },
+    };
+    const add = { kind: "addExercise", sectionId: routine.sections[1]!.id, exercise: added };
+
+    // The empty deload override and the unknown phase both go, so both read
+    // as absent. The real peak override stays.
+    await expectValid(contextId, patch([
+      add,
+      { kind: "replacePhaseOverride", exerciseId: added.id, phase: "deload", newPhaseOverride: { sets: 2 } },
+      { kind: "replacePhaseOverride", exerciseId: added.id, phase: "peak", expectedPhaseOverride: { sets: 4 }, newPhaseOverride: { sets: 5 } },
+    ]));
+
+    const expectingEmpty = await problems(contextId, patch([
+      add,
+      { kind: "replacePhaseOverride", exerciseId: added.id, phase: "deload", expectedPhaseOverride: {}, newPhaseOverride: { sets: 2 } },
+    ]));
+    expect(expectingEmpty[0]!.path).toBe("operations.1.expectedPhaseOverride");
+  });
+
+  it("does not call an exercise untimed when it is simply not there", async () => {
+    const contextId = await paired();
+
+    const missing = await problems(contextId, patch([
+      { kind: "replaceTimedDuration", exerciseId: crypto.randomUUID(), expectedIntValue: 30, newIntValue: 45 },
+    ]));
+    expect(missing).toHaveLength(1);
+    expect(missing[0]!.path).toBe("operations.0.exerciseId");
+  });
+
+  /**
    * Validation walks a working copy of the routine. If that copy shared its
    * exercises with the snapshot it was built from, a rejected patch would
    * leave its half-applied values in the context the caller passed in.

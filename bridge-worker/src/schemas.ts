@@ -404,6 +404,25 @@ function sameOverride(left: PhaseOverride | undefined, right: PhaseOverride | un
   return left.sets === right.sets && left.reps === right.reps && left.durationSeconds === right.durationSeconds;
 }
 
+/**
+ * An added exercise's overrides as Flow will actually store them.
+ *
+ * `addExercise` drops empty overrides before inserting, and Flow's decoder
+ * drops any key that is not a phase it knows. Neither is a rejection on the
+ * app's side, so the bridge mirrors both rather than refusing: what matters is
+ * that the working copy holds what the phone would hold, or a later operation
+ * in the same patch reads an override the app has already thrown away.
+ */
+function storedOverrides(overrides: Record<string, PhaseOverride>): Record<string, PhaseOverride> {
+  const kept: Record<string, PhaseOverride> = {};
+  for (const [key, override] of Object.entries(overrides)) {
+    if (!phase.safeParse(key).success) continue;
+    if (Object.values(override).every((value) => value === undefined)) continue;
+    kept[key] = override;
+  }
+  return kept;
+}
+
 function describeOverride(override: PhaseOverride | undefined): string {
   if (!override) return "no override";
   const parts = [
@@ -630,8 +649,11 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
     const timed = located?.exercise.durationSeconds !== undefined;
     const wrongKindForExercise = (operation.kind === "replaceTimedDuration" && !timed)
       || (operation.kind === "replaceExerciseReps" && timed);
-    if (operation.kind === "replaceTimedDuration" && !timed) problems.push({ path: path("kind"), message: "exercise is not timed" });
-    if (operation.kind === "replaceExerciseReps" && timed) problems.push({ path: path("kind"), message: "timed exercise requires replaceTimedDuration" });
+    // Both gated on the exercise existing: an absent exercise is already
+    // reported above, and "exercise is not timed" about an exercise that is
+    // not there sends the coach looking for the wrong thing.
+    if (located && operation.kind === "replaceTimedDuration" && !timed) problems.push({ path: path("kind"), message: "exercise is not timed" });
+    if (located && operation.kind === "replaceExerciseReps" && timed) problems.push({ path: path("kind"), message: "timed exercise requires replaceTimedDuration" });
     if (numeric) {
       const [low, high] = numeric.range;
       const current = located?.exercise[numeric.field];
@@ -693,7 +715,12 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
       anchorProblem(working, operation.afterExerciseId, operation.sectionId)
         .forEach((message) => problems.push({ path: path("afterExerciseId"), message }));
       if (operation.exercise && operation.sectionId) {
-        working.exercises.set(operation.exercise.id, { exercise: operation.exercise, sectionId: operation.sectionId });
+        working.exercises.set(operation.exercise.id, {
+          // Normalised on the way in, so a later operation in this patch reads
+          // the exercise Flow will hold rather than the one the coach sent.
+          exercise: { ...operation.exercise, phaseOverrides: storedOverrides(operation.exercise.phaseOverrides) },
+          sectionId: operation.sectionId,
+        });
       }
     }
     if (operation.kind === "addSection") {
