@@ -215,8 +215,18 @@ class RoutineStore {
             return .failure(.invalidJSON(error.localizedDescription))
         }
 
-        guard let index = routines.firstIndex(where: { $0.id == fresh.patch.routineId }) else {
-            return .failure(.routineNotFound(fresh.patch.routineId))
+        if fresh.isCreate {
+            return applyCreatedRoutine(fresh, provenance: provenance)
+        }
+
+        // Separated so the error names what is actually wrong. An invented id
+        // in a "no routine matches" message would send someone looking for a
+        // routine that was never referred to.
+        guard let routineId = fresh.patch.routineId else {
+            return .failure(.missingField("routineId"))
+        }
+        guard let index = routines.firstIndex(where: { $0.id == routineId }) else {
+            return .failure(.routineNotFound(routineId))
         }
 
         let current = routines[index]
@@ -241,13 +251,14 @@ class RoutineStore {
             appliedAt: Date(),
             routineId: updated.id,
             routineName: updated.name,
-            baseContentHash: fresh.patch.baseContentHash,
+            baseContentHash: fresh.patch.baseContentHash ?? FlowRoutineRevision.contentHash(for: current),
             appliedFromContentHash: FlowRoutineRevision.contentHash(for: current),
             resultingContentHash: FlowRoutineRevision.contentHash(for: updated),
             rationale: fresh.patch.rationale,
             diffs: fresh.diffs,
             previousSections: current.sections,
             previousName: current.name,
+            createdRoutine: false,
             provenance: provenance,
             outcome: .applied,
             restoredAt: nil
@@ -266,6 +277,63 @@ class RoutineStore {
             return .failure(.persistenceFailed("Could not write coach edit history: \(error.localizedDescription).\(suffix)"))
         }
         return .success(updated)
+    }
+
+    /// Applies a create.
+    ///
+    /// Insert rather than graft: there is nothing to graft onto, and nothing
+    /// of the user's to preserve. The routine keeps the ids and the phase the
+    /// patch specified, which is what makes applying the same create twice a
+    /// no-op the second time rather than a second routine.
+    private func applyCreatedRoutine(
+        _ preview: FlowRoutinePatchPreview,
+        provenance: CoachEditProvenance?
+    ) -> Result<Routine, FlowRoutinePatchError> {
+        let created = preview.updatedRoutine
+        guard !routines.contains(where: { $0.id == created.id }) else {
+            return .failure(.routineAlreadyExists(created.id))
+        }
+
+        routines.append(created)
+        if case .failure(let error) = save() {
+            routines.removeAll { $0.id == created.id }
+            return .failure(.persistenceFailed(error.localizedDescription))
+        }
+
+        let contentHash = FlowRoutineRevision.contentHash(for: created)
+        let historyResult = editHistory?.record(CoachEditRecord(
+            id: UUID(),
+            appliedAt: Date(),
+            routineId: created.id,
+            routineName: created.name,
+            // A create pins to nothing, so the hash it applied from is the
+            // hash it produced. `wasRebased` is false, which is true: there
+            // was no earlier content to rebase over.
+            baseContentHash: contentHash,
+            appliedFromContentHash: contentHash,
+            resultingContentHash: contentHash,
+            rationale: preview.patch.rationale,
+            diffs: preview.diffs,
+            previousSections: [],
+            previousName: nil,
+            createdRoutine: true,
+            provenance: provenance,
+            outcome: .applied,
+            restoredAt: nil
+        ))
+        if let historyResult, case .failure(let error) = historyResult {
+            routines.removeAll { $0.id == created.id }
+            let rollback = save()
+            let suffix: String
+            if case .failure(let rollbackError) = rollback {
+                routines.append(created)
+                suffix = " The routine file changed, and rollback also failed: \(rollbackError.localizedDescription)"
+            } else {
+                suffix = " The new routine was removed again."
+            }
+            return .failure(.persistenceFailed("Could not write coach edit history: \(error.localizedDescription).\(suffix)"))
+        }
+        return .success(created)
     }
 
     enum CoachEditRestoreError: LocalizedError, Equatable {
@@ -301,6 +369,21 @@ class RoutineStore {
         if !allowingOverwrite,
            FlowRoutineRevision.contentHash(for: current) != record.resultingContentHash {
             return .failure(.routineChangedSinceEdit(current.name))
+        }
+
+        // Undoing a create means the routine should not be here. There are no
+        // sections to put back, and leaving an empty husk behind would be a
+        // worse answer than either keeping it or removing it.
+        //
+        // This is the one undo that deletes, so it also checks the name, which
+        // the content hash cannot see. Renaming a routine the coach added is
+        // exactly how someone makes it their own, and it should not then
+        // vanish on one tap without a word.
+        if record.wasCreate {
+            if !allowingOverwrite, current.name != record.routineName {
+                return .failure(.routineChangedSinceEdit(current.name))
+            }
+            return removeCreatedRoutine(at: index, record: record)
         }
         // The content hash covers sections only, so it cannot see a rename
         // that happened after the edit. Where restore would put a name back,
@@ -347,6 +430,37 @@ class RoutineStore {
             return .failure(.persistenceFailed("Could not update coach edit history: \(error.localizedDescription).\(suffix)"))
         }
         return .success(restored)
+    }
+
+    /// Undoes a create by removing the routine it added.
+    ///
+    /// Returns the routine as it was at the moment it was removed, so the
+    /// caller can name what went, which is the same contract the ordinary
+    /// restore has: what the routine looks like now that the edit is undone.
+    private func removeCreatedRoutine(
+        at index: Int,
+        record: CoachEditRecord
+    ) -> Result<Routine, CoachEditRestoreError> {
+        let removed = routines[index]
+        routines.remove(at: index)
+        if case .failure(let error) = save() {
+            routines.insert(removed, at: index)
+            return .failure(.persistenceFailed(error.localizedDescription))
+        }
+        if let editHistory,
+           case .failure(let error) = editHistory.markRestored(record.id) {
+            routines.insert(removed, at: index)
+            let rollback = save()
+            let suffix: String
+            if case .failure(let rollbackError) = rollback {
+                routines.remove(at: index)
+                suffix = " The routine file changed, and rollback also failed: \(rollbackError.localizedDescription)"
+            } else {
+                suffix = " The routine was put back."
+            }
+            return .failure(.persistenceFailed("Could not update coach edit history: \(error.localizedDescription).\(suffix)"))
+        }
+        return .success(removed)
     }
 
     enum ImportError: LocalizedError {

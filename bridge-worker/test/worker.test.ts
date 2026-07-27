@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { env, runInDurableObject, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
-import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
+import { MAX_EXERCISES_PER_SECTION, MAX_ROUTINES, MAX_SECTIONS, OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
 const DEVICE_SECRET = "fixture-device-secret";
@@ -420,6 +420,682 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
     expect((await json(pulled)).patches[0].patch.schemaVersion).toBe(2);
   });
 
+  function sectionPatch(operations: unknown[]) {
+    const routine = fixtureContext.routines[0]!;
+    return {
+      schemaVersion: 3,
+      routineId: routine.id,
+      baseContentHash: fixtureContext.routineContentHashByRoutineId[routine.id as keyof typeof fixtureContext.routineContentHashByRoutineId],
+      rationale: "Restructure the block rather than just its numbers.",
+      operations,
+    };
+  }
+
+  function newExercise(id: string, name: string) {
+    return {
+      id, name, sets: 3, reps: 8,
+      restBetweenSetsSeconds: 90, restAfterExerciseSeconds: 120,
+      notes: "", perSide: false, phaseOverrides: {},
+    };
+  }
+
+  /**
+   * The reason addSection exists: addExercise needs somewhere to go, and
+   * validating every reference against the immutable snapshot made a section
+   * created in the same patch invisible.
+   */
+  it("lets an addExercise target a section created earlier in the same patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const sectionId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: sectionId, name: "Core" } },
+      { kind: "addExercise", sectionId, exercise: newExercise(crypto.randomUUID(), "Hanging Leg Raise") },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  /**
+   * Latent before this change: the exercise was in the patch but not in the
+   * snapshot, so the move was rejected for referencing something absent.
+   */
+  it("lets a moveExercise reference an exercise added earlier in the same patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const exerciseId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addExercise", sectionId: routine.sections[0]!.id, exercise: newExercise(exerciseId, "Face Pull") },
+      { kind: "moveExercise", exerciseId, targetSectionId: routine.sections[0]!.id },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  it("names the field when an addSection anchors on a section that does not exist", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      {
+        kind: "addSection",
+        section: { id: crypto.randomUUID(), name: "Core" },
+        afterSectionId: crypto.randomUUID(),
+      },
+    ]));
+
+    expect(checked.status).toBe(422);
+    const problems = (await json(checked)).problems;
+    expect(problems.map((problem: any) => problem.path)).toContain("operations.0.afterSectionId");
+  });
+
+  it("refuses a section that anchors on itself", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const sectionId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: sectionId, name: "Core" }, afterSectionId: sectionId },
+    ]));
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.path)).toContain("operations.0.afterSectionId");
+  });
+
+  it("refuses a section id that already exists, in the snapshot or in the patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+
+    const existing = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: routine.sections[0]!.id, name: "Core" } },
+    ]));
+    expect(existing.status).toBe(422);
+    expect((await json(existing)).problems.map((problem: any) => problem.path)).toContain("operations.0.section.id");
+
+    const twice = crypto.randomUUID();
+    const repeated = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: twice, name: "Core" } },
+      { kind: "addSection", section: { id: twice, name: "Also Core" } },
+    ]));
+    expect(repeated.status).toBe(422);
+    expect((await json(repeated)).problems.map((problem: any) => problem.path)).toContain("operations.1.section.id");
+  });
+
+  /**
+   * Flow resolves the anchor before inserting, so an exercise cannot be placed
+   * after itself. Tracking effects as the patch is walked made this reachable
+   * for the first time: the id the operation adds is in the working set by the
+   * time a naive anchor check runs.
+   */
+  it("refuses an addExercise anchored on the exercise it is adding", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const exerciseId = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      {
+        kind: "addExercise",
+        sectionId: routine.sections[0]!.id,
+        afterExerciseId: exerciseId,
+        exercise: newExercise(exerciseId, "Face Pull"),
+      },
+    ]));
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.path)).toContain("operations.0.afterExerciseId");
+  });
+
+  it("refuses a moveExercise anchored on the exercise being moved", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const exercise = routine.sections[0]!.exercises[0]!;
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      {
+        kind: "moveExercise",
+        exerciseId: exercise.id,
+        targetSectionId: routine.sections[1]!.id,
+        afterExerciseId: exercise.id,
+      },
+    ]));
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.path)).toContain("operations.0.afterExerciseId");
+  });
+
+  /**
+   * Flow inserts at the anchor's index within the target section, so an anchor
+   * living somewhere else has no position to be after.
+   */
+  it("refuses an anchor that sits in a different section from the target", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const elsewhere = routine.sections[1]!.exercises[0]!;
+
+    const added = await validate(envelope.contextId, sectionPatch([
+      {
+        kind: "addExercise",
+        sectionId: routine.sections[0]!.id,
+        afterExerciseId: elsewhere.id,
+        exercise: newExercise(crypto.randomUUID(), "Face Pull"),
+      },
+    ]));
+    expect(added.status).toBe(422);
+    const problems = (await json(added)).problems;
+    expect(problems.map((problem: any) => problem.path)).toContain("operations.0.afterExerciseId");
+    expect(problems.map((problem: any) => problem.message)).toContain("anchor exercise must be in the target section");
+
+    const moved = await validate(envelope.contextId, sectionPatch([
+      {
+        kind: "moveExercise",
+        exerciseId: routine.sections[0]!.exercises[0]!.id,
+        targetSectionId: routine.sections[0]!.id,
+        afterExerciseId: elsewhere.id,
+      },
+    ]));
+    expect(moved.status).toBe(422);
+    expect((await json(moved)).problems.map((problem: any) => problem.path)).toContain("operations.0.afterExerciseId");
+  });
+
+  it("accepts an anchor added earlier in the same patch, in the same section", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const sectionId = crypto.randomUUID();
+    const first = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: sectionId, name: "Core" } },
+      { kind: "addExercise", sectionId, exercise: newExercise(first, "Plank") },
+      { kind: "addExercise", sectionId, afterExerciseId: first, exercise: newExercise(crypto.randomUUID(), "Dead Bug") },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  it("accepts an addSection anchored on a section created earlier in the same patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const first = crypto.randomUUID();
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      { kind: "addSection", section: { id: first, name: "Core" } },
+      { kind: "addSection", section: { id: crypto.randomUUID(), name: "Carries" }, afterSectionId: first },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  /**
+   * The docs promise that every operation sees what the ones before it did.
+   * The routine name has to be part of that or the promise is false for
+   * exactly one operation.
+   */
+  it("reads a second rename against the name the first one set", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+
+    const chained = await validate(envelope.contextId, sectionPatch([
+      { kind: "renameRoutine", expectedStringValue: routine.name, newStringValue: "Upper A" },
+      { kind: "renameRoutine", expectedStringValue: "Upper A", newStringValue: "Upper A (heavy)" },
+    ]));
+    expect(chained.status).toBe(200);
+    expect((await json(chained)).valid).toBe(true);
+
+    const stale = await validate(envelope.contextId, sectionPatch([
+      { kind: "renameRoutine", expectedStringValue: routine.name, newStringValue: "Upper A" },
+      { kind: "renameRoutine", expectedStringValue: routine.name, newStringValue: "Upper A (heavy)" },
+    ]));
+    expect(stale.status).toBe(422);
+    expect((await json(stale)).problems.map((problem: any) => problem.path)).toContain("operations.1.expectedStringValue");
+  });
+
+  it("refuses a patch that would push a routine past the section ceiling", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const existing = fixtureContext.routines[0]!.sections.length;
+
+    const upToTheLimit = await validate(envelope.contextId, sectionPatch(
+      Array.from({ length: MAX_SECTIONS - existing }, (_, index) => ({
+        kind: "addSection",
+        section: { id: crypto.randomUUID(), name: `Section ${index}` },
+      })),
+    ));
+    expect(upToTheLimit.status).toBe(200);
+    expect((await json(upToTheLimit)).valid).toBe(true);
+
+    const oneTooMany = await validate(envelope.contextId, sectionPatch(
+      Array.from({ length: MAX_SECTIONS - existing + 1 }, (_, index) => ({
+        kind: "addSection",
+        section: { id: crypto.randomUUID(), name: `Section ${index}` },
+      })),
+    ));
+    expect(oneTooMany.status).toBe(422);
+    expect((await json(oneTooMany)).problems.map((problem: any) => problem.message))
+      .toContain(`a routine may not have more than ${MAX_SECTIONS} sections`);
+  });
+
+  /**
+   * The same invariant as the section cap: a section past this stops fitting
+   * in a snapshot, so the routine would drop out of the coach's view at the
+   * next sync rather than fail anywhere visible.
+   */
+  it("refuses a patch that would push a section past the exercise ceiling", async () => {
+    // A patch carries at most 50 operations, so the ceiling is only reachable
+    // against a section already near it, which is exactly how it would be
+    // reached in practice: one patch at a time, over several conversations.
+    const envelope = capableSnapshot();
+    const sectionId = crypto.randomUUID();
+    const full = {
+      ...fixtureContext.routines[0]!,
+      id: crypto.randomUUID(),
+      name: "Everything",
+      sections: [{
+        id: sectionId,
+        name: "Main",
+        exercises: Array.from({ length: MAX_EXERCISES_PER_SECTION }, (_, index) =>
+          newExercise(crypto.randomUUID(), `Exercise ${index}`)),
+      }],
+    };
+    envelope.context = {
+      ...fixtureContext,
+      routines: [full],
+      currentPhaseByRoutineId: { [full.id]: "base" },
+      routineContentHashByRoutineId: { [full.id]: "c1-0011223344556677" },
+      routineStateHashByRoutineId: { [full.id]: "s1-0011223344556677" },
+    } as unknown as typeof fixtureContext;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, {
+      schemaVersion: 3,
+      routineId: full.id,
+      baseContentHash: "c1-0011223344556677",
+      rationale: "One more than will fit.",
+      operations: [{ kind: "addExercise", sectionId, exercise: newExercise(crypto.randomUUID(), "One too many") }],
+    });
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.message))
+      .toContain(`a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises`);
+  });
+
+  /**
+   * A move takes the exercise out before putting it back, so a full section
+   * can always still be reordered, while moving one *into* a full section is
+   * refused. Flow does exactly this, and the two cases sit either side of the
+   * same line.
+   */
+  it("allows a move within a full section but not into one", async () => {
+    const envelope = capableSnapshot();
+    const fullId = crypto.randomUUID();
+    const spareId = crypto.randomUUID();
+    const movingId = crypto.randomUUID();
+    const full = {
+      ...fixtureContext.routines[0]!,
+      id: crypto.randomUUID(),
+      name: "Everything",
+      sections: [
+        {
+          id: fullId,
+          name: "Full",
+          exercises: Array.from({ length: MAX_EXERCISES_PER_SECTION }, (_, index) =>
+            newExercise(crypto.randomUUID(), `Exercise ${index}`)),
+        },
+        { id: spareId, name: "Spare", exercises: [newExercise(movingId, "Movable")] },
+      ],
+    };
+    envelope.context = {
+      ...fixtureContext,
+      routines: [full],
+      currentPhaseByRoutineId: { [full.id]: "base" },
+      routineContentHashByRoutineId: { [full.id]: "c1-0011223344556677" },
+      routineStateHashByRoutineId: { [full.id]: "s1-0011223344556677" },
+    } as unknown as typeof fixtureContext;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const patchWith = (operations: unknown[]) => ({
+      schemaVersion: 3,
+      routineId: full.id,
+      baseContentHash: "c1-0011223344556677",
+      rationale: "Reorder around a full section.",
+      operations,
+    });
+
+    const within = await validate(envelope.contextId, patchWith([
+      { kind: "moveExercise", exerciseId: full.sections[0]!.exercises[0]!.id, targetSectionId: fullId },
+    ]));
+    expect(within.status).toBe(200);
+    expect((await json(within)).valid).toBe(true);
+
+    const into = await validate(envelope.contextId, patchWith([
+      { kind: "moveExercise", exerciseId: movingId, targetSectionId: fullId },
+    ]));
+    expect(into.status).toBe(422);
+    expect((await json(into)).problems.map((problem: any) => problem.message))
+      .toContain(`a section may not hold more than ${MAX_EXERCISES_PER_SECTION} exercises`);
+  });
+
+  it("does not refuse a patch against a routine that was already empty", async () => {
+    const envelope = capableSnapshot();
+    const empty = { ...fixtureContext.routines[0]!, id: crypto.randomUUID(), name: "Empty Draft", sections: [] };
+    envelope.context = {
+      ...fixtureContext,
+      routines: [...fixtureContext.routines, empty],
+      currentPhaseByRoutineId: { ...fixtureContext.currentPhaseByRoutineId, [empty.id]: "base" },
+      routineContentHashByRoutineId: { ...fixtureContext.routineContentHashByRoutineId, [empty.id]: "c1-0011223344556677" },
+      routineStateHashByRoutineId: { ...fixtureContext.routineStateHashByRoutineId, [empty.id]: "s1-0011223344556677" },
+    } as typeof fixtureContext;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, {
+      schemaVersion: 3,
+      routineId: empty.id,
+      baseContentHash: "c1-0011223344556677",
+      rationale: "Name the draft before filling it.",
+      operations: [{ kind: "renameRoutine", expectedStringValue: "Empty Draft", newStringValue: "Lower A" }],
+    });
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  /**
+   * The app refuses this and the bridge used not to, so a coach could store a
+   * draft that could never be applied.
+   */
+  it("refuses a patch that would leave the routine with no exercises", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const everyExercise = routine.sections.flatMap((section) => section.exercises);
+
+    const checked = await validate(envelope.contextId, sectionPatch(
+      everyExercise.map((exercise) => ({
+        kind: "removeExercise",
+        exerciseId: exercise.id,
+        expectedStringValue: exercise.name,
+      })),
+    ));
+
+    expect(checked.status).toBe(422);
+    const problems = (await json(checked)).problems;
+    expect(problems.map((problem: any) => problem.message)).toContain("patch would leave the routine with no exercises");
+  });
+
+  it("allows a patch that empties a section and refills it", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+    const everyExercise = routine.sections.flatMap((section) => section.exercises);
+
+    const checked = await validate(envelope.contextId, sectionPatch([
+      ...everyExercise.map((exercise) => ({
+        kind: "removeExercise",
+        exerciseId: exercise.id,
+        expectedStringValue: exercise.name,
+      })),
+      { kind: "addExercise", sectionId: routine.sections[0]!.id, exercise: newExercise(crypto.randomUUID(), "Trap Bar Deadlift") },
+    ]));
+
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+  });
+
+  function createPatch(overrides: Record<string, unknown> = {}, routineOverrides: Record<string, unknown> = {}) {
+    const sectionId = crypto.randomUUID();
+    return {
+      schemaVersion: 3,
+      target: "newRoutine",
+      rationale: "The split needs a lower day that does not exist yet.",
+      operations: [{
+        kind: "createRoutine",
+        routine: {
+          id: crypto.randomUUID(),
+          name: "Lower A",
+          currentPhase: "deload",
+          sections: [{
+            id: sectionId,
+            name: "Main Lifts",
+            exercises: [newExercise(crypto.randomUUID(), "Trap Bar Deadlift")],
+          }],
+          ...routineOverrides,
+        },
+      }],
+      ...overrides,
+    };
+  }
+
+  it("validates and stores a create, and pulls it with no anchor", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const patch = createPatch();
+
+    const checked = await validate(envelope.contextId, patch);
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+
+    const stored = await SELF.fetch("https://flow.test/actions/pending-patches", {
+      method: "POST",
+      headers: auth(ACTIONS_SECRET),
+      body: JSON.stringify({ contextId: envelope.contextId, patch }),
+    });
+    expect(stored.status).toBe(201);
+    // The stored row has no routine to point at and no content to hash, which
+    // is what the table migration exists to allow.
+    expect((await json(stored)).patch.routineId).toBeNull();
+    expect((await json(await SELF.fetch("https://flow.test/device/pending-patches", { headers: auth(DEVICE_SECRET) })))
+      .patches[0].patch.target).toBe("newRoutine");
+  });
+
+  it("reuses the stored draft when a create is retried with the same key", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const body = JSON.stringify({ contextId: envelope.contextId, patch: createPatch() });
+    const headers = { ...auth(ACTIONS_SECRET), "idempotency-key": "create-lower-a" };
+
+    const first = await SELF.fetch("https://flow.test/actions/pending-patches", { method: "POST", headers, body });
+    expect(first.status).toBe(201);
+    const retry = await SELF.fetch("https://flow.test/actions/pending-patches", { method: "POST", headers, body });
+    expect(retry.status).toBe(200);
+    const retried = await json(retry);
+    expect(retried.duplicate).toBe(true);
+    expect(retried.patch.patchId).toBe((await json(first)).patch.patchId);
+
+    const pulled = await json(await SELF.fetch("https://flow.test/device/pending-patches", { headers: auth(DEVICE_SECRET) }));
+    expect(pulled.patches).toHaveLength(1);
+  });
+
+  /**
+   * The two collisions need different advice. "This id is taken" invites
+   * regenerating ids and re-proposing, which for a draft that already landed
+   * manufactures a duplicate routine the app would happily accept, since
+   * every id in it is genuinely fresh.
+   */
+  it("tells a landed retry apart from a genuine id collision", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const landed = fixtureContext.routines[0]!;
+
+    // The routine already in the snapshot, proposed again unchanged.
+    const retry = await validate(envelope.contextId, createPatch({}, {
+      id: landed.id,
+      name: landed.name,
+      currentPhase: fixtureContext.currentPhaseByRoutineId[landed.id as keyof typeof fixtureContext.currentPhaseByRoutineId],
+      sections: landed.sections,
+    }));
+    expect(retry.status).toBe(422);
+    expect((await json(retry)).problems[0].message).toContain("do not propose it again");
+
+    // A different routine wearing the same id.
+    const collision = await validate(envelope.contextId, createPatch({}, { id: landed.id }));
+    expect(collision.status).toBe(422);
+    const problems = (await json(collision)).problems;
+    expect(problems[0].path).toBe("operations.0.routine.id");
+    expect(problems[0].message).toContain("generate a fresh routine id");
+  });
+
+  it("still calls a retry a retry when the draft carries an empty phase override", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const landed = fixtureContext.routines[0]!;
+
+    const retry = await validate(envelope.contextId, createPatch({}, {
+      id: landed.id,
+      name: `  ${landed.name}  `,
+      currentPhase: fixtureContext.currentPhaseByRoutineId[landed.id as keyof typeof fixtureContext.currentPhaseByRoutineId],
+      sections: landed.sections.map((section, index) => index > 0 ? section : {
+        ...section,
+        exercises: section.exercises.map((exercise, position) => position > 0 ? exercise : {
+          ...exercise,
+          phaseOverrides: { ...exercise.phaseOverrides, deload: {} },
+        }),
+      }),
+    }));
+
+    expect(retry.status).toBe(422);
+    expect((await json(retry)).problems[0].message).toContain("do not propose it again");
+  });
+
+  it("refuses a create that carries an anchor it cannot have", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+
+    for (const [field, value] of [["routineId", routine.id], ["baseContentHash", "c1-0011223344556677"]] as const) {
+      const checked = await validate(envelope.contextId, createPatch({ [field]: value }));
+      expect(checked.status).toBe(422);
+      expect((await json(checked)).problems.map((problem: any) => problem.path)).toContain(field);
+    }
+  });
+
+  it("refuses a create bundled with any other operation", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const patch = createPatch();
+
+    const checked = await validate(envelope.contextId, {
+      ...patch,
+      operations: [
+        ...patch.operations,
+        { kind: "addSection", section: { id: crypto.randomUUID(), name: "Core" } },
+      ],
+    });
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems[0].path).toBe("operations");
+  });
+
+  it("refuses a createRoutine smuggled into an existingRoutine patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const routine = fixtureContext.routines[0]!;
+
+    const checked = await validate(envelope.contextId, {
+      ...sectionPatch([createPatch().operations[0]]),
+      target: "existingRoutine",
+      routineId: routine.id,
+    });
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems[0].path).toBe("target");
+  });
+
+  it("refuses a created routine with no exercises anywhere", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, createPatch({}, {
+      sections: [{ id: crypto.randomUUID(), name: "Empty", exercises: [] }],
+    }));
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.message))
+      .toContain("a routine needs at least one exercise");
+  });
+
+  /**
+   * Whole-routine import has always reassigned ids on the way in, so globally
+   * fresh ids are what the rest of the app assumes. History reads more simply
+   * when an id means one exercise.
+   */
+  it("refuses a created routine that reuses an exercise id from elsewhere", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const borrowed = fixtureContext.routines[0]!.sections[0]!.exercises[0]!.id;
+
+    const checked = await validate(envelope.contextId, createPatch({}, {
+      sections: [{
+        id: crypto.randomUUID(),
+        name: "Main",
+        exercises: [newExercise(borrowed, "Borrowed")],
+      }],
+    }));
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems.map((problem: any) => problem.message))
+      .toContain("exercise id already exists in another routine");
+  });
+
+  /**
+   * The worst of the three ceilings to cross: past this the next snapshot
+   * upload fails whole, so the coach stops seeing anything at all rather than
+   * losing one routine.
+   */
+  it("refuses a create once the snapshot already carries as many routines as it can", async () => {
+    const envelope = capableSnapshot();
+    const filler = Array.from({ length: MAX_ROUTINES }, (_, index) => ({
+      id: crypto.randomUUID(),
+      name: `Routine ${index}`,
+      currentPhase: "base",
+      sections: [{
+        id: crypto.randomUUID(),
+        name: "Main",
+        exercises: [newExercise(crypto.randomUUID(), "Press")],
+      }],
+    }));
+    envelope.context = {
+      ...fixtureContext,
+      routines: filler,
+      currentPhaseByRoutineId: Object.fromEntries(filler.map((routine) => [routine.id, "base"])),
+      routineContentHashByRoutineId: Object.fromEntries(filler.map((routine) => [routine.id, "c1-0011223344556677"])),
+      routineStateHashByRoutineId: Object.fromEntries(filler.map((routine) => [routine.id, "s1-0011223344556677"])),
+    } as unknown as typeof fixtureContext;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const full = await validate(envelope.contextId, createPatch());
+    expect(full.status).toBe(422);
+    expect((await json(full)).problems[0].message).toContain(`at most ${MAX_ROUTINES} routines`);
+
+    // One fewer, and the same create is fine, so the ceiling is the reason.
+    const roomForOne = { ...envelope, contextId: crypto.randomUUID() };
+    roomForOne.context = { ...envelope.context, routines: filler.slice(0, -1) } as typeof envelope.context;
+    expect((await upload(roomForOne)).status).toBe(201);
+    const fits = await validate(roomForOne.contextId, createPatch());
+    expect(fits.status).toBe(200);
+    expect((await json(fits)).valid).toBe(true);
+  });
+
+  it("refuses a create when the device does not report support for it", async () => {
+    const envelope = capableSnapshot(OPERATION_KINDS.filter((kind) => kind !== "createRoutine"));
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, createPatch());
+
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems[0].message).toContain("createRoutine");
+  });
+
   /**
    * The one path that runs against Durable Objects that already exist.
    * `createSchema` is CREATE TABLE IF NOT EXISTS, so an object created before
@@ -446,6 +1122,107 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       // column is already present.
       instance.migrateSchema();
       expect(columnNames().filter((name) => name === "device_capabilities_json")).toHaveLength(1);
+    });
+  });
+
+  /**
+   * A create anchors to nothing, so the patches table has to accept null
+   * where it used to demand a routine id and a content hash. SQLite cannot
+   * relax a constraint with ALTER, so this is a table rebuild, and it has to
+   * carry existing pending drafts across rather than dropping them.
+   */
+  it("relaxes the patch anchor columns on a Durable Object created with them NOT NULL", async () => {
+    const id = env.FLOW_COACH.idFromName(`flow-coach:anchor-${crypto.randomUUID()}`);
+    const stub = env.FLOW_COACH.get(id);
+
+    await runInDurableObject(stub, async (instance: any, state: DurableObjectState) => {
+      const anchorColumns = () => state.storage.sql
+        .exec<{ name: string; notnull: number }>("PRAGMA table_info(patches)")
+        .toArray()
+        .filter((column) => column.name === "routine_id" || column.name === "base_hash");
+
+      // Rebuild the pre-create shape, with a pending draft already in it.
+      state.storage.sql.exec("DROP TABLE patches");
+      state.storage.sql.exec(`
+        CREATE TABLE patches (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          patch_id TEXT NOT NULL UNIQUE, context_id TEXT NOT NULL,
+          routine_id TEXT NOT NULL, base_hash TEXT NOT NULL,
+          created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, status TEXT NOT NULL,
+          provenance TEXT NOT NULL, principal_id TEXT NOT NULL, rationale TEXT, patch_json TEXT,
+          pulled_at INTEGER, terminal_at INTEGER, tombstone_expires_at INTEGER,
+          idempotency_digest TEXT UNIQUE, proposal_digest TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL
+        )`);
+      state.storage.sql.exec(
+        `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
+          provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
+         VALUES ('patch-1', 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', 'd1', 'd2')`,
+      );
+      expect(anchorColumns().every((column) => column.notnull === 1)).toBe(true);
+
+      instance.migrateSchema();
+
+      expect(anchorColumns().every((column) => column.notnull === 0)).toBe(true);
+      const carried = state.storage.sql.exec<{ patch_id: string; rationale: string }>("SELECT * FROM patches").toArray();
+      expect(carried).toHaveLength(1);
+      expect(carried[0]!.patch_id).toBe("patch-1");
+      expect(carried[0]!.rationale).toBe("why");
+
+      // A create can now be stored, which is the point of the whole rebuild.
+      state.storage.sql.exec(
+        `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
+          provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
+         VALUES ('patch-2', 'ctx-1', NULL, NULL, 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', 'd3', 'd4')`,
+      );
+      expect(state.storage.sql.exec("SELECT COUNT(*) AS n FROM patches").one().n).toBe(2);
+
+      // Idempotent.
+      instance.migrateSchema();
+      expect(state.storage.sql.exec("SELECT COUNT(*) AS n FROM patches").one().n).toBe(2);
+    });
+  });
+
+  /**
+   * Pull cursors are ordered by seq, so a rebuild that reset the counter to
+   * the highest surviving row could hand out a seq it had already issued to a
+   * patch that has since expired.
+   */
+  it("carries the patch sequence counter across the rebuild", async () => {
+    const id = env.FLOW_COACH.idFromName(`flow-coach:sequence-${crypto.randomUUID()}`);
+    const stub = env.FLOW_COACH.get(id);
+
+    await runInDurableObject(stub, async (instance: any, state: DurableObjectState) => {
+      state.storage.sql.exec("DROP TABLE patches");
+      state.storage.sql.exec(`
+        CREATE TABLE patches (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          patch_id TEXT NOT NULL UNIQUE, context_id TEXT NOT NULL,
+          routine_id TEXT NOT NULL, base_hash TEXT NOT NULL,
+          created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, status TEXT NOT NULL,
+          provenance TEXT NOT NULL, principal_id TEXT NOT NULL, rationale TEXT, patch_json TEXT,
+          pulled_at INTEGER, terminal_at INTEGER, tombstone_expires_at INTEGER,
+          idempotency_digest TEXT UNIQUE, proposal_digest TEXT NOT NULL UNIQUE, payload_digest TEXT NOT NULL
+        )`);
+      const insert = (patchId: string, digest: string) => state.storage.sql.exec(
+        `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
+          provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
+         VALUES (?, 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', ?, 'pd')`,
+        patchId, digest,
+      );
+      insert("patch-1", "d1");
+      insert("patch-2", "d2");
+      insert("patch-3", "d3");
+      // Everything but the first has since gone terminal and been swept, so
+      // the surviving row's seq is well below the highest ever issued.
+      state.storage.sql.exec("DELETE FROM patches WHERE seq > 1");
+      const issued = state.storage.sql.exec<{ seq: number }>("SELECT seq FROM sqlite_sequence WHERE name = 'patches'").one().seq;
+      expect(issued).toBe(3);
+
+      instance.migrateSchema();
+
+      insert("patch-4", "d4");
+      const next = state.storage.sql.exec<{ seq: number }>("SELECT seq FROM patches WHERE patch_id = 'patch-4'").one().seq;
+      expect(next).toBeGreaterThan(issued);
     });
   });
 });

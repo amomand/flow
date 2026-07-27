@@ -182,6 +182,20 @@ struct CoachWorkflowSheet: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 readinessChip(summary.readiness)
+                // A create adds a routine that is not in the list yet, so
+                // without this the row reads as an edit to a routine the user
+                // would go looking for and not find.
+                if summary.isCreate {
+                    Text("NEW")
+                        .terminalFont(10, weight: .bold)
+                        .foregroundColor(TN.blue)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 3)
+                                .stroke(TN.blue.opacity(0.6), lineWidth: 1)
+                        )
+                }
                 Text(summary.routineName ?? "Unknown routine")
                     .terminalFont(12, weight: .bold)
                     .foregroundColor(TN.fg)
@@ -221,6 +235,8 @@ struct CoachWorkflowSheet: View {
             case .ready: return ("READY", TN.green)
             case .rebase: return ("REBASE", TN.yellow)
             case .conflict: return ("CONFLICT", TN.red)
+            // Not red: the routine is here, which is what the draft wanted.
+            case .superseded: return ("ALREADY APPLIED", TN.comment)
             case .invalid: return ("INVALID", TN.red)
             }
         }()
@@ -275,9 +291,21 @@ struct CoachWorkflowSheet: View {
                         .foregroundColor(TN.yellow)
                 }
 
+                if preview.isCreate {
+                    Text("NEW ROUTINE: applying adds this to your routines. Nothing you already have is touched.")
+                        .terminalFont(12)
+                        .foregroundColor(TN.blue)
+                }
+
                 Text(preview.updatedRoutine.name)
                     .terminalFont(14, weight: .bold)
                     .foregroundColor(TN.fg)
+
+                if preview.isCreate {
+                    Text("Starts in \(preview.updatedRoutine.currentPhase.displayName) · \(preview.updatedRoutine.sections.count) sections · \(preview.updatedRoutine.sections.reduce(0) { $0 + $1.exercises.count }) exercises")
+                        .terminalFont(11)
+                        .foregroundColor(TN.comment)
+                }
 
                 if !preview.patch.rationale.isEmpty {
                     Text(preview.patch.rationale)
@@ -512,21 +540,30 @@ struct CoachWorkflowSheet: View {
         clearMessages()
         guard let selectedPatchId else { return }
         let selected = inbox.pending.first { $0.id == selectedPatchId }
-        // A draft that no longer matches the routine is reported as stale
-        // rather than rejected, so the mailbox records why it went away.
-        let isStale: Bool = selected.map { patch in
+        // What the mailbox is told has to match what actually happened, or the
+        // coach draws the wrong conclusion and acts on it. A draft that no
+        // longer matches the routine went away because the world moved, which
+        // is stale. A superseded create is the opposite case: the routine it
+        // proposed is already here, so the outcome it wanted is in place, and
+        // calling that stale would invite the coach to propose it again.
+        let outcome: PendingBridgeAcknowledgement.Status = selected.map { patch in
             switch inbox.summary(for: patch, routines: store.routines).readiness {
-            case .conflict, .invalid: return true
-            case .ready, .rebase: return false
+            case .superseded: return .applied
+            case .conflict, .invalid: return .stale
+            case .ready, .rebase: return .rejected
             }
-        } ?? false
+        } ?? .rejected
         guard inbox.markRejected(selectedPatchId) else {
             errorMessage = inbox.persistenceError ?? "Could not record the rejection."
             return
         }
-        acknowledgeToBridge(selected, status: isStale ? .stale : .rejected)
+        acknowledgeToBridge(selected, status: outcome)
         clearSelection()
-        statusMessage = isStale ? "Patch cleared as stale." : "Patch rejected."
+        switch outcome {
+        case .applied: statusMessage = "Patch cleared; that routine is already here."
+        case .stale: statusMessage = "Patch cleared as stale."
+        default: statusMessage = "Patch rejected."
+        }
     }
 
     /// Reports a resolved bridge draft to its mailbox. Local-only patches

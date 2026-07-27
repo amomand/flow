@@ -121,16 +121,70 @@ const exerciseProperty = {
   required: ["id", "name", "sets", "reps", "restBetweenSetsSeconds", "restAfterExerciseSeconds", "notes", "perSide"],
   additionalProperties: false,
 };
+const sectionProperty = {
+  type: "object",
+  description:
+    "A new, empty section, only for addSection. Give it a fresh UUID and add exercises to it with later " +
+    "addExercise operations. The name is stored trimmed, and the 1 to 200 character bound is measured " +
+    "after trimming.",
+  properties: {
+    id: uuidProperty,
+    name: { type: "string", minLength: 1, maxLength: 200 },
+  },
+  required: ["id", "name"],
+  additionalProperties: false,
+};
+const routineProperty = {
+  type: "object",
+  description:
+    "A complete new routine, only for createRoutine. Generate every id yourself: the routine's, each " +
+    "section's, and each exercise's. Exercise ids must be unique across every routine in the snapshot, " +
+    "not just this one. Because you supply the ids, applying the same create twice leaves one routine " +
+    "rather than two.",
+  properties: {
+    id: uuidProperty,
+    name: { type: "string", minLength: 1, maxLength: 100, description: "Stored trimmed; the bound is measured after trimming." },
+    currentPhase: { ...phaseProperty, description: "The phase the routine starts in." },
+    sections: {
+      type: "array",
+      minItems: 1,
+      description: "At least one section, holding at least one exercise between them.",
+      items: {
+        type: "object",
+        properties: {
+          id: uuidProperty,
+          name: { type: "string", minLength: 1, maxLength: 200 },
+          exercises: { type: "array", items: exerciseProperty },
+        },
+        required: ["id", "name", "exercises"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["id", "name", "currentPhase", "sections"],
+  additionalProperties: false,
+};
 const patchProperty = {
   type: "object",
   description:
-    "A FlowRoutinePatch. Copy routineId and baseContentHash exactly from the snapshot " +
-    "you read; never compute or guess a hash. Use the highest schemaVersion listed in " +
-    "capabilities.patchSchemaVersions from get_flow_coach_context, and only operation " +
-    "kinds listed in capabilities.operationKinds: an operation belongs to the schema " +
-    "version that introduced it, so renameRoutine requires schemaVersion 3 and is " +
-    "rejected under schemaVersion 2.",
+    "A FlowRoutinePatch, in one of two shapes chosen by `target`.\n\n" +
+    "target 'existingRoutine' (the default, and the only shape in schema 2) edits a routine that is " +
+    "already there: copy routineId and baseContentHash exactly from the snapshot you read, and never " +
+    "compute or guess a hash.\n\n" +
+    "target 'newRoutine' proposes a routine that does not exist yet. It carries no routineId and no " +
+    "baseContentHash, because there is nothing to anchor to, and exactly one operation: a createRoutine " +
+    "holding the whole routine. Do not follow it with addSection or addExercise operations; a new routine " +
+    "arrives whole so the user previews a routine rather than a sequence of edits to one.\n\n" +
+    "Use the highest schemaVersion listed in capabilities.patchSchemaVersions from " +
+    "get_flow_coach_context, and only operation kinds listed in capabilities.operationKinds: an " +
+    "operation belongs to the schema version that introduced it, so renameRoutine, addSection and " +
+    "createRoutine require schemaVersion 3 and are rejected under schemaVersion 2.",
   properties: {
+    target: {
+      type: "string",
+      enum: ["existingRoutine", "newRoutine"],
+      description: "Defaults to existingRoutine when omitted.",
+    },
     // Published from the shared contract, not restated, so the schema a client
     // composes against cannot fall behind what the bridge accepts.
     schemaVersion: { type: "integer", enum: PATCH_SCHEMA_VERSIONS },
@@ -158,6 +212,18 @@ const patchProperty = {
         "snapshot shows it) and newStringValue (1 to 100 characters); it takes no exerciseId. A routine " +
         "name sits outside baseContentHash, so expectedStringValue is the only staleness guard a rename " +
         "has and a wrong one is a conflict, not a detail. " +
+        "addSection (schema 3) needs section ({ id: a fresh UUID, name }), optionally afterSectionId to " +
+        "place it after an existing section rather than at the end. Sections arrive empty; fill one with " +
+        "addExercise operations later in the same patch, referencing the id you just generated. " +
+        "Operations apply in array order and each sees what the ones before it did, so addSection then " +
+        "addExercise into that section is valid, as is addExercise then moveExercise on the exercise you " +
+        "just added, and a second renameRoutine reads the name the first one set. " +
+        "createRoutine (schema 3) needs routine, and belongs only in a patch whose target is newRoutine, " +
+        "as its single operation. " +
+        "Ceilings, which a patch may not push past: 50 routines, 50 sections in a routine, and 100 " +
+        "exercises in any one section. Beyond the first the next snapshot upload fails whole and the " +
+        "coach stops seeing anything; beyond the others a routine stops fitting in a snapshot and drops " +
+        "out of view at the next sync. A patch may also not leave a routine with no exercises at all. " +
         "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps. " +
         "Base-value operations (replaceExerciseReps, replaceExerciseSets, replaceTimedDuration) change the " +
         "base value only and do not cascade into phaseOverrides: an exercise with a peak or deload override " +
@@ -167,10 +233,23 @@ const patchProperty = {
         type: "object",
         properties: {
           kind: { type: "string", enum: OPERATION_KINDS },
-          exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise and renameRoutine; must exist in the routine." },
+          exerciseId: {
+            ...uuidProperty,
+            description:
+              "The exercise being changed; it must already exist in the routine, or have been added " +
+              "earlier in this same patch. Not used by addExercise, addSection, or renameRoutine.",
+          },
           sectionId: { ...uuidProperty, description: "For addExercise: the section to add into." },
           targetSectionId: { ...uuidProperty, description: "For moveExercise: the destination section." },
-          afterExerciseId: { ...uuidProperty, description: "Optional anchor: place after this exercise." },
+          afterSectionId: { ...uuidProperty, description: "Optional anchor for addSection: place after this section." },
+          afterExerciseId: {
+            ...uuidProperty,
+            description:
+              "Optional anchor for addExercise and moveExercise: place after this exercise. It must be an " +
+              "exercise in the section being added to or moved into, and it cannot be the exercise the " +
+              "operation is itself adding or moving. Ignored by every other kind.",
+          },
+          section: sectionProperty,
           phase: { ...phaseProperty, description: "For replacePhaseOverride: peak or deload only." },
           expectedIntValue: { type: "integer", description: "The current value as shown in the snapshot." },
           newIntValue: {
@@ -183,13 +262,17 @@ const patchProperty = {
           newPhaseOverride: phaseOverrideProperty,
           removePhaseOverride: { type: "boolean" },
           exercise: exerciseProperty,
+          routine: routineProperty,
         },
         required: ["kind"],
         additionalProperties: false,
       },
     },
   },
-  required: ["schemaVersion", "routineId", "baseContentHash", "rationale", "operations"],
+  // routineId and baseContentHash are required only on the existingRoutine
+  // branch, which the description spells out; listing them here would make a
+  // valid create look malformed to a client reading the schema.
+  required: ["schemaVersion", "rationale", "operations"],
   additionalProperties: false,
 };
 

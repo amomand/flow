@@ -283,6 +283,7 @@ final class RoutineStoreTests: XCTestCase {
             diffs: [],
             previousSections: original.sections,
             previousName: original.name,
+            createdRoutine: false,
             provenance: nil,
             outcome: .applied,
             restoredAt: nil
