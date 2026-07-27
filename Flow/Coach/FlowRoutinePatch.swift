@@ -1079,16 +1079,24 @@ enum FlowRoutinePatcher {
     /**
      Bound a string the way the bridge bounds it: in UTF-16 code units.
 
-     Swift's `count` is grapheme clusters, and the bridge's `length` and the
-     JSON schemas the coach reads are UTF-16 code units. The two disagree for
-     emoji, combining marks and most non-Latin scripts, so a name of 100 emoji
-     is 100 to the app and 200 to the bridge. The bridge was the stricter side
-     everywhere, which meant a name the app accepted was one the coach could
-     not propose, and the rejection made no sense to the person who typed it.
+     Swift's `count` is grapheme clusters and the bridge's `length` is UTF-16
+     code units. They agree for most text and part company wherever one
+     character spans more than one code unit: anything outside the Basic
+     Multilingual Plane, which is most emoji, and anything written as a base
+     character plus combining marks, which covers accents typed as a sequence,
+     joined emoji, and scripts that hang dependent signs off a base letter.
+     Everyday Cyrillic, Greek, Arabic, Hebrew and CJK sit in the BMP at one
+     code unit per letter and count the same either way.
 
-     UTF-16 is the contract because it is what the published schemas already
-     describe. Teaching JavaScript about grapheme clusters is the more correct
-     direction and far more work for a difference nobody hits deliberately.
+     So a name of 100 emoji was 100 to the app and 200 to the bridge. The
+     bridge was the stricter side everywhere, which meant a name the app
+     accepted was one the coach could not propose, and the rejection made no
+     sense to the person who typed it.
+
+     UTF-16 is the contract because it is what the bridge's JavaScript measures
+     without being asked. Teaching JavaScript about grapheme clusters is the
+     more correct direction and far more work for a difference nobody hits
+     deliberately.
 
      Every bounded string on the patch path goes through here so the unit is
      stated once rather than rediscovered per field.
