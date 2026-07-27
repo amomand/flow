@@ -1341,6 +1341,25 @@ describe("Flow Coach bridge expected values", () => {
     expect(stale[0]!.message).toContain("5");
   });
 
+  /**
+   * A mismatched operation still records its effect, so the operations after
+   * it are read against what the coach believed rather than being drowned in
+   * consequences of the first mistake. The verdict cannot move either way: the
+   * mismatch itself is a problem, so the patch is refused regardless, and Flow
+   * would have stopped at that operation anyway.
+   */
+  it("reports the first wrong expectation without cascading into the rest", async () => {
+    const contextId = await paired();
+
+    const cascade = await problems(contextId, patch([
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: pressed.sets + 1, newIntValue: 5 },
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: 5, newIntValue: 6 },
+      { kind: "replaceExerciseSets", exerciseId: pressed.id, expectedIntValue: 6, newIntValue: 7 },
+    ]));
+    expect(cascade).toHaveLength(1);
+    expect(cascade[0]!.path).toBe("operations.0.expectedIntValue");
+  });
+
   it("reads an expectation against an exercise the same patch added", async () => {
     const contextId = await paired();
     const added = {
