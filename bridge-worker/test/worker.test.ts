@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { env, SELF } from "cloudflare:test";
+import { env, runInDurableObject, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
+import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
 
 const ACTIONS_SECRET = "fixture-actions-secret";
 const DEVICE_SECRET = "fixture-device-secret";
@@ -245,5 +246,206 @@ describe("Flow Coach bridge Worker", () => {
       headers: auth(DEVICE_SECRET),
     });
     expect((await json(pull)).patches).toHaveLength(0);
+  });
+});
+
+describe("Flow Coach bridge capabilities and renameRoutine", () => {
+  beforeEach(clearMailbox);
+
+  function capableSnapshot(operationKinds: string[] = [...OPERATION_KINDS], patchSchemaVersions = [2, 3]) {
+    return { ...snapshot(), deviceCapabilities: { patchSchemaVersions, operationKinds } };
+  }
+
+  function renamePatch(overrides: Record<string, unknown> = {}, operationOverrides: Record<string, unknown> = {}) {
+    const routine = fixtureContext.routines[0]!;
+    return {
+      schemaVersion: 3,
+      routineId: routine.id,
+      baseContentHash: fixtureContext.routineContentHashByRoutineId[routine.id as keyof typeof fixtureContext.routineContentHashByRoutineId],
+      rationale: "The weekday in the name no longer matches the plan.",
+      operations: [{
+        kind: "renameRoutine",
+        expectedStringValue: routine.name,
+        newStringValue: "Upper A",
+        ...operationOverrides,
+      }],
+      ...overrides,
+    };
+  }
+
+  async function validate(contextId: string, patch: unknown): Promise<Response> {
+    return SELF.fetch("https://flow.test/actions/patches/validate", {
+      method: "POST",
+      headers: auth(ACTIONS_SECRET),
+      body: JSON.stringify({ contextId, patch }),
+    });
+  }
+
+  async function readCapabilities(contextId: string): Promise<Record<string, any>> {
+    const response = await SELF.fetch(`https://flow.test/actions/coach-context?contextId=${contextId}`, {
+      headers: auth(ACTIONS_SECRET),
+    });
+    expect(response.status).toBe(200);
+    return (await json(response)).capabilities;
+  }
+
+  it("advertises what the device declares, and accepts a rename against it", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const capabilities = await readCapabilities(envelope.contextId);
+    expect(capabilities.deviceReported).toBe(true);
+    expect(capabilities.patchSchemaVersions).toEqual([2, 3]);
+    expect(capabilities.operationKinds).toEqual(OPERATION_KINDS);
+
+    const checked = await validate(envelope.contextId, renamePatch());
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+
+    const stored = await SELF.fetch("https://flow.test/actions/pending-patches", {
+      method: "POST",
+      headers: auth(ACTIONS_SECRET),
+      body: JSON.stringify({ contextId: envelope.contextId, patch: renamePatch() }),
+    });
+    expect(stored.status).toBe(201);
+  });
+
+  // The failure this whole mechanism exists to prevent: a bridge that accepts
+  // an operation the phone in the user's pocket has never heard of.
+  it("falls back to the schema 2 baseline when the device declares nothing", async () => {
+    const envelope = snapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const capabilities = await readCapabilities(envelope.contextId);
+    expect(capabilities.deviceReported).toBe(false);
+    expect(capabilities.patchSchemaVersions).toEqual([2]);
+    expect(capabilities.operationKinds).not.toContain("renameRoutine");
+
+    const checked = await validate(envelope.contextId, renamePatch());
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems[0].path).toBe("schemaVersion");
+  });
+
+  it("refuses an operation the device leaves off its list", async () => {
+    const envelope = capableSnapshot(OPERATION_KINDS.filter((kind) => kind !== "renameRoutine"));
+    expect((await upload(envelope)).status).toBe(201);
+    expect(await readCapabilities(envelope.contextId).then((c) => c.operationKinds)).not.toContain("renameRoutine");
+
+    const checked = await validate(envelope.contextId, renamePatch());
+    expect(checked.status).toBe(422);
+    const problems = (await json(checked)).problems;
+    expect(problems[0].path).toBe("operations.0.kind");
+    expect(problems[0].message).toContain("renameRoutine");
+  });
+
+  it("refuses a schema 3 operation smuggled into a schema 2 patch", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, renamePatch({ schemaVersion: 2 }));
+    expect(checked.status).toBe(422);
+    const problems = (await json(checked)).problems;
+    expect(problems[0].path).toBe("operations.0.kind");
+    expect(problems[0].message).toContain("schema 3");
+  });
+
+  it("treats a stale expected name as a conflict rather than applying it anyway", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, renamePatch({}, { expectedStringValue: "Some Other Name" }));
+    expect(checked.status).toBe(422);
+    expect((await json(checked)).problems[0].path).toBe("operations.0.expectedStringValue");
+  });
+
+  it("bounds the proposed name", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    for (const newStringValue of ["   ", "x".repeat(101)]) {
+      const checked = await validate(envelope.contextId, renamePatch({}, { newStringValue }));
+      expect(checked.status).toBe(422);
+      expect((await json(checked)).problems[0].path).toBe("operations.0.newStringValue");
+    }
+  });
+
+  /**
+   * The version list lives in patch-operations.json and is read by the app,
+   * the parser, and the published MCP schema. This pins the parser to it: a
+   * version added to the contract that zod still rejects would advertise a
+   * capability no patch could actually use.
+   */
+  it("parses exactly the schema versions the shared contract names", async () => {
+    const envelope = capableSnapshot(
+      [...OPERATION_KINDS],
+      [...PATCH_SCHEMA_VERSIONS],
+    );
+    expect((await upload(envelope)).status).toBe(201);
+
+    for (const schemaVersion of PATCH_SCHEMA_VERSIONS) {
+      const checked = await validate(envelope.contextId, {
+        ...renamePatch({ schemaVersion }),
+        // renameRoutine only exists from 3, so probe each version with an
+        // operation every version has.
+        operations: validPatch().operations,
+      });
+      const body = await json(checked);
+      expect(body.problems.filter((problem: any) => problem.path === "schemaVersion")).toEqual([]);
+      expect(body.valid).toBe(true);
+    }
+
+    const unknown = await validate(envelope.contextId, renamePatch({ schemaVersion: 99 }));
+    expect(unknown.status).toBe(422);
+    expect((await json(unknown)).problems[0].path).toBe("schemaVersion");
+  });
+
+  it("still validates and stores a schema 2 patch unchanged", async () => {
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const checked = await validate(envelope.contextId, validPatch());
+    expect(checked.status).toBe(200);
+    expect((await json(checked)).valid).toBe(true);
+
+    const stored = await SELF.fetch("https://flow.test/actions/pending-patches", {
+      method: "POST",
+      headers: auth(ACTIONS_SECRET),
+      body: JSON.stringify({ contextId: envelope.contextId, patch: validPatch() }),
+    });
+    expect(stored.status).toBe(201);
+
+    const pulled = await SELF.fetch("https://flow.test/device/pending-patches", {
+      headers: auth(DEVICE_SECRET),
+    });
+    expect((await json(pulled)).patches[0].patch.schemaVersion).toBe(2);
+  });
+
+  /**
+   * The one path that runs against Durable Objects that already exist.
+   * `createSchema` is CREATE TABLE IF NOT EXISTS, so an object created before
+   * this column existed keeps its old shape forever unless the ALTER runs;
+   * every other test starts from a fresh object where the column is already
+   * there and the migration is a no-op.
+   */
+  it("adds the capabilities column to a Durable Object created without it", async () => {
+    const id = env.FLOW_COACH.idFromName(`flow-coach:migration-${crypto.randomUUID()}`);
+    const stub = env.FLOW_COACH.get(id);
+
+    await runInDurableObject(stub, async (instance: any, state: DurableObjectState) => {
+      const columnNames = () => state.storage.sql
+        .exec<{ name: string }>("PRAGMA table_info(snapshots)").toArray().map((row) => row.name);
+
+      // Wind the object back to the pre-capabilities shape.
+      state.storage.sql.exec("ALTER TABLE snapshots DROP COLUMN device_capabilities_json");
+      expect(columnNames()).not.toContain("device_capabilities_json");
+
+      instance.migrateSchema();
+      expect(columnNames()).toContain("device_capabilities_json");
+
+      // Idempotent: it runs on every construction, including ones where the
+      // column is already present.
+      instance.migrateSchema();
+      expect(columnNames().filter((name) => name === "device_capabilities_json")).toHaveLength(1);
+    });
   });
 });

@@ -18,6 +18,8 @@
  *   create_pending_routine_patch.
  */
 
+import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "./schemas";
+
 export const MCP_SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
 /**
@@ -122,10 +124,16 @@ const exerciseProperty = {
 const patchProperty = {
   type: "object",
   description:
-    "A FlowRoutinePatch, schema version 2. Copy routineId and baseContentHash exactly " +
-    "from the snapshot you read; never compute or guess a hash.",
+    "A FlowRoutinePatch. Copy routineId and baseContentHash exactly from the snapshot " +
+    "you read; never compute or guess a hash. Use the highest schemaVersion listed in " +
+    "capabilities.patchSchemaVersions from get_flow_coach_context, and only operation " +
+    "kinds listed in capabilities.operationKinds: an operation belongs to the schema " +
+    "version that introduced it, so renameRoutine requires schemaVersion 3 and is " +
+    "rejected under schemaVersion 2.",
   properties: {
-    schemaVersion: { type: "integer", enum: [2] },
+    // Published from the shared contract, not restated, so the schema a client
+    // composes against cannot fall behind what the bridge accepts.
+    schemaVersion: { type: "integer", enum: PATCH_SCHEMA_VERSIONS },
     routineId: uuidProperty,
     baseContentHash: {
       type: "string",
@@ -146,6 +154,10 @@ const patchProperty = {
         "addExercise needs sectionId and exercise, optionally afterExerciseId. moveExercise needs " +
         "exerciseId and targetSectionId, optionally afterExerciseId. replacePhaseOverride needs " +
         "exerciseId, phase (peak or deload), and either newPhaseOverride or removePhaseOverride: true. " +
+        "renameRoutine (schema 3) needs expectedStringValue (the routine's current name, exactly as the " +
+        "snapshot shows it) and newStringValue (1 to 100 characters); it takes no exerciseId. A routine " +
+        "name sits outside baseContentHash, so expectedStringValue is the only staleness guard a rename " +
+        "has and a wrong one is a conflict, not a detail. " +
         "Timed exercises (those with durationSeconds) take replaceTimedDuration, not replaceExerciseReps. " +
         "Base-value operations (replaceExerciseReps, replaceExerciseSets, replaceTimedDuration) change the " +
         "base value only and do not cascade into phaseOverrides: an exercise with a peak or deload override " +
@@ -154,15 +166,8 @@ const patchProperty = {
       items: {
         type: "object",
         properties: {
-          kind: {
-            type: "string",
-            enum: [
-              "replaceExerciseReps", "replaceExerciseSets", "replaceTimedDuration",
-              "replaceRestBetweenSets", "replaceRestAfterExercise", "updateExerciseNotes",
-              "addExercise", "removeExercise", "moveExercise", "replacePhaseOverride",
-            ],
-          },
-          exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise; must exist in the routine." },
+          kind: { type: "string", enum: OPERATION_KINDS },
+          exerciseId: { ...uuidProperty, description: "Required for every kind except addExercise and renameRoutine; must exist in the routine." },
           sectionId: { ...uuidProperty, description: "For addExercise: the section to add into." },
           targetSectionId: { ...uuidProperty, description: "For moveExercise: the destination section." },
           afterExerciseId: { ...uuidProperty, description: "Optional anchor: place after this exercise." },
@@ -196,10 +201,17 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
     description:
       "Returns a lean summary of the user's current Flow coach context: the contextId " +
       "to use with every other tool, routine summaries (id, name, phase, exercise " +
-      "counts, revision hashes), counts of recent strength and cardio activity, and " +
-      "any coach constraints notes. Deliberately does NOT include full routine bodies " +
-      "or full workout history - call list_routines/get_routine to drill in. Contains " +
-      "no raw HealthKit data.",
+      "counts, revision hashes), counts of recent strength and cardio activity, any " +
+      "coach constraints notes, and a capabilities block. Deliberately does NOT include " +
+      "full routine bodies or full workout history - call list_routines/get_routine to " +
+      "drill in. Contains no raw HealthKit data.\n\n" +
+      "capabilities.patchSchemaVersions and capabilities.operationKinds are what the " +
+      "user's Flow build can actually apply, not just what this bridge accepts, so plan " +
+      "a restructure against that list rather than discovering the limit by rejection. " +
+      "Anything absent from operationKinds cannot be proposed; say so plainly and " +
+      "propose the achievable part. capabilities.deviceReported is false when the " +
+      "snapshot came from a Flow build too old to declare anything, in which case the " +
+      "conservative schema 2 baseline is reported.",
     inputSchema: {
       type: "object",
       properties: {
@@ -307,9 +319,10 @@ const TOOLS: ReadonlyArray<ToolDefinition> = [
     requiredScope: "patch:propose",
     title: "Validate a Flow routine patch",
     description:
-      "Validates a candidate FlowRoutinePatch (schema 2) against one exact snapshot " +
-      "WITHOUT storing anything: checks schema version, required fields, known " +
-      "operation kinds, per-kind required fields and value ranges, that routineId " +
+      "Validates a candidate FlowRoutinePatch against one exact snapshot WITHOUT " +
+      "storing anything: checks the schema version and operation kinds against what " +
+      "the user's Flow build reports it can apply, required fields, per-kind required " +
+      "fields and value ranges, that routineId " +
       "exists in the snapshot, and that baseContentHash matches the stored content " +
       "hash for that routine. Returns a structured list of problems rather than " +
       "throwing, so a mostly-valid patch can be diagnosed in one call. This is a " +

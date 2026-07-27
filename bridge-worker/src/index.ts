@@ -5,11 +5,12 @@ import { MCP_SCOPES, handleMcpMessage } from "./mcp";
 import type { McpScope } from "./mcp";
 import {
   acknowledgementSchema,
+  effectiveCapabilities,
   patchEnvelopeSchema,
   snapshotEnvelopeSchema,
   validatePatch,
 } from "./schemas";
-import type { CoachContext, SnapshotEnvelope } from "./schemas";
+import type { Capabilities, CoachContext, DeviceCapabilities, SnapshotEnvelope } from "./schemas";
 
 const MAX_REQUEST_BYTES = 512 * 1024;
 const MAX_SNAPSHOTS = 8;
@@ -377,6 +378,7 @@ function errorFromIssues(message: string, issues: ReadonlyArray<{ path: Property
 
 type SnapshotRow = {
   context_id: string; created_at: number; expires_at: number; sharing_profile_json: string; context_json: string; envelope_digest: string;
+  device_capabilities_json: string | null;
 };
 type PatchRow = {
   seq: number; patch_id: string; context_id: string; routine_id: string; base_hash: string;
@@ -390,7 +392,27 @@ export class FlowCoachMailbox extends DurableObject<Env> {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => this.createSchema());
+    ctx.blockConcurrencyWhile(async () => {
+      this.createSchema();
+      this.migrateSchema();
+    });
+  }
+
+  /**
+   * Adds columns that later versions introduced. `createSchema` is
+   * CREATE TABLE IF NOT EXISTS, so a Durable Object that already exists keeps
+   * whatever shape it was created with and never sees an edited definition;
+   * new columns have to arrive by ALTER. Additive and idempotent by design:
+   * this runs on every construction, including on a brand new object where
+   * the columns are already present.
+   */
+  private migrateSchema(): void {
+    const columns = (table: string) => new Set(
+      this.ctx.storage.sql.exec<{ name: string }>(`PRAGMA table_info(${table})`).toArray().map((row) => row.name),
+    );
+    if (!columns("snapshots").has("device_capabilities_json")) {
+      this.ctx.storage.sql.exec("ALTER TABLE snapshots ADD COLUMN device_capabilities_json TEXT");
+    }
   }
 
   private createSchema(): void {
@@ -401,7 +423,8 @@ export class FlowCoachMailbox extends DurableObject<Env> {
         expires_at INTEGER NOT NULL,
         sharing_profile_json TEXT NOT NULL,
         context_json TEXT NOT NULL,
-        envelope_digest TEXT NOT NULL
+        envelope_digest TEXT NOT NULL,
+        device_capabilities_json TEXT
       );
       CREATE INDEX IF NOT EXISTS snapshots_expiry ON snapshots(expires_at);
       CREATE TABLE IF NOT EXISTS snapshot_tombstones (
@@ -491,6 +514,7 @@ export class FlowCoachMailbox extends DurableObject<Env> {
         recentStrengthCount: context.recentStrengthSummary.length,
         recentCardioCount: context.recentCardioSummary.length,
         constraints: context.constraints,
+        capabilities: this.capabilitiesFor(selected),
       });
     }
     if (request.method === "GET" && url.pathname === "/actions/routines") {
@@ -528,7 +552,7 @@ export class FlowCoachMailbox extends DurableObject<Env> {
       const selected = this.selectSnapshot(envelopeResult.data.contextId);
       if (selected instanceof Response) return selected;
       const context = JSON.parse(selected.context_json) as CoachContext;
-      const validation = validatePatch(envelopeResult.data.patch, context);
+      const validation = validatePatch(envelopeResult.data.patch, context, this.capabilitiesFor(selected));
       if (url.pathname.endsWith("/validate")) return json(validation, validation.valid ? 200 : 422);
       if (!validation.valid || !validation.patch) return json({ stored: false, ...validation }, 422);
       return this.createPatch(request, selected, validation.patch);
@@ -576,6 +600,14 @@ export class FlowCoachMailbox extends DurableObject<Env> {
     return latest ?? json({ error: "No unexpired coach snapshot is available. Sync from Flow first." }, 404);
   }
 
+  /** What the coach may propose against this exact snapshot. */
+  private capabilitiesFor(snapshot: SnapshotRow): Capabilities {
+    const declared = snapshot.device_capabilities_json
+      ? JSON.parse(snapshot.device_capabilities_json) as DeviceCapabilities
+      : null;
+    return effectiveCapabilities(declared);
+  }
+
   private requireExactSnapshot(url: URL): SnapshotRow | Response {
     const id = url.searchParams.get("contextId");
     return id ? this.selectSnapshot(id) : json({ error: "contextId is required." }, 400);
@@ -595,8 +627,9 @@ export class FlowCoachMailbox extends DurableObject<Env> {
       return json({ stored: true, duplicate: true, contextId: envelope.contextId });
     }
     this.ctx.storage.sql.exec(
-      "INSERT INTO snapshots(context_id, created_at, expires_at, sharing_profile_json, context_json, envelope_digest) VALUES (?, ?, ?, ?, ?, ?)",
+      "INSERT INTO snapshots(context_id, created_at, expires_at, sharing_profile_json, context_json, envelope_digest, device_capabilities_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
       envelope.contextId, createdAt, expiresAt, JSON.stringify(envelope.sharingProfile), JSON.stringify(envelope.context), digest,
+      envelope.deviceCapabilities ? JSON.stringify(envelope.deviceCapabilities) : null,
     );
     const overflow = this.ctx.storage.sql.exec<{ context_id: string }>(
       "SELECT context_id FROM snapshots ORDER BY created_at DESC LIMIT -1 OFFSET ?", MAX_SNAPSHOTS,

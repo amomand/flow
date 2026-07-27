@@ -74,6 +74,12 @@ Competing drafts are expected, not exceptional. The #46 spike produced two valid
 
 On `applied`, `rejected`, or `stale`, the bridge promptly removes rationale and patch content and retains only an opaque tombstone: patch and context IDs, terminal status, timestamps, and provenance class. Tombstones expire after seven days. Expired records follow the same payload deletion rule. Durable Object alarms enforce snapshot, patch, and tombstone expiry.
 
+## Capabilities and release ordering
+
+The bridge validates patches; Flow applies them. They ship on separate cycles, so neither can assume the other's version. Flow declares `deviceCapabilities` (the patch schema versions and operation kinds it can apply, derived from the patcher itself) in every snapshot envelope. The bridge stores that with the snapshot and reports the intersection of its own supported set and the device's from `get_flow_coach_context`, then enforces that same intersection when validating. A snapshot from a build too old to declare anything falls back to the conservative schema 2 baseline rather than to everything the bridge happens to accept, so an old phone is never handed a patch it cannot apply.
+
+**Deploy the Worker before shipping a Flow build that sends a new envelope field.** The snapshot envelope schema is strict, so an app that sends a field the deployed Worker does not know about fails every snapshot upload until the Worker catches up. `deviceCapabilities` is the deliberate exception: it is the field expected to grow, so its own schema is non-strict and unknown keys inside it are dropped rather than rejected. That covers later capability additions, not the next new top-level field.
+
 ## Authentication and rotation
 
 The three credentials are deliberately non-interchangeable:

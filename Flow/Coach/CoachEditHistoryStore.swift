@@ -28,9 +28,13 @@ struct CoachEditRecord: Codable, Equatable, Identifiable {
     let rationale: String
     let diffs: [FlowRoutinePatchDiff]
     /// The sections as they were before the patch applied: everything needed
-    /// to restore. Patches only ever edit sections, so restore grafts these
-    /// onto the current routine and leaves non-structural state alone.
+    /// to restore. Restore grafts these onto the current routine and leaves
+    /// non-structural state alone.
     let previousSections: [Section]
+    /// The name as it was before the patch applied, so a `renameRoutine` can
+    /// be undone. Absent on records written before schema 3, where no patch
+    /// could change a name and there is nothing to put back.
+    let previousName: String?
     let provenance: CoachEditProvenance?
     var outcome: Outcome
     var restoredAt: Date?

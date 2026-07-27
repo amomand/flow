@@ -40,11 +40,11 @@ Toggling a routine's phase between Base, Peak, and Deload changes only the state
 
 ## Patch format
 
-Routine patches are typed operations against one routine. They must include `schemaVersion` (currently 2), `routineId`, `baseContentHash` (copied from `routineContentHashByRoutineId` in the coach context), `rationale`, and `operations`. They may include `exportedAt` for traceability.
+Routine patches are typed operations against one routine. They must include `schemaVersion` (currently 3, with 2 still accepted), `routineId`, `baseContentHash` (copied from `routineContentHashByRoutineId` in the coach context), `rationale`, and `operations`. They may include `exportedAt` for traceability.
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "routineId": "ROUTINE-UUID",
   "baseContentHash": "c1-hash-from-coach-context",
   "exportedAt": "2026-07-02T21:30:00Z",
@@ -60,15 +60,33 @@ Routine patches are typed operations against one routine. They must include `sch
 }
 ```
 
-Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, and `replacePhaseOverride`.
+Supported operation kinds are `replaceExerciseReps`, `replaceExerciseSets`, `replaceTimedDuration`, `replaceRestBetweenSets`, `replaceRestAfterExercise`, `updateExerciseNotes`, `addExercise`, `removeExercise`, `moveExercise`, `replacePhaseOverride`, and `renameRoutine`.
+
+An operation belongs to the schema version that introduced it, and a patch may only use operations its declared version knows about. `renameRoutine` arrived in schema 3, so it is rejected inside a patch declaring schema 2. That rule is what lets a version number name one fixed operation set on both sides of the bridge.
+
+`renameRoutine` takes `expectedStringValue` (the routine's current name) and `newStringValue` (1 to 100 characters, stored trimmed), and no `exerciseId`. The routine name sits outside `baseContentHash`, which covers sections only, so a rename cannot be rebased the way a numeric change can: `expectedStringValue` is its entire concurrency guard, and a mismatch is a conflict rather than something to work around. For the same reason, undoing an applied edit checks the name as well as the content hash before it puts an old name back.
+
+### Capabilities
+
+Validation happens in the bridge; applying happens in the Flow build on the phone. They are on separate release cycles, so `get_flow_coach_context` reports a `capabilities` block covering both:
+
+```json
+"capabilities": {
+  "patchSchemaVersions": [2, 3],
+  "operationKinds": ["replaceExerciseReps", "...", "renameRoutine"],
+  "deviceReported": true
+}
+```
+
+What it reports is the intersection of what the bridge validates and what the Flow build that uploaded the snapshot declared it can apply, so a coach session can plan against the real limit rather than discovering it by rejection. Validation enforces the same list, and refuses a patch that uses anything outside it. Flow declares its capabilities in every snapshot envelope, derived from the patcher itself rather than a hand-kept list. When a snapshot comes from a build too old to declare anything, `deviceReported` is false and the conservative schema 2 baseline is reported instead.
 
 Flow rejects malformed, conflicting, mismatched, or semantically invalid patches before anything is saved; they sit in the inbox with an explicit reason and cannot mutate saved routines. A future managed or serverless remote MCP bridge can build on the same coach context and patch contract without making the bridge the routine source of truth.
 
 ## Edit history and rollback
 
-Every applied coach patch writes a durable audit entry to `coach-edit-history.json`: when it applied, which routine, the hash it pinned to and the hash it actually applied from (these differ when it was rebased), the resulting hash, the rationale, the operation diffs, provenance (inbox patch id, transport, assistant provider, with a context id slot for bridge-delivered patches), and the routine sections as they were before the edit. The history holds the last 20 edits and contains no HealthKit or route data.
+Every applied coach patch writes a durable audit entry to `coach-edit-history.json`: when it applied, which routine, the hash it pinned to and the hash it actually applied from (these differ when it was rebased), the resulting hash, the rationale, the operation diffs, provenance (inbox patch id, transport, assistant provider, with a context id slot for bridge-delivered patches), and the routine sections and name as they were before the edit. The history holds the last 20 edits and contains no HealthKit or route data.
 
-The coach sheet's `HISTORY` button lists recent edits, newest first. Any entry still in the applied state can be restored: restore grafts the recorded pre-edit sections back onto the routine through the normal `RoutineStore` save path, leaves non-structural state such as the current phase alone, and flips the entry to restored. If the routine changed after the edit, restore first refuses with a warning and requires an explicit second tap, so later manual edits are never silently overwritten. Rollback works across app relaunch; a corrupt or missing history file only costs history (a backup of the corrupt file is kept) and can never touch `routines.json`.
+The coach sheet's `HISTORY` button lists recent edits, newest first. Any entry still in the applied state can be restored: restore grafts the recorded pre-edit sections, and the pre-edit name where the record carries one, back onto the routine through the normal `RoutineStore` save path, leaves non-structural state such as the current phase alone, and flips the entry to restored. If the routine changed after the edit, restore first refuses with a warning and requires an explicit second tap, so later manual edits are never silently overwritten. Records written before schema 3 carry no name, since no patch could change one. Rollback works across app relaunch; a corrupt or missing history file only costs history (a backup of the corrupt file is kept) and can never touch `routines.json`.
 
 ## Shared exchange boundary
 

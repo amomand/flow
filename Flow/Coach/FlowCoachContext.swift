@@ -39,6 +39,27 @@ struct FlowCoachSharingProfile: Codable, Equatable {
     }
 }
 
+/// What this build of Flow can actually apply, declared to the bridge with
+/// every snapshot.
+///
+/// Validation runs in the bridge; apply runs here. Those are different
+/// machines on different release cycles, so a bridge that accepts an operation
+/// this build has never heard of would hand the coach a patch that fails at
+/// the last step, which is exactly the "find out by rejection" problem the
+/// capability list exists to remove. The bridge advertises the intersection of
+/// what it accepts and what this says.
+struct FlowCoachDeviceCapabilities: Codable, Equatable {
+    let patchSchemaVersions: [Int]
+    let operationKinds: [String]
+
+    static var current: FlowCoachDeviceCapabilities {
+        FlowCoachDeviceCapabilities(
+            patchSchemaVersions: FlowRoutinePatch.supportedSchemaVersions.sorted(),
+            operationKinds: FlowRoutinePatchOperation.Kind.allCases.map(\.rawValue)
+        )
+    }
+}
+
 /// A short-lived, explicitly scoped copy of Flow's coach context.
 ///
 /// Every construction gets a new identity. `contextId` correlates later
@@ -51,6 +72,7 @@ struct FlowCoachSnapshotEnvelope: Codable {
     let createdAt: Date
     let expiresAt: Date
     let sharingProfile: FlowCoachSharingProfile
+    let deviceCapabilities: FlowCoachDeviceCapabilities
     let context: FlowCoachContext
 
     private init(
@@ -58,12 +80,14 @@ struct FlowCoachSnapshotEnvelope: Codable {
         createdAt: Date,
         expiresAt: Date,
         sharingProfile: FlowCoachSharingProfile,
+        deviceCapabilities: FlowCoachDeviceCapabilities,
         context: FlowCoachContext
     ) {
         self.contextId = contextId
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.sharingProfile = sharingProfile
+        self.deviceCapabilities = deviceCapabilities
         self.context = context
     }
 
@@ -82,6 +106,7 @@ struct FlowCoachSnapshotEnvelope: Codable {
             createdAt: createdAt,
             expiresAt: createdAt.addingTimeInterval(defaultLifetime),
             sharingProfile: sharingProfile,
+            deviceCapabilities: .current,
             context: FlowCoachContext.make(
                 routines: routines,
                 strengthWorkouts: strengthWorkouts,

@@ -224,9 +224,13 @@ class RoutineStore {
         // replacing it wholesale: non-structural state such as currentPhase
         // may have changed since the preview was built (the content hash
         // deliberately ignores it), and applying a patch must not revert
-        // that state. Patch operations only ever edit sections.
+        // that state. Patch operations edit sections and, since schema 3,
+        // the routine name; both come from `fresh`, which was previewed
+        // against the routine as it is right now, so grafting the name can
+        // only ever carry a rename this patch actually made.
         var updated = current
         updated.sections = fresh.updatedRoutine.sections
+        updated.name = fresh.updatedRoutine.name
         routines[index] = updated
         if case .failure(let error) = save() {
             routines[index] = current
@@ -243,6 +247,7 @@ class RoutineStore {
             rationale: fresh.patch.rationale,
             diffs: fresh.diffs,
             previousSections: current.sections,
+            previousName: current.name,
             provenance: provenance,
             outcome: .applied,
             restoredAt: nil
@@ -297,11 +302,32 @@ class RoutineStore {
            FlowRoutineRevision.contentHash(for: current) != record.resultingContentHash {
             return .failure(.routineChangedSinceEdit(current.name))
         }
+        // The content hash covers sections only, so it cannot see a rename
+        // that happened after the edit. Where restore would put a name back,
+        // check that name the same way, or an undo would quietly revert a
+        // rename the user made by hand afterwards.
+        //
+        // Scoped to records whose patch actually renamed something, mirroring
+        // the hash check, which only refuses when the sections it would put
+        // back have moved. Every record carries a `previousName`, so treating
+        // its mere presence as "this edit owns the name" would make a manual
+        // rename block the undo of an unrelated reps change.
+        let patchRenamedRoutine = record.previousName != nil && record.previousName != record.routineName
+        if !allowingOverwrite,
+           patchRenamedRoutine,
+           current.name != record.routineName {
+            return .failure(.routineChangedSinceEdit(current.name))
+        }
 
-        // Same graft rule as apply: only sections are restored, so state
-        // such as the current phase keeps whatever it is now.
+        // Same graft rule as apply: sections, and the name only where this
+        // edit is what changed it. State such as the current phase keeps
+        // whatever it is now. Undoing a reps change must leave a name the
+        // user has since typed themselves exactly where it is.
         var restored = current
         restored.sections = record.previousSections
+        if patchRenamedRoutine, let previousName = record.previousName {
+            restored.name = previousName
+        }
         routines[index] = restored
         if case .failure(let error) = save() {
             routines[index] = current

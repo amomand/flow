@@ -351,6 +351,7 @@ final class CoachEditHistoryTests: XCTestCase {
             rationale: "Synthetic entry.",
             diffs: [],
             previousSections: [],
+            previousName: routineName,
             provenance: nil,
             outcome: .applied,
             restoredAt: nil

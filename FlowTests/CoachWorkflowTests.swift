@@ -878,7 +878,7 @@ final class CoachWorkflowTests: XCTestCase {
                 return XCTFail("Expected unsupportedSchema(1), got \(error)")
             }
             XCTAssertTrue(
-                (error as? FlowRoutinePatchError)?.errorDescription?.contains("schemaVersion 2") == true
+                (error as? FlowRoutinePatchError)?.errorDescription?.contains("schemaVersion 3") == true
             )
         }
     }
@@ -965,6 +965,390 @@ final class CoachWorkflowTests: XCTestCase {
         let preview = try FlowRoutinePatcher.preview(json: wrapped, routines: [routine])
 
         XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
+    }
+
+    // MARK: - Schema 3: renameRoutine
+
+    func testRenameRoutinePreviewsAndAppliesTheNewName() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let routine = Routine(name: "Wednesday — Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        store.addRoutine(routine)
+
+        let json = try patchJSON(renamePatch(for: routine, to: "Upper A"))
+        guard case .success(let preview) = store.previewRoutinePatchJSON(json) else {
+            return XCTFail("Expected rename preview to succeed")
+        }
+        XCTAssertEqual(preview.diffs.first?.title, "Rename routine")
+        XCTAssertEqual(preview.diffs.first?.before, "Wednesday — Upper A")
+        XCTAssertEqual(preview.diffs.first?.after, "Upper A")
+        XCTAssertEqual(store.routines[0].name, "Wednesday — Upper A")
+
+        guard case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected rename apply to succeed")
+        }
+        XCTAssertEqual(store.routines[0].name, "Upper A")
+        XCTAssertEqual(store.routines[0].sections, routine.sections)
+    }
+
+    func testRenameIsUndoneByRestore() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let routine = Routine(name: "Wednesday — Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        store.addRoutine(routine)
+
+        let json = try patchJSON(renamePatch(for: routine, to: "Upper A"))
+        guard case .success(let preview) = store.previewRoutinePatchJSON(json),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected rename to apply")
+        }
+        XCTAssertEqual(store.routines[0].name, "Upper A")
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .success = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected restore to succeed")
+        }
+        XCTAssertEqual(store.routines[0].name, "Wednesday — Upper A")
+    }
+
+    /// The content hash covers sections only, so it cannot notice a rename.
+    /// Without a name check of its own, undo would silently revert a rename
+    /// the user made by hand after the edit.
+    func testRestoreRefusesWhenTheRoutineWasRenamedAfterTheEdit() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let routine = Routine(name: "Wednesday — Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])
+        ])
+        store.addRoutine(routine)
+
+        let json = try patchJSON(renamePatch(for: routine, to: "Upper A"))
+        guard case .success(let preview) = store.previewRoutinePatchJSON(json),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected rename to apply")
+        }
+
+        var renamedByHand = store.routines[0]
+        renamedByHand.name = "Upper A (heavy)"
+        store.updateRoutine(renamedByHand)
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .failure(let error) = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected restore to refuse a routine renamed since the edit")
+        }
+        XCTAssertEqual(error, .routineChangedSinceEdit("Upper A (heavy)"))
+        XCTAssertEqual(store.routines[0].name, "Upper A (heavy)")
+
+        guard case .success = store.restoreCoachEdit(record, allowingOverwrite: true) else {
+            return XCTFail("Expected an explicit overwrite to restore")
+        }
+        XCTAssertEqual(store.routines[0].name, "Wednesday — Upper A")
+    }
+
+    func testRenameRoutineIsRejectedInASchemaTwoPatch() throws {
+        let routine = Routine(name: "Upper", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        var patch = renamePatch(for: routine, to: "Upper A")
+        patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: patch.routineId,
+            baseContentHash: patch.baseContentHash,
+            exportedAt: nil,
+            rationale: patch.rationale,
+            operations: patch.operations
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.operationNeedsNewerSchema("renameRoutine", 3, 2) = error else {
+                return XCTFail("Expected operationNeedsNewerSchema, got \(error)")
+            }
+        }
+    }
+
+    func testRenameRoutineWithAStaleExpectedNameConflicts() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+        let patch = FlowRoutinePatch(
+            schemaVersion: 3,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Rename against a name that has moved on.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .renameRoutine,
+                    expectedStringValue: "Wednesday — Upper A",
+                    newStringValue: "Upper A2"
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.beforeValueMismatch("routine name", "Wednesday — Upper A", "Upper A") = error else {
+                return XCTFail("Expected beforeValueMismatch, got \(error)")
+            }
+        }
+    }
+
+    func testRenameRoutineBoundsAndTrimsTheNewName() throws {
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])
+        ])
+
+        for candidate in ["   ", String(repeating: "x", count: 101)] {
+            let patch = renamePatch(for: routine, to: candidate)
+            XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+                guard case FlowRoutinePatchError.invalidValue("routine name", _) = error else {
+                    return XCTFail("Expected invalidValue for \"\(candidate)\", got \(error)")
+                }
+            }
+        }
+
+        let padded = try FlowRoutinePatcher.preview(
+            patch: renamePatch(for: routine, to: "  Upper B  "),
+            routines: [routine]
+        )
+        XCTAssertEqual(padded.updatedRoutine.name, "Upper B")
+    }
+
+    /// Patches already in flight when this build ships still mean what they
+    /// meant, so schema 2 keeps working exactly as it did.
+    func testSchemaVersion2PatchStillPreviews() throws {
+        let exerciseId = UUID()
+        let routine = Routine(name: "Coach", sections: [
+            Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])
+        ])
+        let patch = FlowRoutinePatch(
+            schemaVersion: 2,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "A patch written before schema 3 existed.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+
+        let preview = try FlowRoutinePatcher.preview(patch: patch, routines: [routine])
+        XCTAssertEqual(preview.updatedRoutine.sections[0].exercises[0].reps, 10)
+    }
+
+    /// The bridge advertises what this build declares, so what it declares has
+    /// to be what the patcher actually accepts rather than a hand-kept list.
+    func testDeclaredCapabilitiesMatchWhatThePatcherAccepts() throws {
+        let capabilities = FlowCoachDeviceCapabilities.current
+
+        XCTAssertEqual(capabilities.patchSchemaVersions, FlowRoutinePatch.supportedSchemaVersions.sorted())
+        XCTAssertEqual(
+            Set(capabilities.operationKinds),
+            Set(FlowRoutinePatchOperation.Kind.allCases.map(\.rawValue))
+        )
+        XCTAssertTrue(capabilities.operationKinds.contains("renameRoutine"))
+
+        let envelope = FlowCoachSnapshotEnvelope.make(
+            routines: [Routine(name: "Shared", sections: [])],
+            strengthWorkouts: [],
+            cardioWorkouts: []
+        )
+        let encoded = try XCTUnwrap(envelope.jsonString())
+        XCTAssertTrue(encoded.contains("\"deviceCapabilities\""))
+        XCTAssertTrue(encoded.contains("renameRoutine"))
+    }
+
+    /// Capability advertisement is only worth anything if both sides agree
+    /// what a schema version contains, and two hand-kept lists in two
+    /// languages drift. `patch-operations.json` is the one contract; the
+    /// bridge derives its list from it and this asserts the app against it.
+    func testOperationKindsMatchTheSharedBridgeContract() throws {
+        struct SharedContract: Decodable {
+            let patchSchemaVersions: [Int]
+            let operationKindMinimumSchema: [String: Int]
+        }
+        let contractURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("bridge-worker/src/patch-operations.json")
+        let contract = try JSONDecoder().decode(
+            SharedContract.self,
+            from: try Data(contentsOf: contractURL)
+        )
+
+        XCTAssertEqual(
+            contract.patchSchemaVersions.sorted(),
+            FlowRoutinePatch.supportedSchemaVersions.sorted()
+        )
+        let patcherKinds = Dictionary(
+            uniqueKeysWithValues: FlowRoutinePatchOperation.Kind.allCases.map {
+                ($0.rawValue, $0.minimumSchemaVersion)
+            }
+        )
+        XCTAssertEqual(patcherKinds, contract.operationKindMinimumSchema)
+    }
+
+    /// Every record carries a `previousName`, so treating its presence as
+    /// "this edit owns the name" would make any later manual rename block the
+    /// undo of an unrelated numeric edit, and an overwrite would revert the
+    /// rename as collateral.
+    func testManualRenameDoesNotBlockUndoOfAnEditThatNeverRenamed() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let history = CoachEditHistoryStore(
+            fileURL: fixture.directory.appendingPathComponent("coach-edit-history.json")
+        )
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults, editHistory: history)
+        let exerciseId = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])
+        ])
+        store.addRoutine(routine)
+
+        let patch = FlowRoutinePatch(
+            schemaVersion: 3,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Progress pressing volume.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .replaceExerciseReps,
+                    exerciseId: exerciseId,
+                    expectedIntValue: 8,
+                    newIntValue: 10
+                )
+            ]
+        )
+        guard case .success(let preview) = store.previewRoutinePatchJSON(try patchJSON(patch)),
+              case .success = store.applyRoutinePatchPreview(preview) else {
+            return XCTFail("Expected the reps change to apply")
+        }
+
+        var renamedByHand = store.routines[0]
+        renamedByHand.name = "Upper A (heavy)"
+        store.updateRoutine(renamedByHand)
+
+        let record = try XCTUnwrap(history.mostRecentRestorable)
+        guard case .success = store.restoreCoachEdit(record) else {
+            return XCTFail("Expected undo of a non-rename edit to succeed")
+        }
+        XCTAssertEqual(store.routines[0].sections[0].exercises[0].reps, 8)
+        XCTAssertEqual(store.routines[0].name, "Upper A (heavy)")
+    }
+
+    /// An empty routine cannot be emptied further, and refusing a rename there
+    /// would reject a patch the bridge validated, with an error describing
+    /// something that did not happen.
+    func testRenamingAnEmptyRoutineIsNotTreatedAsEmptyingIt() throws {
+        let routine = Routine(name: "Lower A", sections: [])
+        XCTAssertFalse(routine.canStartWorkout)
+
+        let preview = try FlowRoutinePatcher.preview(
+            patch: renamePatch(for: routine, to: "Lower B"),
+            routines: [routine]
+        )
+        XCTAssertEqual(preview.updatedRoutine.name, "Lower B")
+    }
+
+    /// A patch that does the emptying is still refused.
+    func testRemovingTheLastExerciseStillFailsAsWouldEmptyRoutine() throws {
+        let exerciseId = UUID()
+        let routine = Routine(name: "Upper A", sections: [
+            Section(name: "Main", exercises: [
+                ExerciseBlock(id: exerciseId, name: "Press", sets: 3, reps: 8)
+            ])
+        ])
+        let patch = FlowRoutinePatch(
+            schemaVersion: 3,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "Strip it back.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .removeExercise,
+                    exerciseId: exerciseId,
+                    expectedStringValue: "Press"
+                )
+            ]
+        )
+
+        XCTAssertThrowsError(try FlowRoutinePatcher.preview(patch: patch, routines: [routine])) { error in
+            guard case FlowRoutinePatchError.wouldEmptyRoutine = error else {
+                return XCTFail("Expected wouldEmptyRoutine, got \(error)")
+            }
+        }
+    }
+
+    /// History written before schema 3 has no name to put back and must keep
+    /// decoding rather than costing the user their undo depth.
+    func testHistoryRecordsWrittenBeforeRenameStillDecode() throws {
+        let json = """
+        {
+          "schemaVersion": 1,
+          "records": [{
+            "id": "\(UUID().uuidString)",
+            "appliedAt": "2026-07-01T09:00:00Z",
+            "routineId": "\(UUID().uuidString)",
+            "routineName": "Upper A",
+            "baseContentHash": "c1-0011223344556677",
+            "appliedFromContentHash": "c1-0011223344556677",
+            "resultingContentHash": "c1-7766554433221100",
+            "rationale": "Written before schema 3.",
+            "diffs": [],
+            "previousSections": [],
+            "outcome": "applied"
+          }]
+        }
+        """
+        let fixture = try makeFixture()
+        let fileURL = fixture.directory.appendingPathComponent("coach-edit-history.json")
+        try json.write(to: fileURL, atomically: true, encoding: .utf8)
+
+        let history = CoachEditHistoryStore(fileURL: fileURL)
+
+        XCTAssertEqual(history.records.count, 1)
+        XCTAssertNil(history.records[0].previousName)
+        XCTAssertEqual(history.records[0].routineName, "Upper A")
+    }
+
+    private func renamePatch(for routine: Routine, to newName: String) -> FlowRoutinePatch {
+        FlowRoutinePatch(
+            schemaVersion: 3,
+            routineId: routine.id,
+            baseContentHash: FlowRoutineRevision.contentHash(for: routine),
+            exportedAt: nil,
+            rationale: "The weekday in the name no longer matches the plan.",
+            operations: [
+                FlowRoutinePatchOperation(
+                    kind: .renameRoutine,
+                    expectedStringValue: routine.name,
+                    newStringValue: newName
+                )
+            ]
+        )
     }
 
     private func patchJSON(_ patch: FlowRoutinePatch) throws -> String {

@@ -6,7 +6,16 @@ struct FlowRoutinePatch: Codable, Equatable {
     /// patch. Schema 1 pinned `baseRoutineHash` over the whole routine and is
     /// no longer accepted; nothing persists patches yet, so a v1 patch can
     /// only come from a stale chat and the fix is a fresh context export.
-    static let currentSchemaVersion = 2
+    ///
+    /// Schema 3 adds operations that change a routine's shape rather than its
+    /// numbers, starting with `renameRoutine`. The version is what a patch
+    /// declares it is, not the newest one available: a schema 2 patch is still
+    /// accepted and still means exactly what it did, and an operation may only
+    /// appear in a patch whose declared version knows about it. That rule is
+    /// what lets the bridge advertise capabilities honestly, because "schema 2"
+    /// names one fixed operation set on both sides.
+    static let currentSchemaVersion = 3
+    static let supportedSchemaVersions: Set<Int> = [2, 3]
 
     let schemaVersion: Int
     let routineId: UUID
@@ -32,7 +41,7 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
     var removePhaseOverride: Bool? = nil
     var exercise: ExerciseBlock? = nil
 
-    enum Kind: String, Codable, Equatable {
+    enum Kind: String, Codable, Equatable, CaseIterable {
         case replaceExerciseReps
         case replaceExerciseSets
         case replaceTimedDuration
@@ -43,6 +52,20 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
         case removeExercise
         case moveExercise
         case replacePhaseOverride
+        case renameRoutine
+
+        /// The first schema version this operation belongs to. A patch may
+        /// only use operations its declared version knows about, so a coach
+        /// that was told "this build speaks schema 2" cannot smuggle a newer
+        /// operation through under the older version number.
+        var minimumSchemaVersion: Int {
+            switch self {
+            case .renameRoutine:
+                return 3
+            default:
+                return 2
+            }
+        }
     }
 }
 
@@ -173,6 +196,7 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
     case invalidValue(field: String, message: String)
     case noOperations
     case wouldEmptyRoutine
+    case operationNeedsNewerSchema(kind: String, minimum: Int, declared: Int)
     case persistenceFailed(String)
 
     var errorDescription: String? {
@@ -181,6 +205,8 @@ enum FlowRoutinePatchError: LocalizedError, Equatable {
             return "Could not parse routine patch: \(message)"
         case .unsupportedSchema(let version):
             return "Unsupported routine patch schema version \(version). Copy a fresh coach context and ask for a schemaVersion \(FlowRoutinePatch.currentSchemaVersion) patch."
+        case .operationNeedsNewerSchema(let kind, let minimum, let declared):
+            return "\(kind) was introduced in routine patch schema \(minimum), but this patch declares schema \(declared). Ask the coach for a schemaVersion \(minimum) patch."
         case .missingField(let field):
             return "Routine patch is missing \(field)."
         case .routineNotFound(let id):
@@ -231,7 +257,8 @@ enum FlowRoutinePatcher {
         // patch fails with an actionable message instead of a missing-key
         // decode error.
         if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let version = object["schemaVersion"] as? Int, version != FlowRoutinePatch.currentSchemaVersion {
+            if let version = object["schemaVersion"] as? Int,
+               !FlowRoutinePatch.supportedSchemaVersions.contains(version) {
                 throw FlowRoutinePatchError.unsupportedSchema(version)
             }
             if object["baseContentHash"] == nil {
@@ -250,11 +277,21 @@ enum FlowRoutinePatcher {
     }
 
     static func preview(patch: FlowRoutinePatch, routines: [Routine]) throws -> FlowRoutinePatchPreview {
-        guard patch.schemaVersion == FlowRoutinePatch.currentSchemaVersion else {
+        guard FlowRoutinePatch.supportedSchemaVersions.contains(patch.schemaVersion) else {
             throw FlowRoutinePatchError.unsupportedSchema(patch.schemaVersion)
         }
         guard !patch.operations.isEmpty else {
             throw FlowRoutinePatchError.noOperations
+        }
+        // Checked before anything is applied, so a patch that mixes a known
+        // operation with one its declared version predates fails whole rather
+        // than half-previewing.
+        if let ahead = patch.operations.first(where: { $0.kind.minimumSchemaVersion > patch.schemaVersion }) {
+            throw FlowRoutinePatchError.operationNeedsNewerSchema(
+                kind: ahead.kind.rawValue,
+                minimum: ahead.kind.minimumSchemaVersion,
+                declared: patch.schemaVersion
+            )
         }
         guard let routine = routines.first(where: { $0.id == patch.routineId }) else {
             throw FlowRoutinePatchError.routineNotFound(patch.routineId)
@@ -284,7 +321,14 @@ enum FlowRoutinePatcher {
             }
         }
 
-        guard updated.canStartWorkout else {
+        // "Would empty" means this patch did the emptying. A routine that
+        // could not start a workout before the patch cannot be made worse by
+        // one, and refusing there would reject perfectly sound edits to an
+        // empty draft with an error describing something that did not happen:
+        // a rename of an empty routine validates in the bridge and would fail
+        // here, which is exactly the discover-by-rejection loop the coach
+        // capability list exists to close.
+        guard updated.canStartWorkout || !routine.canStartWorkout else {
             throw FlowRoutinePatchError.wouldEmptyRoutine
         }
 
@@ -473,6 +517,29 @@ enum FlowRoutinePatcher {
                 title: "Move exercise",
                 before: "\(routine.sections[source.sectionIndex].name): \(moving.name)",
                 after: "\(routine.sections[targetSectionIndex].name): \(moving.name)"
+            )
+
+        case .renameRoutine:
+            let value = try requireString(operation.newStringValue, "newStringValue")
+            let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must not be empty")
+            }
+            guard name.count <= 100 else {
+                throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must be 100 characters or fewer")
+            }
+            // The routine name sits outside `contentHash`, which covers
+            // sections only, so a stale-hash rebase can never notice a rename
+            // that landed in between. `expectedStringValue` is the whole
+            // concurrency guard here rather than a second opinion on one.
+            try expectString(operation.expectedStringValue, actual: routine.name, field: "routine name")
+            let before = routine.name
+            routine.name = name
+            return FlowRoutinePatchDiff(
+                operationIndex: operationIndex,
+                title: "Rename routine",
+                before: before,
+                after: name
             )
 
         case .replacePhaseOverride:
