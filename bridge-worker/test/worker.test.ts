@@ -1390,6 +1390,24 @@ describe("Flow Coach bridge expected values", () => {
     expect(emptied[0]!.message).toContain("[no notes]");
   });
 
+  /**
+   * Notes are free text. Quoting them by hand would let a quote or a newline
+   * inside them close the quoting early, leaving the coach unable to tell the
+   * message apart from the value it is reporting.
+   */
+  it("escapes the notes it quotes back", async () => {
+    const contextId = await paired();
+    const awkward = 'He said "go slow"\nthen \\ stopped';
+
+    const stale = await problems(contextId, patch([
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: pressed.notes, newStringValue: awkward },
+      { kind: "updateExerciseNotes", exerciseId: pressed.id, expectedStringValue: "wrong", newStringValue: "" },
+    ]));
+    expect(stale[0]!.path).toBe("operations.1.expectedStringValue");
+    expect(stale[0]!.message).toContain(JSON.stringify(awkward));
+    expect(stale[0]!.message).not.toContain("\n");
+  });
+
   it("checks the expected exercise name on a removal", async () => {
     const contextId = await paired();
 

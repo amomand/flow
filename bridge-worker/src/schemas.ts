@@ -382,9 +382,15 @@ function recordExerciseChange(working: WorkingRoutine, id: string, change: Parti
   working.exercises.set(id, { exercise: { ...entry.exercise, ...change }, sectionId: entry.sectionId });
 }
 
-/** Notes as Flow shows them in a diff, so an empty value reads as something. */
+/**
+ * Notes as Flow shows them in a diff, so an empty value reads as something.
+ *
+ * Quoted by `JSON.stringify` rather than by hand: notes are free text, and a
+ * quote or a newline in them would otherwise close the quoting early and leave
+ * the coach reading a message it cannot tell apart from the value.
+ */
 function describeNotes(notes: string): string {
-  return notes.length === 0 ? "[no notes]" : `"${notes}"`;
+  return notes.length === 0 ? "[no notes]" : JSON.stringify(notes);
 }
 
 type PhaseOverride = z.infer<typeof phaseOverride>;
