@@ -214,7 +214,10 @@ struct CoachBridgeSyncView: View {
                 Text("[ SYNC TO COACH ]")
             }
             .buttonStyle(TerminalButtonStyle(color: TN.green))
-            .disabled(sync.isBusy)
+            // Over-bound notes would fail the whole envelope at the Worker,
+            // taking every routine with them; the sheet is already saying so
+            // next to the field, this just stops the doomed upload.
+            .disabled(sync.isBusy || FlowTextBounds.constraintsNotesProblem(constraintsNotes) != nil)
             .opacity(sync.isBusy ? 0.45 : 1)
 
             Button {

@@ -101,6 +101,59 @@ final class RoutineStoreTests: XCTestCase {
         XCTAssertEqual(imported.name, "Fenced")
     }
 
+    /// The import path was the one remaining route that stored names the
+    /// snapshot schema refuses (#80): decode-and-store with no checks meant a
+    /// pasted routine could fail the whole envelope at the next sync, far
+    /// from the paste that caused it.
+    func testImportTrimsNamesTheWayTheSnapshotMeasuresThem() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        let original = Routine(
+            name: " Padded ",
+            sections: [Section(name: "\u{FEFF}Main", exercises: [ExerciseBlock(name: "Press\u{0085}")])]
+        )
+        let json = try XCTUnwrap(String(data: JSONEncoder().encode(original), encoding: .utf8))
+
+        guard case .success(let imported) = store.importRoutineFromJSON(json) else {
+            return XCTFail("Import failed")
+        }
+        XCTAssertEqual(imported.name, "Padded")
+        XCTAssertEqual(imported.sections[0].name, "Main")
+        XCTAssertEqual(imported.sections[0].exercises[0].name, "Press")
+    }
+
+    func testImportRefusesFieldsTheSnapshotWouldRefuse() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+
+        let overBoundName = Routine(
+            name: "Fine",
+            sections: [Section(name: "Main", exercises: [
+                ExerciseBlock(name: String(repeating: "x", count: 201))
+            ])]
+        )
+        let blankName = Routine(
+            name: "\u{FEFF}",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press")])]
+        )
+        var longNotes = ExerciseBlock(name: "Press")
+        longNotes.notes = String(repeating: "n", count: 501)
+        let overBoundNotes = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [longNotes])])
+
+        for routine in [overBoundName, blankName, overBoundNotes] {
+            let json = try XCTUnwrap(String(data: JSONEncoder().encode(routine), encoding: .utf8))
+            guard case .failure(let error) = store.importRoutineFromJSON(json) else {
+                return XCTFail("Expected import to be refused")
+            }
+            guard case .outOfBounds = error else {
+                return XCTFail("Expected an out-of-bounds refusal, got \(error)")
+            }
+        }
+        XCTAssertTrue(store.routines.isEmpty)
+    }
+
     func testImportOfCoachPatchGivesHelpfulError() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
