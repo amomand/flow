@@ -1207,6 +1207,32 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(patcherKinds, contract.operationKindMinimumSchema)
     }
 
+    /// The text ceilings are shared the same way as the operation kinds: the
+    /// bridge derives its schemas from `patch-operations.json`, and this
+    /// asserts the app's constants against the same file, so a bound changed
+    /// on one side fails here rather than leaving the editors accepting what
+    /// the next snapshot upload refuses.
+    func testTextBoundsMatchTheSharedBridgeContract() throws {
+        struct SharedContract: Decodable {
+            let stringBoundsUtf16: [String: Int]
+        }
+        let contractURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("bridge-worker/src/patch-operations.json")
+        let contract = try JSONDecoder().decode(
+            SharedContract.self,
+            from: try Data(contentsOf: contractURL)
+        )
+
+        XCTAssertEqual(contract.stringBoundsUtf16, [
+            "name": FlowTextBounds.name,
+            "proposedRoutineName": FlowTextBounds.proposedRoutineName,
+            "exerciseNotes": FlowTextBounds.exerciseNotes,
+            "constraintsNotes": FlowTextBounds.constraintsNotes,
+        ])
+    }
+
     /// Every record carries a `previousName`, so treating its presence as
     /// "this edit owns the name" would make any later manual rename block the
     /// undo of an unrelated numeric edit, and an overwrite would revert the
