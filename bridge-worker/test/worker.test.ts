@@ -114,6 +114,43 @@ describe("Flow Coach bridge Worker", () => {
     expect((await upload(envelope)).status).toBe(201);
   });
 
+  it("relays a padded name exactly as the app stores it", async () => {
+    // The contract is the app's bytes. If the schema trimmed this on the way
+    // in, the coach would read "Bench" for a device holding "Bench ", and any
+    // expectedStringValue copied from the snapshot would then be refused on
+    // the phone as beforeValueMismatch — with the value the coach actually
+    // needed being one the snapshot never showed it.
+    const envelope = { ...snapshot(), context: structuredClone(fixtureContext) };
+    const padded = ` ${envelope.context.routines[0]!.name} `;
+    envelope.context.routines[0]!.name = padded;
+    expect((await upload(envelope)).status).toBe(201);
+
+    const read = await SELF.fetch(`https://flow.test/actions/routines?contextId=${envelope.contextId}`, {
+      headers: auth(ACTIONS_SECRET),
+    });
+    expect(read.status).toBe(200);
+    expect((await json(read)).routines[0].name).toBe(padded);
+  });
+
+  it("refuses a name that is blank once trimmed", async () => {
+    const envelope = { ...snapshot(), context: structuredClone(fixtureContext) };
+    envelope.context.routines[0]!.sections[0]!.exercises[0]!.name = "\u{FEFF}  ";
+
+    const response = await upload(envelope);
+    expect(response.status).toBe(422);
+  });
+
+  it("refuses a name whose raw length is over the bound, padding included", async () => {
+    // The app bounds the stored (trimmed) name, so a raw value only exceeds
+    // this when it predates the app-side caps. Refusing it loudly beats
+    // trimming it into a value the device does not hold.
+    const envelope = { ...snapshot(), context: structuredClone(fixtureContext) };
+    envelope.context.routines[0]!.name = `${"x".repeat(200)} `;
+
+    const response = await upload(envelope);
+    expect(response.status).toBe(422);
+  });
+
   it("rejects duplicate sharing tiers", async () => {
     const envelope = snapshot();
     envelope.sharingProfile.dataTiers = ["routines", "strengthHistory", "routines"];
