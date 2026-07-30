@@ -11,10 +11,13 @@ The server, its stores and its patch validator were removed in [#73](https://git
 | Path | Kept because |
 |---|---|
 | `fixtures/coach-context.json` | `bridge-worker/test/*` and both smoke scripts import it. It is the synthetic snapshot every Worker test runs against. |
-| `openapi.yaml` | The GPT Action schema, with `x-openai-isConsequential` on the write. [#49](https://github.com/amomand/flow/issues/49) says not to rebuild this if the GPT route is ever picked up. |
-| `gpt-actions-instructions.md` | The private-GPT instructions, kept for the same reason. |
 
-Both GPT files were written before the Claude pivot, describe the schema 2 operation set, and have never been run against a real GPT. Treat them as a starting point to revalidate, not as a current description of anything. The live REST edge they were aimed at is `/actions/*` in the Worker, which stays alive as a smoke-test surface.
+The stale GPT files were retired when #49 resumed. The current Action schema,
+private-GPT instructions and proof checklist now live beside the real edge in
+[`bridge-worker/chatgpt`](../bridge-worker/chatgpt). The schema is checked
+against the Worker's shared operation and text-bound contract by
+`npm run check:chatgpt-actions`; it is still documentation imported into a
+private GPT, not a second patch implementation.
 
 ## The fixture
 
