@@ -53,7 +53,10 @@ struct ExerciseEditorView: View {
                                     .foregroundColor(TN.fg)
                                     .frame(minWidth: 30)
                                 Button {
-                                    exercise.sets += 1
+                                    // Capped where the snapshot schema caps it:
+                                    // a value past this fails the whole upload,
+                                    // not just this exercise.
+                                    if exercise.sets < FlowTextBounds.setsRange.upperBound { exercise.sets += 1 }
                                 } label: {
                                     Text("+")
                                         .terminalFont(18, weight: .bold)
@@ -271,8 +274,8 @@ struct ExerciseEditorView: View {
     private func incrementWorkValue() {
         if exercise.isTimed {
             let currentDuration = exercise.durationSeconds ?? max(exercise.reps, 30)
-            exercise.durationSeconds = currentDuration + 5
-        } else {
+            exercise.durationSeconds = min(FlowTextBounds.durationSecondsRange.upperBound, currentDuration + 5)
+        } else if exercise.reps < FlowTextBounds.repsRange.upperBound {
             exercise.reps += 1
         }
     }
@@ -375,6 +378,7 @@ struct PhaseOverrideEditor: View {
                     value: override.sets,
                     baseValue: exercise.sets,
                     minValue: 1,
+                    maxValue: FlowTextBounds.setsRange.upperBound,
                     step: 1,
                     onChange: { newValue in update { $0.sets = newValue } }
                 )
@@ -383,6 +387,9 @@ struct PhaseOverrideEditor: View {
                     value: exercise.isTimed ? override.durationSeconds : override.reps,
                     baseValue: exercise.workDisplayValue,
                     minValue: exercise.isTimed ? 5 : 1,
+                    maxValue: exercise.isTimed
+                        ? FlowTextBounds.durationSecondsRange.upperBound
+                        : FlowTextBounds.repsRange.upperBound,
                     step: exercise.isTimed ? 5 : 1,
                     onChange: { newValue in
                         update {
@@ -405,6 +412,7 @@ struct PhaseOverrideEditor: View {
         value: Int?,
         baseValue: Int,
         minValue: Int,
+        maxValue: Int,
         step: Int,
         onChange: @escaping (Int?) -> Void
     ) -> some View {
@@ -434,7 +442,9 @@ struct PhaseOverrideEditor: View {
 
                 Button {
                     let current = value ?? baseValue
-                    let next = current + step
+                    // Same ceiling as the snapshot schema; an override past it
+                    // fails the whole upload, not just this phase.
+                    let next = min(maxValue, current + step)
                     onChange(next == baseValue ? nil : next)
                 } label: {
                     Text("+")

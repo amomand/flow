@@ -1233,6 +1233,42 @@ final class CoachWorkflowTests: XCTestCase {
         ])
     }
 
+    /// Both sides bound the TRIMMED length, so a legacy name whose padding
+    /// pushes the raw bytes past the ceiling is fine on both: the app has no
+    /// way to warn about invisible padding, and the bridge relays the raw
+    /// bytes either way. The agreement is the point — a value this gate
+    /// passes must never be one the upload refuses.
+    func testBoundsProblemMeasuresTheTrimmedNameLikeTheBridge() {
+        let atBoundPadded = Routine(
+            name: "\(String(repeating: "x", count: 200)) ",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])]
+        )
+        XCTAssertNil(FlowTextBounds.firstBoundsProblem(in: atBoundPadded))
+
+        var overBound = atBoundPadded
+        overBound.name = String(repeating: "x", count: 201)
+        XCTAssertNotNil(FlowTextBounds.firstBoundsProblem(in: overBound))
+    }
+
+    /// The snapshot schema bounds numbers as well as text, and the envelope
+    /// fails whole either way; the gate has to see a `sets` of 99 the same
+    /// way it sees a 201-character name.
+    func testBoundsProblemCoversTheNumericCeilings() {
+        var wild = ExerciseBlock(name: "Press", sets: 3, reps: 8)
+        wild.sets = 99
+        let routine = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [wild])])
+        let problem = FlowTextBounds.firstBoundsProblem(in: routine)
+        XCTAssertEqual(problem, "\"Press\" sets must be between 1 and 10")
+
+        var override = ExerciseBlock(name: "Press", sets: 3, reps: 8)
+        override.phaseOverrides[.deload] = PhaseOverride(durationSeconds: 4000)
+        let overrideRoutine = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [override])])
+        XCTAssertEqual(
+            FlowTextBounds.firstBoundsProblem(in: overrideRoutine),
+            "\"Press\" deload override time must be between 1 and 3600"
+        )
+    }
+
     /// Every record carries a `previousName`, so treating its presence as
     /// "this edit owns the name" would make any later manual rename block the
     /// undo of an unrelated numeric edit, and an overwrite would revert the

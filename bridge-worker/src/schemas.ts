@@ -17,7 +17,8 @@ const phase = z.enum(["base", "peak", "deload"]);
 export const STRING_BOUNDS = contract.stringBoundsUtf16;
 
 /**
- * A name as the app stores it: bounded, non-blank, and NOT trimmed here.
+ * A name as the app stores it: bounded on its trimmed length, refused when
+ * blank, and NOT trimmed here.
  *
  * `.trim()` used to sit in these schemas as a transform, so the snapshot held
  * a trimmed copy of a name the device holds raw. The coach could then only
@@ -29,12 +30,28 @@ export const STRING_BOUNDS = contract.stringBoundsUtf16;
  * The contract is the app's bytes. The app now trims names at every point of
  * entry (editors, import, patch apply), so a padded name here is legacy data,
  * and relaying it exactly is what lets the coach anchor operations to it.
- * Blankness is still checked against the trimmed form, because a name of pure
- * whitespace is not a name whichever side measures it.
+ *
+ * Both checks measure the trimmed form, and that choice is load-bearing: it
+ * is exactly what the app's editors measure, so the app and the bridge agree
+ * on every value. Bounding the raw length instead would refuse a legacy name
+ * whose padding pushes it past the ceiling — a value the app has no way to
+ * warn about, failing the whole envelope at sync time.
  */
 const storedName = z.string()
-  .max(STRING_BOUNDS.name)
-  .refine((value) => value.trim().length >= 1, { message: "must not be blank" });
+  .refine((value) => value.trim().length >= 1, { message: "must not be blank" })
+  .refine((value) => value.trim().length <= STRING_BOUNDS.name, {
+    message: `must be at most ${STRING_BOUNDS.name} characters once trimmed`,
+  });
+
+/**
+ * A name the snapshot merely relays inside workout history. Same trimmed
+ * measurement as `storedName`, no blankness requirement: history rows carry
+ * whatever the completed workout recorded, and refusing an old row would
+ * take the whole envelope with it.
+ */
+const relayedName = z.string().refine((value) => value.trim().length <= STRING_BOUNDS.name, {
+  message: `must be at most ${STRING_BOUNDS.name} characters once trimmed`,
+});
 
 const phaseOverride = z.object({
   sets: z.number().int().min(1).max(10).optional(),
@@ -89,14 +106,14 @@ export const routineSchema = z.object({
 const adjustment = z.object({
   id: UUID,
   exerciseId: UUID,
-  exerciseName: z.string().max(200),
+  exerciseName: relayedName,
   field: z.string().max(100),
   oldValue: z.number().int(),
   newValue: z.number().int(),
 }).strict();
 const setNote = z.object({
   exerciseId: UUID,
-  exerciseName: z.string().max(200),
+  exerciseName: relayedName,
   setNumber: z.number().int().positive(),
   side: z.enum(["left", "right"]).optional(),
   rating: z.enum(["fail", "good", "easy"]),
@@ -114,7 +131,7 @@ const healthMetrics = z.object({
 const strengthSummary = z.object({
   date: ISO_DATE,
   routineId: UUID,
-  routineName: z.string().max(200),
+  routineName: relayedName,
   phase,
   durationSeconds: z.number().nonnegative(),
   ratings: z.object({

@@ -71,6 +71,18 @@ enum FlowTextBounds {
     }
 
     /**
+     The numeric ceilings the snapshot schema enforces, matching the bridge's
+     `exerciseSchema` and the patch path's own range checks. Kept beside the
+     text bounds because `firstBoundsProblem` is the one gate the editors and
+     the JSON import share, and a `sets` of 12 fails the envelope exactly the
+     way a 201-character name does.
+     */
+    static let setsRange = 1...10
+    static let repsRange = 1...100
+    static let durationSecondsRange = 1...3600
+    static let restSecondsRange = 0...900
+
+    /**
      The first field in the routine the snapshot schema would refuse,
      described for the person editing it, or nil when everything fits.
 
@@ -82,10 +94,16 @@ enum FlowTextBounds {
     static func firstBoundsProblem(in routine: Routine) -> String? {
         if !isPresentName(routine.name) { return "routine needs a name" }
         if let over = overflowMessage(routine.name, limit: name, label: "routine name") { return over }
+        if routine.sections.count > FlowRoutinePatcher.maximumSections {
+            return "routine has \(routine.sections.count) sections; a snapshot carries at most \(FlowRoutinePatcher.maximumSections)"
+        }
         for section in routine.sections {
             if !isPresentName(section.name) { return "a section needs a name" }
             if let over = overflowMessage(section.name, limit: name, label: "section \"\(shortened(section.name))\" name") {
                 return over
+            }
+            if section.exercises.count > FlowRoutinePatcher.maximumExercisesPerSection {
+                return "section \"\(shortened(section.name))\" has \(section.exercises.count) exercises; a snapshot carries at most \(FlowRoutinePatcher.maximumExercisesPerSection)"
             }
             for exercise in section.exercises {
                 if !isPresentName(exercise.name) { return "an exercise in \"\(shortened(section.name))\" needs a name" }
@@ -95,9 +113,27 @@ enum FlowTextBounds {
                 if measuredLength(exercise.notes) > exerciseNotes {
                     return "\"\(shortened(exercise.name))\" notes are \(measuredLength(exercise.notes))/\(exerciseNotes) characters"
                 }
+                if let out = outOfRange(exercise.sets, setsRange, "\"\(shortened(exercise.name))\" sets") { return out }
+                if let out = outOfRange(exercise.reps, repsRange, "\"\(shortened(exercise.name))\" reps") { return out }
+                if let duration = exercise.durationSeconds,
+                   let out = outOfRange(duration, durationSecondsRange, "\"\(shortened(exercise.name))\" time") { return out }
+                if let out = outOfRange(exercise.restBetweenSetsSeconds, restSecondsRange, "\"\(shortened(exercise.name))\" rest between sets") { return out }
+                if let out = outOfRange(exercise.restAfterExerciseSeconds, restSecondsRange, "\"\(shortened(exercise.name))\" rest after exercise") { return out }
+                for (phase, override) in exercise.phaseOverrides {
+                    let label = "\"\(shortened(exercise.name))\" \(phase.rawValue) override"
+                    if let sets = override.sets, let out = outOfRange(sets, setsRange, "\(label) sets") { return out }
+                    if let reps = override.reps, let out = outOfRange(reps, repsRange, "\(label) reps") { return out }
+                    if let duration = override.durationSeconds,
+                       let out = outOfRange(duration, durationSecondsRange, "\(label) time") { return out }
+                }
             }
         }
         return nil
+    }
+
+    private static func outOfRange(_ value: Int, _ range: ClosedRange<Int>, _ label: String) -> String? {
+        guard !range.contains(value) else { return nil }
+        return "\(label) must be between \(range.lowerBound) and \(range.upperBound)"
     }
 
     /// The routine with every name trimmed the way the patch path trims, so

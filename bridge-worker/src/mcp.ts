@@ -18,7 +18,7 @@
  *   create_pending_routine_patch.
  */
 
-import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "./schemas";
+import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS, STRING_BOUNDS } from "./schemas";
 
 export const MCP_SUPPORTED_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 
@@ -108,13 +108,13 @@ const exerciseProperty = {
   description: "A complete new exercise, only for addExercise. Give it a fresh UUID.",
   properties: {
     id: uuidProperty,
-    name: { type: "string", minLength: 1, maxLength: 200 },
+    name: { type: "string", minLength: 1, maxLength: STRING_BOUNDS.name },
     sets: { type: "integer", minimum: 1, maximum: 10 },
     reps: { type: "integer", minimum: 1, maximum: 100 },
     durationSeconds: { type: "integer", minimum: 1, maximum: 3600 },
     restBetweenSetsSeconds: { type: "integer", minimum: 0, maximum: 900 },
     restAfterExerciseSeconds: { type: "integer", minimum: 0, maximum: 900 },
-    notes: { type: "string", maxLength: 500 },
+    notes: { type: "string", maxLength: STRING_BOUNDS.exerciseNotes },
     perSide: { type: "boolean" },
     phaseOverrides: { type: "object", additionalProperties: phaseOverrideProperty },
   },
@@ -129,7 +129,7 @@ const sectionProperty = {
     "after trimming.",
   properties: {
     id: uuidProperty,
-    name: { type: "string", minLength: 1, maxLength: 200 },
+    name: { type: "string", minLength: 1, maxLength: STRING_BOUNDS.name },
   },
   required: ["id", "name"],
   additionalProperties: false,
@@ -143,7 +143,7 @@ const routineProperty = {
     "rather than two.",
   properties: {
     id: uuidProperty,
-    name: { type: "string", minLength: 1, maxLength: 100, description: "Stored trimmed; the bound is measured after trimming." },
+    name: { type: "string", minLength: 1, maxLength: STRING_BOUNDS.proposedRoutineName, description: "Stored trimmed; the bound is measured after trimming." },
     currentPhase: { ...phaseProperty, description: "The phase the routine starts in." },
     sections: {
       type: "array",
@@ -153,7 +153,7 @@ const routineProperty = {
         type: "object",
         properties: {
           id: uuidProperty,
-          name: { type: "string", minLength: 1, maxLength: 200 },
+          name: { type: "string", minLength: 1, maxLength: STRING_BOUNDS.name },
           exercises: { type: "array", items: exerciseProperty },
         },
         required: ["id", "name", "exercises"],
@@ -269,7 +269,7 @@ const patchProperty = {
               "exercise name for removeExercise, the routine name for renameRoutine. Checked, and " +
               "read against anything an earlier operation in the same patch changed.",
           },
-          newStringValue: { type: "string", maxLength: 500 },
+          newStringValue: { type: "string", maxLength: STRING_BOUNDS.exerciseNotes },
           expectedPhaseOverride: {
             ...phaseOverrideProperty,
             description:

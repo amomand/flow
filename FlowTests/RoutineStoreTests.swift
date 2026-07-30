@@ -142,7 +142,18 @@ final class RoutineStoreTests: XCTestCase {
         longNotes.notes = String(repeating: "n", count: 501)
         let overBoundNotes = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [longNotes])])
 
-        for routine in [overBoundName, blankName, overBoundNotes] {
+        // A sets of 99 fails the envelope exactly the way a 201-character
+        // name does; import is the paste-arbitrary-JSON route, so it is the
+        // likeliest source of a numeric value no editor would produce.
+        var wildSets = ExerciseBlock(name: "Press")
+        wildSets.sets = 99
+        let overBoundSets = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [wildSets])])
+
+        var wildOverride = ExerciseBlock(name: "Press")
+        wildOverride.phaseOverrides[.peak] = PhaseOverride(reps: 5000)
+        let overBoundOverride = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [wildOverride])])
+
+        for routine in [overBoundName, blankName, overBoundNotes, overBoundSets, overBoundOverride] {
             let json = try XCTUnwrap(String(data: JSONEncoder().encode(routine), encoding: .utf8))
             guard case .failure(let error) = store.importRoutineFromJSON(json) else {
                 return XCTFail("Expected import to be refused")

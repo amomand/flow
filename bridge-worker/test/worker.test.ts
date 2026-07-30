@@ -140,15 +140,28 @@ describe("Flow Coach bridge Worker", () => {
     expect(response.status).toBe(422);
   });
 
-  it("refuses a name whose raw length is over the bound, padding included", async () => {
-    // The app bounds the stored (trimmed) name, so a raw value only exceeds
-    // this when it predates the app-side caps. Refusing it loudly beats
-    // trimming it into a value the device does not hold.
-    const envelope = { ...snapshot(), context: structuredClone(fixtureContext) };
-    envelope.context.routines[0]!.name = `${"x".repeat(200)} `;
+  it("measures the name bound on the trimmed form, not the raw bytes", async () => {
+    // The bound has to mean the same thing the app's editors measure, and
+    // they measure the trimmed name. A legacy name whose PADDING pushes the
+    // raw length past 200 is one the app cannot warn about, so refusing it
+    // here would fail the whole envelope over bytes nobody can see.
+    const padded = { ...snapshot(), context: structuredClone(fixtureContext) };
+    padded.context.routines[0]!.name = `${"x".repeat(200)} `;
+    expect((await upload(padded)).status).toBe(201);
 
-    const response = await upload(envelope);
-    expect(response.status).toBe(422);
+    const over = { ...snapshot(), context: structuredClone(fixtureContext) };
+    over.context.routines[0]!.name = "x".repeat(201);
+    expect((await upload(over)).status).toBe(422);
+  });
+
+  it("relays history rows whose names carry legacy padding", async () => {
+    // History is a record of what happened, not something the app can go
+    // back and re-trim; a padded routineName from an old completed workout
+    // must not cost the coach the whole snapshot.
+    const envelope = { ...snapshot(), context: structuredClone(fixtureContext) };
+    const summary = envelope.context.recentStrengthSummary[0];
+    if (summary) summary.routineName = ` ${summary.routineName} `;
+    expect((await upload(envelope)).status).toBe(201);
   });
 
   it("rejects duplicate sharing tiers", async () => {

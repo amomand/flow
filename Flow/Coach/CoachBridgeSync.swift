@@ -129,7 +129,19 @@ enum CoachBridgeEdge {
         }
 
         let payload = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-        let detail = payload["error"] as? String
+        // A refusal names the whole envelope ("does not match Flow schema 2"),
+        // but the first entry in `problems` names the field. Without it, a
+        // 422 caused by one value in one routine gives the person nothing to
+        // act on, which is exactly the failing-far-from-the-cause shape the
+        // editors' bounds exist to prevent.
+        var detail = payload["error"] as? String
+        if let problems = payload["problems"] as? [[String: Any]],
+           let first = problems.first,
+           let path = first["path"] as? String,
+           let message = first["message"] as? String {
+            let count = problems.count > 1 ? " (and \(problems.count - 1) more)" : ""
+            detail = "\(detail ?? "Refused.") \(path): \(message)\(count)"
+        }
 
         switch response.statusCode {
         case 200...299:
