@@ -301,6 +301,24 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
     return (await json(response)).capabilities;
   }
 
+  it("carries a fresh stale-schema advisory next to the capabilities block", async () => {
+    // A client that cached tools/list from before a contract deploy has no
+    // signal that its input schema is stale (#83); the context payload is
+    // generated per call, so it is the one place such a signal survives.
+    const envelope = capableSnapshot();
+    expect((await upload(envelope)).status).toBe(201);
+
+    const response = await SELF.fetch(`https://flow.test/actions/coach-context?contextId=${envelope.contextId}`, {
+      headers: auth(ACTIONS_SECRET),
+    });
+    expect(response.status).toBe(200);
+    const advisory = (await json(response)).advisory as string;
+    // Pinned to the two capability keys so a rename there fails here too.
+    expect(advisory).toContain("capabilities.operationKinds");
+    expect(advisory).toContain("capabilities.patchSchemaVersions");
+    expect(advisory).toContain("refresh this connector");
+  });
+
   it("advertises what the device declares, and accepts a rename against it", async () => {
     const envelope = capableSnapshot();
     expect((await upload(envelope)).status).toBe(201);

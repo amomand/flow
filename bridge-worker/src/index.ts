@@ -585,6 +585,17 @@ export class FlowCoachMailbox extends DurableObject<Env> {
         recentCardioCount: context.recentCardioSummary.length,
         constraints: context.constraints,
         capabilities: this.capabilitiesFor(selected),
+        // Travels in the result rather than the tool description because a
+        // result is generated fresh on every call, where a tool description
+        // can sit in a client's cached tools/list long after a deploy changed
+        // the contract (#83). A coach composing from that cache silently
+        // believes an operation does not exist; this is the one message it
+        // reads every conversation that can say otherwise.
+        advisory:
+          "If capabilities.operationKinds or capabilities.patchSchemaVersions include anything " +
+          "your patch tool's input schema does not mention, your client is composing against a " +
+          "cached tools/list from an older deploy. Trust this block over the cached schema, and " +
+          "tell the user to refresh this connector in Claude's settings.",
       });
     }
     if (request.method === "GET" && url.pathname === "/actions/routines") {
