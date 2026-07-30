@@ -35,7 +35,11 @@ for (const [path, method, operationId, consequential] of actions) {
   operationIds.add(operationId);
   assert.ok(operation.summary.length <= 300, `${operationId} summary exceeds the Actions limit`);
   assert.ok((operation.description?.length ?? 0) <= 300, `${operationId} description exceeds the Actions limit`);
-  if (consequential !== undefined) assert.equal(operation["x-openai-isConsequential"], consequential);
+  assert.equal(
+    operation["x-openai-isConsequential"],
+    consequential,
+    `${operationId} has the wrong consequential flag`,
+  );
   for (const parameter of operation.parameters ?? []) {
     if ("$ref" in parameter) continue;
     assert.ok((parameter.description?.length ?? 0) <= 700, `${operationId} parameter description exceeds the Actions limit`);
