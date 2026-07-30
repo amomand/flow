@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Flow — a terminal-flavoured training app</title>
-<meta name="description" content="Flow is a personal iOS exercise app built in SwiftUI. TokyoNight theme, strength routines, HealthKit runs and rides, dynamic tabs, and Obsidian-friendly receipts." />
+<meta name="description" content="Flow is a personal iOS exercise app built in SwiftUI. TokyoNight theme, strength routines with phases and automatic progression, HealthKit runs and rides, and a coach that is only allowed to suggest." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -537,7 +537,7 @@
     <div class="phone">
       <div class="phone-notch"></div>
       <div class="phone-screen">
-        <div class="phone-status">// 09:42 · flow · local only</div>
+        <div class="phone-status">// 09:42 · flow · local first</div>
         <div class="phone-tabs">
           <div class="phone-tab active">strength</div>
           <div class="phone-tab">runs</div>
@@ -580,7 +580,17 @@
     <div class="card accent-orange">
       <div class="icon mono">// timers</div>
       <h3>Split rest timers</h3>
-      <p>Separate rest between sets and after the final set of an exercise. A progress ring. A buzz at zero. Pretty standard timer stuff, honestly.</p>
+      <p>Separate rest between sets and after the final set. Timed exercises count themselves down and move on without being asked. A buzz at zero. Pretty standard timer stuff, honestly.</p>
+    </div>
+    <div class="card">
+      <div class="icon mono">// phases</div>
+      <h3>Base, Peak, Deload</h3>
+      <p>Per-exercise overrides for each phase, and the whole app re-themes to match. Deload weeks get a light palette, because even the colours are taking it easy.</p>
+    </div>
+    <div class="card accent-red">
+      <div class="icon mono">// progression</div>
+      <h3>The buttons do something</h3>
+      <p>Rate a set Fail and the next session asks for less. Easy, and it asks for more. Good keeps the peace. Small numerical opinions, applied automatically.</p>
     </div>
     <div class="card accent-green">
       <div class="icon mono">// healthkit</div>
@@ -592,10 +602,15 @@
       <h3>Route crumbs and split maths</h3>
       <p>Cardio detail pages show the route, pace buckets, elevation samples, splits, and heart rate. A dashboard, but wearing shorts.</p>
     </div>
+    <div class="card accent-purple">
+      <div class="icon mono">// coach</div>
+      <h3>Trust, but diff</h3>
+      <p>An assistant can read a training snapshot and propose a typed patch. Flow shows the exact before-and-after, applies nothing on its own, and can roll back anything it let through. Suggesting is the entire job.</p>
+    </div>
     <div class="card accent-red">
       <div class="icon mono">// json + ai</div>
       <h3>Routines as JSON</h3>
-      <p>Draft a routine with an LLM, paste the JSON, import it. Export what you've built. Normal people use apps. We use JSON.</p>
+      <p>Draft a routine with an LLM, paste the JSON, import it. Export what you've built. The smallest version of what a coach can do now, and still the most honest. Normal people use apps. We use JSON.</p>
     </div>
     <div class="card">
       <div class="icon mono">// theme</div>
@@ -622,12 +637,12 @@
     <div class="flow-step">
       <div class="num">03</div>
       <h4>Rate the damage</h4>
-      <p>Strength gets Fail / Good / Easy. Cardio gets splits, pace, elevation, and the quiet judgement of a route line.</p>
+      <p>Strength gets Fail / Good / Easy, and the ratings quietly adjust what next time asks of you. Cardio gets splits, pace, elevation, and the quiet judgement of a route line.</p>
     </div>
     <div class="flow-step">
       <div class="num">04</div>
       <h4>Keep the receipt</h4>
-      <p>Copy the workout summary, browse the cardio, paste what matters into Obsidian. Close the vault. Go eat.</p>
+      <p>Finished sessions are kept as immutable snapshots: ratings, duration, what progression did and skipped, Apple Watch numbers where HealthKit has them. Paste what matters into Obsidian. Go eat.</p>
     </div>
   </div>
 </section>
@@ -638,9 +653,15 @@
       <div class="section-label mono"><span class="hash">##</span> data</div>
       <h2>Local data, because <span class="accent">calm is nice.</span></h2>
       <p>
-        No backend. No account. No lock-in, because there is nothing to be locked into.
+        Almost no backend. No account. No lock-in, because there is still nothing to be locked into.
         Strength routines live as JSON in the app's documents directory. Runs and rides are mirrored from
-        HealthKit into local SwiftData so the lists open quickly and the internet can remain uninvolved.
+        HealthKit into local SwiftData so the lists open quickly and the internet can remain largely uninvolved.
+      </p>
+      <p>
+        "Largely", because the man who wrote "no backend, calm is nice" now runs one small Cloudflare
+        Worker per household member, so a coach can read a training snapshot and post suggestions to a
+        mailbox. It is off until you pair one. Sharing is opt-in per category, snapshots expire after
+        24 hours, the mailbox cannot change a routine, and the app works fully without any of it.
       </p>
       <p class="comment mono" style="margin-top:1.5rem; font-size:0.85rem;">
         // if the schema changes, I'll know, because I will have done it to myself.
