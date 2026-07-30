@@ -119,6 +119,13 @@ Three things that will come up:
 | Consent page sits there after approving | see [#59](https://github.com/amomand/flow/pull/59); fixed, but a stale deployment would reproduce it |
 | Assistant says there is no snapshot | nothing synced, or the snapshot expired |
 | Tools missing from the connector | the grant was scoped to `coach:read` only |
+| Coach insists an operation or schema version does not exist that the bridge says it supports | the client cached the tool list from before a bridge update; refresh the connector, below |
+
+### After the bridge is updated
+
+Claude fetches the connector's tool descriptions when the connector is added and keeps its own copy; updating the Worker does not update that copy. The visible symptom is a coach that quietly believes less than the bridge can do — telling you a kind of edit is impossible, or proposing something clumsier than it needed to.
+
+After any bridge update that changes what the tools accept, refresh the connector in Claude (Settings, Connectors — remove and re-add it if no refresh is offered; the same connect phrase works). Then check it took, in one message: ask the coach to list the operation kinds it can see in its patch tool, and compare against `capabilities.operationKinds` from `get_flow_coach_context`. If they disagree, the copy is still stale.
 
 ## Turning it off
 

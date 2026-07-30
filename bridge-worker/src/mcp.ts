@@ -525,6 +525,15 @@ export async function handleMcpMessage(
       : MCP_SUPPORTED_VERSIONS[0];
     return rpcResult(id, {
       protocolVersion,
+      // Deliberately not `tools: { listChanged: true }`. That capability
+      // promises notifications/tools/list_changed, and this server has no
+      // channel to deliver one on: every request gets a single JSON response,
+      // GET opens no SSE stream, and no session id ties requests together.
+      // Advertising it would not make a client refetch after a contract
+      // deploy; it would just be a promise nothing here can keep. Stale
+      // cached tool schemas are handled operationally instead: the
+      // coach-context payload carries a fresh-per-call advisory, and the
+      // runbook's deploy steps say when to refresh the connector (#83).
       capabilities: { tools: {} },
       serverInfo: { name: "flow-coach-bridge", version: "0.1.0" },
       instructions: BRIDGE_INSTRUCTIONS,

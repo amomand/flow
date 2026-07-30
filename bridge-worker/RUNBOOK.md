@@ -51,6 +51,19 @@ To connect a person's Claude:
 
 To disconnect: remove the connector in Claude, then rotate the connect phrase. To force-revoke server-side without the client's cooperation, delete that environment's grants in `OAUTH_KV` (`npx wrangler kv key list --binding OAUTH_KV --env <env>` and delete the listed grant/token keys), then rotate the connect phrase.
 
+### After a contract deploy: refresh the connector
+
+Redeploying the Worker does not touch Claude's cached `tools/list`. Anthropic documents no cache duration and no automatic refetch, so assume a connected client keeps composing against the tool schemas it fetched when the connector was added. That failure is silent and points the wrong way: after the schema 3 deploy, a connected coach reported the patch tool "still advertises schema 2 only", worked around operations that were in fact live, and nothing on either side disagreed out loud (#83).
+
+The server cannot push a correction. `notifications/tools/list_changed` requires a delivery channel — an SSE stream or a session — and this Worker deliberately has neither, so the capability is not advertised (see the `initialize` handler in `src/mcp.ts`).
+
+So the step is manual. After any deploy that changes a tool's input schema, description, or the operation contract:
+
+1. In Claude (Settings, Connectors) refresh the affected person's connector — remove it and add it back if no lighter refresh is offered. Re-approval uses the same connect phrase; grants in `OAUTH_KV` are unaffected.
+2. Check it took: ask the coach to list the operation kinds and schema versions visible in its patch tool's input schema, and compare against `capabilities.operationKinds` and `capabilities.patchSchemaVersions` from `get_flow_coach_context`. One message, and it would have caught the incident above.
+
+The coach-context payload also carries a fresh-per-call `advisory` telling a coach to trust the capabilities block over a cached schema and to ask for a refresh, so a stale client that reads a context at least learns it is stale. It does not remove the manual step; it bounds the damage until someone performs it.
+
 ## Real-data pre-deploy gate
 
 The primary Worker may be deployed with temporary credentials and synthetic fixtures to complete #46. Before either mailbox receives real data:
