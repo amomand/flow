@@ -142,7 +142,7 @@ final class RoutineStoreTests: XCTestCase {
         longNotes.notes = String(repeating: "n", count: 501)
         let overBoundNotes = Routine(name: "Fine", sections: [Section(name: "Main", exercises: [longNotes])])
 
-        // A sets of 99 fails the envelope exactly the way a 201-character
+        // A `sets` of 99 fails the envelope exactly the way a 201-character
         // name does; import is the paste-arbitrary-JSON route, so it is the
         // likeliest source of a numeric value no editor would produce.
         var wildSets = ExerciseBlock(name: "Press")
