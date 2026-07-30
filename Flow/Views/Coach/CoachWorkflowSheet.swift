@@ -97,6 +97,10 @@ struct CoachWorkflowSheet: View {
         }
     }
 
+    private var notesOverBound: Bool {
+        FlowTextBounds.constraintsNotesProblem(notes) != nil
+    }
+
     private var contextSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("COACH CONTEXT")
@@ -111,6 +115,15 @@ struct CoachWorkflowSheet: View {
                 .background(editorBackground)
                 .frame(minHeight: 74)
 
+            // The upload is validated whole, so notes past the bound would
+            // cost the coach every routine at sync time. Said here, while the
+            // paragraph is being pasted, rather than at upload.
+            if let problem = FlowTextBounds.constraintsNotesProblem(notes) {
+                Text("// \(problem)")
+                    .terminalFont(12)
+                    .foregroundColor(TN.red)
+            }
+
             HStack(spacing: 10) {
                 Button {
                     copyCoachContext()
@@ -118,6 +131,7 @@ struct CoachWorkflowSheet: View {
                     Text("[ COPY ]")
                 }
                 .buttonStyle(TerminalButtonStyle(color: TN.blue))
+                .disabled(notesOverBound)
 
                 Button {
                     shareCoachContextFile()
@@ -125,6 +139,7 @@ struct CoachWorkflowSheet: View {
                     Text("[ SHARE FILE ]")
                 }
                 .buttonStyle(TerminalButtonStyle(color: TN.blue))
+                .disabled(notesOverBound)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -512,7 +512,7 @@ enum FlowRoutinePatcher {
         guard !name.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.name", message: "must not be empty")
         }
-        try check(name, atMost: 100, field: "routine.name")
+        try check(name, atMost: FlowTextBounds.proposedRoutineName, field: "routine.name")
         guard !routine.sections.isEmpty else {
             throw FlowRoutinePatchError.invalidValue(field: "routine.sections", message: "must contain at least one section")
         }
@@ -533,7 +533,7 @@ enum FlowRoutinePatcher {
             guard !sectionName.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: field, message: "must not be empty")
             }
-            try check(sectionName, atMost: 200, field: field)
+            try check(sectionName, atMost: FlowTextBounds.name, field: field)
             created.sections[index].name = sectionName
 
             guard sectionIds.insert(created.sections[index].id).inserted else {
@@ -736,7 +736,7 @@ enum FlowRoutinePatcher {
 
         case .updateExerciseNotes:
             let value = try requireString(operation.newStringValue, "newStringValue")
-            try check(value, atMost: 500, field: "notes")
+            try check(value, atMost: FlowTextBounds.exerciseNotes, field: "notes")
             let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
             var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
             try expectString(operation.expectedStringValue, actual: exercise.notes, field: "\(exercise.name) notes")
@@ -847,7 +847,7 @@ enum FlowRoutinePatcher {
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "section.name", message: "must not be empty")
             }
-            try check(name, atMost: 200, field: "section.name")
+            try check(name, atMost: FlowTextBounds.name, field: "section.name")
             guard !routine.sections.contains(where: { $0.id == section.id }) else {
                 throw FlowRoutinePatchError.duplicateSectionId(section.id)
             }
@@ -877,7 +877,7 @@ enum FlowRoutinePatcher {
             guard !name.isEmpty else {
                 throw FlowRoutinePatchError.invalidValue(field: "routine name", message: "must not be empty")
             }
-            try check(name, atMost: 100, field: "routine name")
+            try check(name, atMost: FlowTextBounds.proposedRoutineName, field: "routine name")
             // The routine name sits outside `contentHash`, which covers
             // sections only, so a stale-hash rebase can never notice a rename
             // that landed in between. `expectedStringValue` is the whole
@@ -1076,55 +1076,17 @@ enum FlowRoutinePatcher {
         }
     }
 
-    /**
-     What counts as padding around a name, on both sides at once.
-
-     Swift's `whitespacesAndNewlines` and JavaScript's `trim` very nearly
-     agree. The one character JavaScript strips and Swift does not is U+FEFF,
-     and Swift strips U+0085 and U+200B where JavaScript does not. Adding
-     U+FEFF here makes the app's set a superset of the bridge's, which is what
-     makes the two sides agree rather than merely trim similarly: a name
-     trimmed with this set has nothing left at either end that the bridge would
-     strip, so the bridge's own trim is a no-op on it, and the length the app
-     measured is the length the bridge measures.
-
-     Without that, a name of a single U+FEFF was not empty to the app, was
-     stored, and was then empty to the bridge, which refuses the whole snapshot
-     rather than one routine.
-     */
-    private static let namePadding = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: "\u{FEFF}"))
-
+    // Padding set, trimming, and the UTF-16 measuring unit all live in
+    // FlowTextBounds now that the editors and the JSON import enforce the
+    // same ceilings; the reasoning behind both is documented there.
     private static func trimmedName(_ value: String) -> String {
-        value.trimmingCharacters(in: namePadding)
+        FlowTextBounds.trimmedName(value)
     }
 
-    /**
-     Bound a string the way the bridge bounds it: in UTF-16 code units.
-
-     Swift's `count` is grapheme clusters and the bridge's `length` is UTF-16
-     code units. They agree for most text and part company wherever one
-     character spans more than one code unit: anything outside the Basic
-     Multilingual Plane, which is most emoji, and anything written as a base
-     character plus combining marks, which covers accents typed as a sequence,
-     joined emoji, and scripts that hang dependent signs off a base letter.
-     Everyday Cyrillic, Greek, Arabic, Hebrew and CJK sit in the BMP at one
-     code unit per letter and count the same either way.
-
-     So a name of 100 emoji was 100 to the app and 200 to the bridge. The
-     bridge was the stricter side everywhere, which meant a name the app
-     accepted was one the coach could not propose, and the rejection made no
-     sense to the person who typed it.
-
-     UTF-16 is the contract because it is what the bridge's JavaScript measures
-     without being asked. Teaching JavaScript about grapheme clusters is the
-     more correct direction and far more work for a difference nobody hits
-     deliberately.
-
-     Every bounded string on the patch path goes through here so the unit is
-     stated once rather than rediscovered per field.
-     */
+    /// Every bounded string on the patch path goes through here so the unit
+    /// is stated once rather than rediscovered per field.
     private static func check(_ value: String, atMost limit: Int, field: String) throws {
-        guard value.utf16.count <= limit else {
+        guard FlowTextBounds.measuredLength(value) <= limit else {
             throw FlowRoutinePatchError.invalidValue(field: field, message: "must be \(limit) characters or fewer")
         }
     }
@@ -1155,7 +1117,7 @@ enum FlowRoutinePatcher {
         // Bounded and stored on the trimmed name, which is what the bridge
         // measures and what it will hold. The snapshot is validated whole, so
         // one name over this ceiling costs the coach every routine, not one.
-        try check(name, atMost: 200, field: "exercise.name")
+        try check(name, atMost: FlowTextBounds.name, field: "exercise.name")
         stored.name = name
         try validate(exercise.sets, field: "exercise.sets", range: 1...10)
         try validate(exercise.reps, field: "exercise.reps", range: 1...100)
@@ -1164,7 +1126,7 @@ enum FlowRoutinePatcher {
         }
         try validate(exercise.restBetweenSetsSeconds, field: "exercise.restBetweenSetsSeconds", range: 0...900)
         try validate(exercise.restAfterExerciseSeconds, field: "exercise.restAfterExerciseSeconds", range: 0...900)
-        try check(exercise.notes, atMost: 500, field: "exercise.notes")
+        try check(exercise.notes, atMost: FlowTextBounds.exerciseNotes, field: "exercise.notes")
         for override in exercise.phaseOverrides.values {
             try validatePhaseOverride(override)
         }

@@ -162,6 +162,14 @@ class RoutineStore {
     }
 
     func importRoutineFromJSON(_ json: String) -> Result<Routine, ImportError> {
+        // The count ceiling lives with the other snapshot bounds, but it is a
+        // property of the collection, so the per-routine gate below cannot see
+        // it: the 51st routine is individually flawless and still fails every
+        // upload whole. The patch path already refuses a create at the cap;
+        // this is the other route that grows the collection.
+        guard routines.count < FlowRoutinePatcher.maximumRoutines else {
+            return .failure(.outOfBounds("a snapshot carries at most \(FlowRoutinePatcher.maximumRoutines) routines, and there are already that many"))
+        }
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
         guard let data = cleaned.data(using: .utf8) else {
             return .failure(.invalidJSON)
@@ -176,6 +184,15 @@ class RoutineStore {
         }
         do {
             var routine = try FlowRoutineExchange.decoder().decode(Routine.self, from: data)
+            // Trimmed and bounded the same way the editors and the patch path
+            // are, because this was the one remaining route that stored names
+            // the snapshot schema refuses: the upload is validated whole, so
+            // one over-long pasted name would cost the coach every routine at
+            // the next sync, far from the import that caused it.
+            routine = FlowTextBounds.withTrimmedNames(routine)
+            if let problem = FlowTextBounds.firstBoundsProblem(in: routine) {
+                return .failure(.outOfBounds(problem))
+            }
             // Assign new IDs so imports never collide with existing routines
             routine.id = UUID()
             for si in routine.sections.indices {
@@ -491,6 +508,7 @@ class RoutineStore {
         case decodingFailed(String)
         case looksLikeCoachPatch
         case looksLikeCoachContext
+        case outOfBounds(String)
         case persistenceFailed(String)
 
         var errorDescription: String? {
@@ -501,6 +519,8 @@ class RoutineStore {
                 return "This looks like a Flow Coach routine patch. Open Flow Coach to preview and apply it instead."
             case .looksLikeCoachContext:
                 return "This is the coach context export, not a routine. Paste a single routine's JSON instead."
+            case .outOfBounds(let problem):
+                return "Not imported: \(problem)."
             case .persistenceFailed(let message):
                 return "The imported routine was not saved: \(message)"
             }

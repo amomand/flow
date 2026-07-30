@@ -23,7 +23,14 @@ struct ExerciseEditorView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    editorField("NAME", text: $exercise.name)
+                    VStack(alignment: .leading, spacing: 4) {
+                        editorField("NAME", text: $exercise.name)
+                        if let over = FlowTextBounds.overflowMessage(exercise.name, limit: FlowTextBounds.name, label: "name") {
+                            Text("// \(over)")
+                                .terminalFont(12)
+                                .foregroundColor(TN.red)
+                        }
+                    }
 
                     HStack(spacing: 16) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -46,7 +53,10 @@ struct ExerciseEditorView: View {
                                     .foregroundColor(TN.fg)
                                     .frame(minWidth: 30)
                                 Button {
-                                    exercise.sets += 1
+                                    // Capped where the snapshot schema caps it:
+                                    // a value past this fails the whole upload,
+                                    // not just this exercise.
+                                    if exercise.sets < FlowTextBounds.setsRange.upperBound { exercise.sets += 1 }
                                 } label: {
                                     Text("+")
                                         .terminalFont(18, weight: .bold)
@@ -176,6 +186,11 @@ struct ExerciseEditorView: View {
                                             .stroke(TN.comment.opacity(0.3), lineWidth: 1)
                                     )
                             )
+                        if FlowTextBounds.measuredLength(exercise.notes) > FlowTextBounds.exerciseNotes {
+                            Text("// notes are \(FlowTextBounds.measuredLength(exercise.notes))/\(FlowTextBounds.exerciseNotes) characters")
+                                .terminalFont(12)
+                                .foregroundColor(TN.red)
+                        }
                     }
                 }
                 .padding()
@@ -192,14 +207,25 @@ struct ExerciseEditorView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
-                    onSave(exercise)
+                    // Stored trimmed, the same way the patch path stores it,
+                    // so the length the editor accepted is the length the
+                    // snapshot upload will measure.
+                    var stored = exercise
+                    stored.name = FlowTextBounds.trimmedName(exercise.name)
+                    onSave(stored)
                     dismiss()
                 }
                 .foregroundColor(TN.blue)
                 .bold()
-                .disabled(exercise.name.isEmpty)
+                .disabled(!canSave)
             }
         }
+    }
+
+    private var canSave: Bool {
+        FlowTextBounds.isPresentName(exercise.name)
+            && FlowTextBounds.fitsName(exercise.name)
+            && FlowTextBounds.measuredLength(exercise.notes) <= FlowTextBounds.exerciseNotes
     }
 
     private func editorField(_ label: String, text: Binding<String>) -> some View {
@@ -248,8 +274,8 @@ struct ExerciseEditorView: View {
     private func incrementWorkValue() {
         if exercise.isTimed {
             let currentDuration = exercise.durationSeconds ?? max(exercise.reps, 30)
-            exercise.durationSeconds = currentDuration + 5
-        } else {
+            exercise.durationSeconds = min(FlowTextBounds.durationSecondsRange.upperBound, currentDuration + 5)
+        } else if exercise.reps < FlowTextBounds.repsRange.upperBound {
             exercise.reps += 1
         }
     }
@@ -352,6 +378,7 @@ struct PhaseOverrideEditor: View {
                     value: override.sets,
                     baseValue: exercise.sets,
                     minValue: 1,
+                    maxValue: FlowTextBounds.setsRange.upperBound,
                     step: 1,
                     onChange: { newValue in update { $0.sets = newValue } }
                 )
@@ -360,6 +387,9 @@ struct PhaseOverrideEditor: View {
                     value: exercise.isTimed ? override.durationSeconds : override.reps,
                     baseValue: exercise.workDisplayValue,
                     minValue: exercise.isTimed ? 5 : 1,
+                    maxValue: exercise.isTimed
+                        ? FlowTextBounds.durationSecondsRange.upperBound
+                        : FlowTextBounds.repsRange.upperBound,
                     step: exercise.isTimed ? 5 : 1,
                     onChange: { newValue in
                         update {
@@ -382,6 +412,7 @@ struct PhaseOverrideEditor: View {
         value: Int?,
         baseValue: Int,
         minValue: Int,
+        maxValue: Int,
         step: Int,
         onChange: @escaping (Int?) -> Void
     ) -> some View {
@@ -411,7 +442,9 @@ struct PhaseOverrideEditor: View {
 
                 Button {
                     let current = value ?? baseValue
-                    let next = current + step
+                    // Same ceiling as the snapshot schema; an override past it
+                    // fails the whole upload, not just this phase.
+                    let next = min(maxValue, current + step)
                     onChange(next == baseValue ? nil : next)
                 } label: {
                     Text("+")

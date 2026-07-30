@@ -610,6 +610,31 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(sync.lastSyncError, CoachBridgeError.invalidCredential.errorDescription)
     }
 
+    /// A 422 names the whole envelope; the first entry in `problems` names
+    /// the field. Discarding it left a refusal caused by one value in one
+    /// routine with nothing the person could act on.
+    func testEnvelopeRefusalSurfacesTheFieldThatCausedIt() async throws {
+        let transport = StubBridgeTransport()
+        await transport.stub(
+            "PUT /device/snapshots",
+            status: 422,
+            json: #"{"error":"Snapshot envelope does not match Flow schema 2.","problems":[{"path":"context.routines.0.name","message":"must be at most 200 characters once trimmed"},{"path":"context.routines.1.name","message":"must not be blank"}]}"#
+        )
+        let sync = try await makeSync(transport: transport)
+        sync.approveSharing()
+
+        let result = await sync.syncToCoach(routines: [], strengthWorkouts: [], cardioWorkouts: [])
+
+        guard case .failure(.rejected(let status, let detail)) = result else {
+            return XCTFail("Expected the refusal to surface, got \(result)")
+        }
+        XCTAssertEqual(status, 422)
+        let message = try XCTUnwrap(detail)
+        XCTAssertTrue(message.contains("context.routines.0.name"), "the field path is the actionable part")
+        XCTAssertTrue(message.contains("must be at most 200 characters once trimmed"))
+        XCTAssertTrue(message.contains("and 1 more"))
+    }
+
     func testUploadedEnvelopeExcludesUnselectedCategories() async throws {
         let transport = StubBridgeTransport()
         let sync = try await makeSync(transport: transport)

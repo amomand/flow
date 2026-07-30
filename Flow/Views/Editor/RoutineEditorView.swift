@@ -41,6 +41,11 @@ struct RoutineEditorView: View {
                                             .stroke(TN.comment.opacity(0.3), lineWidth: 1)
                                     )
                             )
+                        if let over = FlowTextBounds.overflowMessage(routine.name, limit: FlowTextBounds.name, label: "name") {
+                            Text("// \(over)")
+                                .terminalFont(12)
+                                .foregroundColor(TN.red)
+                        }
                     }
                     .padding(.horizontal)
 
@@ -56,6 +61,23 @@ struct RoutineEditorView: View {
 
                     if !routine.canStartWorkout {
                         Text("// add a section and exercise before saving")
+                            .terminalFont(12)
+                            .foregroundColor(TN.red)
+                            .padding(.horizontal)
+                    }
+
+                    // The snapshot upload is validated whole, so one over-long
+                    // field would cost the coach every routine at sync time.
+                    // Held here instead, next to the field that caused it.
+                    if let problem = FlowTextBounds.firstBoundsProblem(in: routine) {
+                        Text("// \(problem)")
+                            .terminalFont(12)
+                            .foregroundColor(TN.red)
+                            .padding(.horizontal)
+                    }
+
+                    if atRoutineCap {
+                        Text("// a snapshot carries at most \(FlowRoutinePatcher.maximumRoutines) routines; delete one first")
                             .terminalFont(12)
                             .foregroundColor(TN.red)
                             .padding(.horizontal)
@@ -85,10 +107,14 @@ struct RoutineEditorView: View {
             }
             ToolbarItem(placement: .confirmationAction) {
                 Button("Save") {
+                    // Stored trimmed so the snapshot carries exactly what the
+                    // device holds; a padded name here is a name the coach can
+                    // read but never successfully anchor an operation to.
+                    let trimmed = FlowTextBounds.withTrimmedNames(routine)
                     if isNew {
-                        store.addRoutine(routine)
+                        store.addRoutine(trimmed)
                     } else {
-                        store.updateRoutine(routine)
+                        store.updateRoutine(trimmed)
                     }
                     dismiss()
                 }
@@ -100,8 +126,15 @@ struct RoutineEditorView: View {
     }
 
     private var canSave: Bool {
-        !routine.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        FlowTextBounds.firstBoundsProblem(in: routine) == nil
             && routine.canStartWorkout
+            && !atRoutineCap
+    }
+
+    /// Only a NEW routine grows the collection past what a snapshot carries;
+    /// editing the 50th in place is fine.
+    private var atRoutineCap: Bool {
+        isNew && store.routines.count >= FlowRoutinePatcher.maximumRoutines
     }
 }
 
@@ -131,6 +164,13 @@ struct SectionEditorBlock: View {
                 }
             }
             .padding(.horizontal)
+
+            if let over = FlowTextBounds.overflowMessage(section.name, limit: FlowTextBounds.name, label: "section name") {
+                Text("// \(over)")
+                    .terminalFont(12)
+                    .foregroundColor(TN.red)
+                    .padding(.horizontal)
+            }
 
             ForEach($section.exercises) { $exercise in
                 ExerciseEditorRow(exercise: exercise)

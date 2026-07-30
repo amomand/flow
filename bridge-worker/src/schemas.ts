@@ -9,6 +9,50 @@ export const CONTENT_HASH = z.string().regex(/^c1-[0-9a-f]{16}$/);
 const STATE_HASH = z.string().regex(/^s1-[0-9a-f]{16}$/);
 const phase = z.enum(["base", "peak", "deload"]);
 
+/**
+ * Text ceilings, read from the shared contract so the app's constants and
+ * these schemas cannot drift apart. UTF-16 code units on both sides, which is
+ * what JavaScript's `length` measures without being asked.
+ */
+export const STRING_BOUNDS = contract.stringBoundsUtf16;
+
+/**
+ * A name as the app stores it: bounded on its trimmed length, refused when
+ * blank, and NOT trimmed here.
+ *
+ * `.trim()` used to sit in these schemas as a transform, so the snapshot held
+ * a trimmed copy of a name the device holds raw. The coach could then only
+ * ever see `"Bench"` where the phone has `"Bench "`, and any operation
+ * carrying that name as expectedStringValue passed the bridge and was refused
+ * on the phone as beforeValueMismatch — with no way for the coach to see why,
+ * because the value it needed to send is one the snapshot never showed it.
+ *
+ * The contract is the app's bytes. The app now trims names at every point of
+ * entry (editors, import, patch apply), so a padded name here is legacy data,
+ * and relaying it exactly is what lets the coach anchor operations to it.
+ *
+ * Both checks measure the trimmed form, and that choice is load-bearing: it
+ * is exactly what the app's editors measure, so the app and the bridge agree
+ * on every value. Bounding the raw length instead would refuse a legacy name
+ * whose padding pushes it past the ceiling — a value the app has no way to
+ * warn about, failing the whole envelope at sync time.
+ */
+const storedName = z.string()
+  .refine((value) => value.trim().length >= 1, { message: "must not be blank" })
+  .refine((value) => value.trim().length <= STRING_BOUNDS.name, {
+    message: `must be at most ${STRING_BOUNDS.name} characters once trimmed`,
+  });
+
+/**
+ * A name the snapshot merely relays inside workout history. Same trimmed
+ * measurement as `storedName`, no blankness requirement: history rows carry
+ * whatever the completed workout recorded, and refusing an old row would
+ * take the whole envelope with it.
+ */
+const relayedName = z.string().refine((value) => value.trim().length <= STRING_BOUNDS.name, {
+  message: `must be at most ${STRING_BOUNDS.name} characters once trimmed`,
+});
+
 const phaseOverride = z.object({
   sets: z.number().int().min(1).max(10).optional(),
   reps: z.number().int().min(1).max(100).optional(),
@@ -17,13 +61,13 @@ const phaseOverride = z.object({
 
 export const exerciseSchema = z.object({
   id: UUID,
-  name: z.string().trim().min(1).max(200),
+  name: storedName,
   sets: z.number().int().min(1).max(10),
   reps: z.number().int().min(1).max(100),
   durationSeconds: z.number().int().min(1).max(3600).optional(),
   restBetweenSetsSeconds: z.number().int().min(0).max(900),
   restAfterExerciseSeconds: z.number().int().min(0).max(900),
-  notes: z.string().max(500),
+  notes: z.string().max(STRING_BOUNDS.exerciseNotes),
   perSide: z.boolean(),
   // Swift omits this key when the dictionary is empty.
   phaseOverrides: z.record(z.string(), phaseOverride).default({}),
@@ -50,10 +94,10 @@ export const MAX_ROUTINES = 50;
 
 export const routineSchema = z.object({
   id: UUID,
-  name: z.string().trim().min(1).max(200),
+  name: storedName,
   sections: z.array(z.object({
     id: UUID,
-    name: z.string().trim().min(1).max(200),
+    name: storedName,
     exercises: z.array(exerciseSchema).max(MAX_EXERCISES_PER_SECTION),
   }).strict()).max(MAX_SECTIONS),
   currentPhase: phase,
@@ -62,14 +106,14 @@ export const routineSchema = z.object({
 const adjustment = z.object({
   id: UUID,
   exerciseId: UUID,
-  exerciseName: z.string().max(200),
+  exerciseName: relayedName,
   field: z.string().max(100),
   oldValue: z.number().int(),
   newValue: z.number().int(),
 }).strict();
 const setNote = z.object({
   exerciseId: UUID,
-  exerciseName: z.string().max(200),
+  exerciseName: relayedName,
   setNumber: z.number().int().positive(),
   side: z.enum(["left", "right"]).optional(),
   rating: z.enum(["fail", "good", "easy"]),
@@ -87,7 +131,7 @@ const healthMetrics = z.object({
 const strengthSummary = z.object({
   date: ISO_DATE,
   routineId: UUID,
-  routineName: z.string().max(200),
+  routineName: relayedName,
   phase,
   durationSeconds: z.number().nonnegative(),
   ratings: z.object({
@@ -122,7 +166,7 @@ export const coachContextSchema = z.object({
   routineStateHashByRoutineId: z.record(z.string(), STATE_HASH),
   recentStrengthSummary: z.array(strengthSummary).max(50),
   recentCardioSummary: z.array(cardioSummary).max(50),
-  constraints: z.object({ notes: z.string().max(2000).optional() }).strict().optional(),
+  constraints: z.object({ notes: z.string().max(STRING_BOUNDS.constraintsNotes).optional() }).strict().optional(),
 }).strict();
 
 const dataTierSchema = z.enum([
@@ -208,7 +252,7 @@ export const PATCH_SCHEMA_VERSIONS: number[] = contract.patchSchemaVersions;
  */
 const newSectionSchema = z.object({
   id: UUID,
-  name: z.string().trim().min(1).max(200),
+  name: z.string().trim().min(1).max(STRING_BOUNDS.name),
 }).strict();
 
 const operationKinds = z.enum(OPERATION_KINDS as [OperationKind, ...OperationKind[]]);
@@ -546,8 +590,8 @@ function validateCreate(
     return [{ path: "operations.0.routine", message: `a snapshot carries at most ${MAX_ROUTINES} routines, and there are already that many` }];
   }
   const name = routine.name.trim();
-  if (!name || name.length > 100) {
-    problems.push({ path: "operations.0.routine.name", message: "name must be 1 to 100 characters" });
+  if (!name || name.length > STRING_BOUNDS.proposedRoutineName) {
+    problems.push({ path: "operations.0.routine.name", message: `name must be 1 to ${STRING_BOUNDS.proposedRoutineName} characters` });
   }
   if (routine.sections.length === 0) {
     problems.push({ path: "operations.0.routine.sections", message: "a routine needs at least one section" });
@@ -684,8 +728,8 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
     }
     if (operation.kind === "updateExerciseNotes") {
       const proposed = operation.newStringValue;
-      if (operation.expectedStringValue === undefined || proposed === undefined || proposed.length > 500) {
-        problems.push({ path: path("newStringValue"), message: "expected and new notes are required; new notes may not exceed 500 characters" });
+      if (operation.expectedStringValue === undefined || proposed === undefined || proposed.length > STRING_BOUNDS.exerciseNotes) {
+        problems.push({ path: path("newStringValue"), message: `expected and new notes are required; new notes may not exceed ${STRING_BOUNDS.exerciseNotes} characters` });
       }
       if (operation.expectedStringValue !== undefined && located && operation.expectedStringValue !== located.exercise.notes) {
         problems.push({
@@ -759,8 +803,8 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
         problems.push({ path: path("expectedStringValue"), message: `routine is named "${workingName}" at this point in the patch` });
       }
       const proposed = operation.newStringValue?.trim();
-      if (!proposed || proposed.length > 100) {
-        problems.push({ path: path("newStringValue"), message: "new name must be 1 to 100 characters" });
+      if (!proposed || proposed.length > STRING_BOUNDS.proposedRoutineName) {
+        problems.push({ path: path("newStringValue"), message: `new name must be 1 to ${STRING_BOUNDS.proposedRoutineName} characters` });
       } else {
         workingName = proposed;
       }

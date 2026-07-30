@@ -15,5 +15,12 @@
     "renameRoutine": 3,
     "addSection": 3,
     "createRoutine": 3
+  },
+  "stringBoundsComment": "Text ceilings shared the same way, measured in UTF-16 code units on both sides because that is what JavaScript's length measures without being asked. The bridge derives its snapshot and patch schemas from these; FlowTests asserts the app's own constants against them, and the app enforces them at the point of typing so a name the editors accept is never one the snapshot upload refuses. proposedRoutineName is deliberately tighter than name: a routine name a coach proposes (createRoutine, renameRoutine) gets 100 where the snapshot carries up to 200.",
+  "stringBoundsUtf16": {
+    "name": 200,
+    "proposedRoutineName": 100,
+    "exerciseNotes": 500,
+    "constraintsNotes": 2000
   }
 }
