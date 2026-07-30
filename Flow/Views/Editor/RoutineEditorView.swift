@@ -76,6 +76,13 @@ struct RoutineEditorView: View {
                             .padding(.horizontal)
                     }
 
+                    if atRoutineCap {
+                        Text("// a snapshot carries at most \(FlowRoutinePatcher.maximumRoutines) routines; delete one first")
+                            .terminalFont(12)
+                            .foregroundColor(TN.red)
+                            .padding(.horizontal)
+                    }
+
                     // Add section
                     Button {
                         routine.sections.append(Section(name: "New Section"))
@@ -121,6 +128,13 @@ struct RoutineEditorView: View {
     private var canSave: Bool {
         FlowTextBounds.firstBoundsProblem(in: routine) == nil
             && routine.canStartWorkout
+            && !atRoutineCap
+    }
+
+    /// Only a NEW routine grows the collection past what a snapshot carries;
+    /// editing the 50th in place is fine.
+    private var atRoutineCap: Bool {
+        isNew && store.routines.count >= FlowRoutinePatcher.maximumRoutines
     }
 }
 

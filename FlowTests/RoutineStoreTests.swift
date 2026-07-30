@@ -165,6 +165,33 @@ final class RoutineStoreTests: XCTestCase {
         XCTAssertTrue(store.routines.isEmpty)
     }
 
+    /// The count ceiling is a property of the collection, so the per-routine
+    /// gate cannot see it: the 51st routine is individually flawless and
+    /// still fails every upload whole. The patch path refuses a create at
+    /// the cap; import is the other route that grows the collection.
+    func testImportRefusesTheRoutineThatWouldNotFitInASnapshot() throws {
+        let fixture = try makeFixture()
+        try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)
+        let store = RoutineStore(fileURL: fixture.fileURL, defaults: fixture.defaults)
+        for index in 1...FlowRoutinePatcher.maximumRoutines {
+            store.addRoutine(Routine(
+                name: "Routine \(index)",
+                sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])]
+            ))
+        }
+
+        let extra = Routine(
+            name: "One Too Many",
+            sections: [Section(name: "Main", exercises: [ExerciseBlock(name: "Press", sets: 3, reps: 8)])]
+        )
+        let json = try XCTUnwrap(String(data: JSONEncoder().encode(extra), encoding: .utf8))
+
+        guard case .failure(.outOfBounds) = store.importRoutineFromJSON(json) else {
+            return XCTFail("Expected the 51st routine to be refused")
+        }
+        XCTAssertEqual(store.routines.count, FlowRoutinePatcher.maximumRoutines)
+    }
+
     func testImportOfCoachPatchGivesHelpfulError() throws {
         let fixture = try makeFixture()
         try "[]".write(to: fixture.fileURL, atomically: true, encoding: .utf8)

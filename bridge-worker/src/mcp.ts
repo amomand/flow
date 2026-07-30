@@ -195,6 +195,9 @@ const patchProperty = {
       description: "The contentHash for this routine from get_flow_coach_context or list_routines, copied exactly.",
     },
     exportedAt: { type: "string", description: "Optional ISO 8601 timestamp." },
+    // A literal, deliberately: the rationale bound is bridge-only, with no
+    // Swift counterpart to drift from. It matching constraintsNotes' 2000 is
+    // a coincidence, not a contract — do not unify them.
     rationale: { type: "string", minLength: 1, maxLength: 2000, description: "Why this change; shown to the user in Flow's preview." },
     operations: {
       type: "array",

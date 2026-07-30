@@ -162,6 +162,14 @@ class RoutineStore {
     }
 
     func importRoutineFromJSON(_ json: String) -> Result<Routine, ImportError> {
+        // The count ceiling lives with the other snapshot bounds, but it is a
+        // property of the collection, so the per-routine gate below cannot see
+        // it: the 51st routine is individually flawless and still fails every
+        // upload whole. The patch path already refuses a create at the cap;
+        // this is the other route that grows the collection.
+        guard routines.count < FlowRoutinePatcher.maximumRoutines else {
+            return .failure(.outOfBounds("a snapshot carries at most \(FlowRoutinePatcher.maximumRoutines) routines, and there are already that many"))
+        }
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
         guard let data = cleaned.data(using: .utf8) else {
             return .failure(.invalidJSON)
