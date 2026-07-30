@@ -7,7 +7,7 @@ Both environments are deployed and carrying real data for one person. The spike'
 | `primary` | `flow-coach-bridge-primary.aomand.workers.dev` | `primary-v1` | paired, in use |
 | `partner` | `flow-coach-bridge-partner.aomand.workers.dev` | `partner-v1` | deployed, not yet paired |
 
-Credentials live only in the operator's password manager. Three secrets per environment, all generated with `openssl rand -hex 32` and never reused across edges or people: `FLOW_COACH_DEVICE_SECRET` for the paired Flow installation, `FLOW_COACH_CONNECT_SECRET` for the connector consent page, and `FLOW_COACH_ACTIONS_SECRET` for smoke tests. Pipe them in with `printf '%s'` rather than `echo`, because a trailing newline inside a stored secret produces 401s that are miserable to diagnose.
+Credentials live only in the operator's password manager. Three secrets per environment, all generated with `openssl rand -hex 32` and never reused across edges or people: `FLOW_COACH_DEVICE_SECRET` for the paired Flow installation, `FLOW_COACH_CONNECT_SECRET` for the connector consent page, and `FLOW_COACH_ACTIONS_SECRET` for smoke tests and that person's private GPT when enabled. Pipe them in with `printf '%s'` rather than `echo`, because a trailing newline inside a stored secret produces 401s that are miserable to diagnose.
 
 ## Local setup
 
@@ -35,7 +35,7 @@ The first production shape is one deployment per person, not one shared househol
 
 Wrangler environments have non-inherited Durable Object bindings and environment-specific secrets. Do not add `script_name` pointing both environments back to the same Worker, reuse either credential, or configure both people's coach clients against one hostname. The mailbox IDs are routing configuration, not person authentication; the separately scoped credentials and service boundary provide authorization.
 
-One Flow installation pairs with one device endpoint. The person operating the matching coach client may be someone else, but proposals still land only in the paired Flow inbox for review. Give each Claude Project and conversation a clear person-specific name so conversational context does not cross the storage boundary.
+One Flow installation pairs with one device endpoint. The person operating the matching coach client may be someone else, but proposals still land only in the paired Flow inbox for review. Give each Claude Project or private GPT and its conversations a clear person-specific name so conversational context does not cross the storage boundary.
 
 ## Claude connector (OAuth, #38)
 
@@ -63,6 +63,50 @@ So the step is manual. After any deploy that changes a tool's input schema, desc
 2. Check it took: ask the coach to list the operation kinds and schema versions visible in its patch tool's input schema, and compare against `capabilities.operationKinds` and `capabilities.patchSchemaVersions` from `get_flow_coach_context`. One message, and it would have caught the incident above.
 
 The coach-context payload also carries a fresh-per-call `advisory` telling a coach to trust the capabilities block over a cached schema and to ask for a refresh, so a stale client that reads a context at least learns it is stale. It does not remove the manual step; it bounds the damage until someone performs it.
+
+## Private ChatGPT GPT (Actions, #49)
+
+ChatGPT uses the existing `/actions/*` edge rather than the MCP connector. The
+current importable OpenAPI schema, private-GPT instructions and proof checklist
+are in [`chatgpt`](chatgpt). This route needs no ChatGPT developer mode.
+
+Configure one private GPT per Flow mailbox:
+
+1. Follow [`chatgpt/SETUP.md`](chatgpt/SETUP.md), replacing the schema's host
+   placeholder with that person's Worker hostname.
+2. In the GPT Action authentication settings, choose API key with Bearer
+   authentication and enter only that deployment's `FLOW_COACH_ACTIONS_SECRET`.
+   [OpenAI says Action API keys are encrypted at rest](https://developers.openai.com/api/docs/actions/authentication),
+   but the value remains a live mailbox credential and stays out of source,
+   prompts, issues, and logs.
+3. Keep the GPT private. Do not reuse its schema, secret, or conversation for
+   the other mailbox.
+4. Test all six Actions in the editor, then prove one read and one pending-draft
+   round trip on web and iPhone. Until that evidence is recorded on #49, the
+   ChatGPT route is prepared but not proved.
+
+The schema uses the standard `Authorization: Bearer` header because
+[ChatGPT Actions do not support arbitrary custom request headers](https://developers.openai.com/api/docs/actions/production).
+Patch validation is marked non-consequential. Pending-patch creation is marked
+`x-openai-isConsequential: true`, which makes ChatGPT ask on every write; there
+is no always-allow bypass for that action. This prompt does not apply the
+patch. Flow still previews, revalidates, and obtains the only confirmation
+that can change a routine.
+
+### After a contract deploy: re-import the Action schema
+
+A deployed Worker cannot update a schema already copied into a private GPT.
+After a change to Action inputs, operation kinds, schema versions, or
+descriptions:
+
+1. Run `npm run check:chatgpt-actions`.
+2. Import the current [`chatgpt/openapi.json`](chatgpt/openapi.json) into every
+   affected private GPT and save it.
+3. Start a fresh conversation and compare what the GPT can compose with
+   `capabilities.patchSchemaVersions` and `capabilities.operationKinds` from
+   `get_flow_coach_context`.
+4. If the fresh `advisory` reports a mismatch, stop before writing and refresh
+   the GPT Action again.
 
 ## Real-data pre-deploy gate
 
@@ -129,7 +173,7 @@ Delete one snapshot with `DELETE /device/snapshots/{contextId}`. This also remov
 For full teardown:
 
 1. Call `DELETE /device/data` and verify it succeeds.
-2. Remove the coach connector configuration in Claude.
+2. Remove the coach connector configuration in Claude and any private GPT Action using this mailbox.
 3. Delete that environment's `OAUTH_KV` namespace so every grant, refresh token, and registered client dies with it.
 4. Delete the environment's Worker secrets with Wrangler.
 5. Delete that environment's Worker only after its mailbox is empty.

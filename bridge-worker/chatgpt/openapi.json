@@ -1,0 +1,1103 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Flow Coach Actions",
+    "version": "1.0.0",
+    "description": "Read one person's short-lived Flow coach snapshot and store draft routine patches. A pending patch never changes a routine: Flow remains the source of truth and requires local preview and confirmation before applying anything."
+  },
+  "servers": [
+    {
+      "url": "https://flow-coach-bridge-person.example.com/actions",
+      "description": "The one Flow mailbox this private GPT is allowed to use"
+    }
+  ],
+  "security": [
+    {
+      "FlowCoachBearer": []
+    }
+  ],
+  "paths": {
+    "/coach-context": {
+      "get": {
+        "operationId": "get_flow_coach_context",
+        "summary": "Read the current Flow coach snapshot",
+        "description": "Returns the current contextId, routine summaries, recent training counts, constraints and effective patch capabilities. Use its contextId for follow-up calls.",
+        "parameters": [
+          {
+            "name": "contextId",
+            "in": "query",
+            "required": false,
+            "description": "Optional exact snapshot ID. Omit it to select the newest unexpired snapshot.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current coach snapshot summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CoachContextSummary"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/routines": {
+      "get": {
+        "operationId": "list_flow_routines",
+        "summary": "List routines in one coach snapshot",
+        "description": "Lists routine IDs, names, phases, counts and revision hashes for the exact snapshot. Read a routine separately for exercise-level detail.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ContextId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Routine summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contextId",
+                    "routines"
+                  ],
+                  "properties": {
+                    "contextId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "routines": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RoutineSummary"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/routines/{routineId}": {
+      "get": {
+        "operationId": "get_flow_routine",
+        "summary": "Read one complete Flow routine",
+        "description": "Read this before proposing edits so section and exercise IDs, current values and revision identity are copied from the snapshot rather than guessed.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ContextId"
+          },
+          {
+            "name": "routineId",
+            "in": "path",
+            "required": true,
+            "description": "The routine ID returned by the context or routine-list action.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Complete routine body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contextId",
+                    "routine"
+                  ],
+                  "properties": {
+                    "contextId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "routine": {
+                      "$ref": "#/components/schemas/Routine"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/training-summary": {
+      "get": {
+        "operationId": "get_flow_training_summary",
+        "summary": "Read bounded recent training summaries",
+        "description": "Returns recent strength and cardio summaries from the chosen snapshot. Health-derived aggregates are omitted unless explicitly requested.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/ContextId"
+          },
+          {
+            "name": "strengthLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum recent strength summaries to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5
+            }
+          },
+          {
+            "name": "cardioLimit",
+            "in": "query",
+            "required": false,
+            "description": "Maximum recent cardio summaries to return.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 12,
+              "default": 5
+            }
+          },
+          {
+            "name": "includeHealthMetrics",
+            "in": "query",
+            "required": false,
+            "description": "Keep false unless the user explicitly shared and wants to discuss health-derived aggregate metrics.",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recent training summaries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contextId",
+                    "recentStrengthSummary",
+                    "recentCardioSummary"
+                  ],
+                  "properties": {
+                    "contextId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "recentStrengthSummary": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "recentCardioSummary": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/patches/validate": {
+      "post": {
+        "operationId": "validate_flow_routine_patch",
+        "summary": "Validate a proposed patch without storing it",
+        "description": "Checks shape, capabilities, IDs, expected values, bounds and exact snapshot correlation. It does not create a draft or modify Flow.",
+        "x-openai-isConsequential": false,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchEnvelope"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Valid patch",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "description": "Patch rejected by validation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pending-patches": {
+      "post": {
+        "operationId": "create_pending_flow_routine_patch",
+        "summary": "Store a draft routine patch for Flow to review",
+        "description": "Stores only a draft. Flow pulls it, revalidates against live state, shows a diff and asks the user before saving. Identical retries return the existing draft.",
+        "x-openai-isConsequential": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchEnvelope"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "New pending draft stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePatchResult"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Identical existing draft returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreatePatchResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/Error"
+          },
+          "410": {
+            "$ref": "#/components/responses/Error"
+          },
+          "422": {
+            "description": "Patch rejected before storage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "FlowCoachBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The person-specific FLOW_COACH_ACTIONS_SECRET configured in this private GPT"
+      }
+    },
+    "parameters": {
+      "ContextId": {
+        "name": "contextId",
+        "in": "query",
+        "required": true,
+        "description": "The exact opaque snapshot ID returned by get_flow_coach_context. Do not invent, reuse after expiry, or substitute a newer snapshot silently.",
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Request failed",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatchProblem"
+            }
+          }
+        }
+      },
+      "SharingProfile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "dataTiers"
+        ],
+        "properties": {
+          "schemaVersion": {
+            "type": "integer",
+            "const": 1
+          },
+          "dataTiers": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "routines",
+                "strengthHistory",
+                "cardioHistory",
+                "healthMetrics"
+              ]
+            }
+          }
+        }
+      },
+      "Capabilities": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "patchSchemaVersions",
+          "operationKinds",
+          "deviceReported"
+        ],
+        "properties": {
+          "patchSchemaVersions": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "operationKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deviceReported": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CoachContextSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contextId",
+          "createdAt",
+          "expiresAt",
+          "sharingProfile",
+          "schemaVersion",
+          "generatedAt",
+          "app",
+          "routines",
+          "recentStrengthCount",
+          "recentCardioCount",
+          "capabilities",
+          "advisory"
+        ],
+        "properties": {
+          "contextId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sharingProfile": {
+            "$ref": "#/components/schemas/SharingProfile"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "const": 2
+          },
+          "generatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "app": {
+            "type": "string",
+            "const": "Flow"
+          },
+          "routines": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/RoutineSummary"
+            }
+          },
+          "recentStrengthCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "recentCardioCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "constraints": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "notes": {
+                "type": "string",
+                "maxLength": 2000
+              }
+            }
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/Capabilities"
+          },
+          "advisory": {
+            "type": "string",
+            "description": "Fresh contract-drift guidance generated by the Worker on every context read"
+          }
+        }
+      },
+      "RoutineSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "currentPhase",
+          "contentHash",
+          "stateHash",
+          "sectionCount",
+          "exerciseCount"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "currentPhase": {
+            "$ref": "#/components/schemas/WorkoutPhase"
+          },
+          "contentHash": {
+            "type": "string",
+            "pattern": "^c1-[0-9a-f]{16}$"
+          },
+          "stateHash": {
+            "type": "string",
+            "pattern": "^s1-[0-9a-f]{16}$"
+          },
+          "sectionCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "exerciseCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      },
+      "Routine": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "sections",
+          "currentPhase"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sections": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/Section"
+            }
+          },
+          "currentPhase": {
+            "$ref": "#/components/schemas/WorkoutPhase"
+          }
+        }
+      },
+      "Section": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "exercises"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "exercises": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Exercise"
+            }
+          }
+        }
+      },
+      "Exercise": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "sets",
+          "reps",
+          "restBetweenSetsSeconds",
+          "restAfterExerciseSeconds",
+          "notes",
+          "perSide"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "sets": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "reps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          },
+          "restBetweenSetsSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 900
+          },
+          "restAfterExerciseSeconds": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 900
+          },
+          "notes": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "perSide": {
+            "type": "boolean"
+          },
+          "phaseOverrides": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PhaseOverride"
+            }
+          }
+        }
+      },
+      "WorkoutPhase": {
+        "type": "string",
+        "enum": [
+          "base",
+          "peak",
+          "deload"
+        ]
+      },
+      "PhaseOverride": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "sets": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "reps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "durationSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600
+          }
+        }
+      },
+      "NewSection": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      },
+      "ProposedRoutine": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "sections",
+          "currentPhase"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "A proposed routine name; Flow stores its trimmed value"
+          },
+          "sections": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "At least one section, with at least one exercise across the routine",
+            "items": {
+              "$ref": "#/components/schemas/Section"
+            }
+          },
+          "currentPhase": {
+            "$ref": "#/components/schemas/WorkoutPhase"
+          }
+        }
+      },
+      "PatchEnvelope": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contextId",
+          "patch"
+        ],
+        "properties": {
+          "contextId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The exact unexpired snapshot ID used to read the routine"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/FlowRoutinePatch"
+          }
+        }
+      },
+      "FlowRoutinePatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "schemaVersion",
+          "rationale",
+          "operations"
+        ],
+        "description": "For target existingRoutine, copy routineId and baseContentHash from the snapshot. For target newRoutine, omit both and send exactly one createRoutine operation. Use only versions and kinds listed in the context capabilities.",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "existingRoutine",
+              "newRoutine"
+            ],
+            "default": "existingRoutine"
+          },
+          "schemaVersion": {
+            "type": "integer",
+            "enum": [
+              2,
+              3
+            ]
+          },
+          "routineId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Required for existingRoutine; absent for newRoutine"
+          },
+          "baseContentHash": {
+            "type": "string",
+            "pattern": "^c1-[0-9a-f]{16}$",
+            "description": "Required for existingRoutine. Copy the routine contentHash exactly; never compute or guess it."
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "rationale": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Why this change is proposed; shown to the user in Flow"
+          },
+          "operations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Operations apply in order and each reads the working state left by earlier operations. Schema 3 is required for renameRoutine, addSection and createRoutine.",
+            "items": {
+              "$ref": "#/components/schemas/PatchOperation"
+            }
+          }
+        }
+      },
+      "PatchOperation": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "replaceExerciseReps",
+              "replaceExerciseSets",
+              "replaceTimedDuration",
+              "replaceRestBetweenSets",
+              "replaceRestAfterExercise",
+              "updateExerciseNotes",
+              "addExercise",
+              "removeExercise",
+              "moveExercise",
+              "replacePhaseOverride",
+              "renameRoutine",
+              "addSection",
+              "createRoutine"
+            ],
+            "x-flow-operationMinimumSchema": {
+              "replaceExerciseReps": 2,
+              "replaceExerciseSets": 2,
+              "replaceTimedDuration": 2,
+              "replaceRestBetweenSets": 2,
+              "replaceRestAfterExercise": 2,
+              "updateExerciseNotes": 2,
+              "addExercise": 2,
+              "removeExercise": 2,
+              "moveExercise": 2,
+              "replacePhaseOverride": 2,
+              "renameRoutine": 3,
+              "addSection": 3,
+              "createRoutine": 3
+            }
+          },
+          "exerciseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "The exercise being changed; not used for addExercise, addSection, renameRoutine or createRoutine"
+          },
+          "sectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "For addExercise, the target section"
+          },
+          "targetSectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "For moveExercise, the destination section"
+          },
+          "afterSectionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional existing anchor for addSection"
+          },
+          "afterExerciseId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Optional anchor in the destination section for addExercise or moveExercise"
+          },
+          "section": {
+            "$ref": "#/components/schemas/NewSection"
+          },
+          "phase": {
+            "$ref": "#/components/schemas/WorkoutPhase"
+          },
+          "expectedIntValue": {
+            "type": "integer",
+            "description": "Current snapshot value, or the value left by an earlier operation in this patch"
+          },
+          "newIntValue": {
+            "type": "integer",
+            "description": "Ranges: reps 1-100, sets 1-10, duration 1-3600, rest 0-900"
+          },
+          "expectedStringValue": {
+            "type": "string",
+            "description": "Current notes, exercise name, or routine name as appropriate; copied exactly"
+          },
+          "newStringValue": {
+            "type": "string",
+            "maxLength": 500,
+            "description": "New notes, or a trimmed routine name of at most 100 characters for renameRoutine"
+          },
+          "expectedPhaseOverride": {
+            "$ref": "#/components/schemas/PhaseOverride"
+          },
+          "newPhaseOverride": {
+            "$ref": "#/components/schemas/PhaseOverride"
+          },
+          "removePhaseOverride": {
+            "type": "boolean"
+          },
+          "exercise": {
+            "$ref": "#/components/schemas/Exercise"
+          },
+          "routine": {
+            "$ref": "#/components/schemas/ProposedRoutine"
+          }
+        },
+        "description": "Numeric replacements need exerciseId plus expectedIntValue and newIntValue. Notes need exerciseId plus expectedStringValue and newStringValue. Remove needs exerciseId and expected name. Add and move need their target IDs. Rename needs expected and new names. Create needs a complete routine."
+      },
+      "PatchProblem": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "message"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ValidationResult": {
+        "type": "object",
+        "required": [
+          "valid",
+          "problems"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean"
+          },
+          "problems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PatchProblem"
+            }
+          },
+          "patch": {
+            "$ref": "#/components/schemas/FlowRoutinePatch"
+          }
+        }
+      },
+      "PatchMetadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cursor",
+          "patchId",
+          "contextId",
+          "routineId",
+          "baseContentHash",
+          "createdAt",
+          "expiresAt",
+          "status",
+          "provenance",
+          "pulledAt",
+          "terminalAt"
+        ],
+        "properties": {
+          "cursor": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "patchId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contextId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routineId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "baseContentHash": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^c1-[0-9a-f]{16}$"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "pulled",
+              "applied",
+              "rejected",
+              "stale",
+              "expired"
+            ]
+          },
+          "provenance": {
+            "type": "string",
+            "const": "chatgpt-actions"
+          },
+          "pulledAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "terminalAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "CreatePatchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "stored",
+          "duplicate",
+          "patch",
+          "message"
+        ],
+        "properties": {
+          "stored": {
+            "type": "boolean"
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "patch": {
+            "$ref": "#/components/schemas/PatchMetadata"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
