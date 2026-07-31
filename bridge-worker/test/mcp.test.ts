@@ -1,5 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { SELF } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import fixtureContext from "../../bridge-prototype/fixtures/coach-context.json";
 import { OPERATION_KINDS, PATCH_SCHEMA_VERSIONS } from "../src/schemas";
 import { obtainTokens } from "./oauth-helper";
@@ -257,6 +257,53 @@ describe("Flow Coach bridge MCP edge", () => {
     });
     const provenances = (await json(pull)).patches.map((patch: { provenance: string }) => patch.provenance);
     expect(provenances.sort()).toEqual(["chatgpt-actions", "mcp"]);
+  });
+
+  it("deduplicates an MCP retry across the provider-neutral provenance cutover", async () => {
+    const envelope = snapshot();
+    expect((await upload(envelope)).status).toBe(201);
+    const patch = validPatch();
+    const idempotencyKey = "mcp-cutover-proposal";
+
+    // Simulate the trusted internal translation performed by the deployed
+    // Worker before the provenance rename. External callers cannot reach a
+    // mailbox object this way or supply these headers through either edge.
+    const mailbox = env.FLOW_COACH.get(env.FLOW_COACH.idFromName("flow-coach:fixture-person"));
+    const beforeDeploy = await mailbox.fetch("https://mailbox.internal/actions/pending-patches", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
+        "x-flow-edge": "actions",
+        "x-flow-principal": "mcp:fixture-person",
+        "x-flow-provenance": "claude-mcp",
+      },
+      body: JSON.stringify({ contextId: envelope.contextId, patch }),
+    });
+    expect(beforeDeploy.status).toBe(201);
+    const legacyPatch = await json(beforeDeploy);
+    expect(legacyPatch.patch.provenance).toBe("claude-mcp");
+
+    const afterDeploy = await callTool("create_pending_routine_patch", {
+      contextId: envelope.contextId,
+      patch,
+      idempotencyKey,
+    });
+    expect(afterDeploy.structuredContent.duplicate).toBe(true);
+    expect(afterDeploy.structuredContent.patch.patchId).toBe(legacyPatch.patch.patchId);
+    expect(afterDeploy.structuredContent.patch.provenance).toBe("claude-mcp");
+
+    const sameProposalWithoutKey = await callTool("create_pending_routine_patch", {
+      contextId: envelope.contextId,
+      patch,
+    });
+    expect(sameProposalWithoutKey.structuredContent.duplicate).toBe(true);
+    expect(sameProposalWithoutKey.structuredContent.patch.patchId).toBe(legacyPatch.patch.patchId);
+
+    const pull = await SELF.fetch("https://flow.test/device/pending-patches", {
+      headers: auth(DEVICE_SECRET),
+    });
+    expect((await json(pull)).patches).toHaveLength(1);
   });
 
   it("surfaces domain failures as tool errors, not protocol errors", async () => {

@@ -18,6 +18,17 @@ const MAX_SNAPSHOT_LIFETIME_MS = 24 * 60 * 60 * 1000;
 const PATCH_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 const TOMBSTONE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * Display provenance changed when the MCP edge became provider-neutral. Keep
+ * the old digest namespace as a read-only lookup alias until every legacy
+ * pending row has naturally expired, so a retry straddling that deploy still
+ * resolves to the original draft. New rows are always written with the first
+ * (current) value; adapter isolation remains anchored by the trusted principal.
+ */
+const LEGACY_DEDUPLICATION_PROVENANCE: Readonly<Record<string, readonly string[]>> = {
+  mcp: ["claude-mcp"],
+};
+
 export interface Env {
   FLOW_COACH: DurableObjectNamespace<FlowCoachMailbox>;
   /** Token, grant, and dynamic-client storage for the OAuth provider (#38). */
@@ -748,19 +759,28 @@ export class FlowCoachMailbox extends DurableObject<Env> {
     if (idempotencyKey && (idempotencyKey.length > 128 || idempotencyKey.trim().length === 0)) return json({ error: "Idempotency-Key must be 1 to 128 characters." }, 400);
     const payload = canonicalJson(patch);
     const payloadDigest = await sha256(payload);
-    const proposalDigest = await sha256(`${principal}\n${provenance}\n${snapshot.context_id}\n${payload}`);
-    const idempotencyDigest = idempotencyKey
-      ? await sha256(`${principal}\n${provenance}\n${snapshot.context_id}\n${idempotencyKey}`)
-      : null;
-    if (idempotencyDigest) {
-      const existing = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE idempotency_digest = ?", idempotencyDigest).toArray()[0];
+    const deduplicationProvenances = [provenance, ...(LEGACY_DEDUPLICATION_PROVENANCE[provenance] ?? [])];
+    const proposalDigests = await Promise.all(deduplicationProvenances.map((candidate) =>
+      sha256(`${principal}\n${candidate}\n${snapshot.context_id}\n${payload}`)
+    ));
+    const idempotencyDigests = idempotencyKey
+      ? await Promise.all(deduplicationProvenances.map((candidate) =>
+        sha256(`${principal}\n${candidate}\n${snapshot.context_id}\n${idempotencyKey}`)
+      ))
+      : [];
+    for (const candidateDigest of idempotencyDigests) {
+      const existing = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE idempotency_digest = ?", candidateDigest).toArray()[0];
       if (existing) {
         if (existing.payload_digest !== payloadDigest) return json({ error: "Idempotency-Key was already used for a different proposal." }, 409);
         return json({ stored: true, duplicate: true, patch: patchMetadata(existing), message: draftMessage }, 200);
       }
     }
-    const duplicate = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE proposal_digest = ?", proposalDigest).toArray()[0];
-    if (duplicate) return json({ stored: true, duplicate: true, patch: patchMetadata(duplicate), message: draftMessage }, 200);
+    for (const candidateDigest of proposalDigests) {
+      const duplicate = this.ctx.storage.sql.exec<PatchRow>("SELECT * FROM patches WHERE proposal_digest = ?", candidateDigest).toArray()[0];
+      if (duplicate) return json({ stored: true, duplicate: true, patch: patchMetadata(duplicate), message: draftMessage }, 200);
+    }
+    const idempotencyDigest = idempotencyDigests[0] ?? null;
+    const proposalDigest = proposalDigests[0]!;
     const now = Date.now();
     const patchId = crypto.randomUUID();
     this.ctx.storage.sql.exec(

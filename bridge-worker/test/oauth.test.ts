@@ -235,6 +235,21 @@ describe("Flow Coach bridge OAuth edge", () => {
     expect(initialized.result.serverInfo.name).toBe("flow-coach-bridge");
   });
 
+  it("enforces the MCP token audience while accepting the legacy origin resource", async () => {
+    const foreign = await obtainTokens({ resource: "https://another-resource.test/mcp" });
+    const rejected = await mcp(foreign.accessToken, "ping");
+    expect(rejected.status).toBe(401);
+    expect((await json(rejected)).error_description).toContain("audience");
+
+    // OAuth grants created before path-aware protected-resource discovery
+    // used the Worker origin. The provider deliberately treats that parent
+    // resource as valid for /mcp, so deploying this change does not force
+    // existing Claude connectors to reauthorise.
+    const legacy = await obtainTokens({ resource: "https://flow.test" });
+    const accepted = await json(await mcp(legacy.accessToken, "ping"));
+    expect(accepted.result).toEqual({});
+  });
+
   it("supports refresh tokens so the connector can renew without re-consent", async () => {
     const { clientId, refreshToken } = await obtainTokens();
     expect(refreshToken).toBeTruthy();
