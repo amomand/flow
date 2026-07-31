@@ -1,14 +1,14 @@
 # ADR: Flow Coach bridge
 
-- **Status:** Accepted for the Claude-first architecture; optional ChatGPT proof [#49](https://github.com/amomand/flow/issues/49) pending
-- **Decision date:** 10 July 2026; amended 16 July 2026 for the Claude-first pivot and the [#46](https://github.com/amomand/flow/issues/46) spike results; accepted 19 July 2026; amended 30 July 2026 to resume the secondary ChatGPT route
+- **Status:** Accepted for the provider-neutral MCP architecture; ChatGPT MCP proof [#49](https://github.com/amomand/flow/issues/49) pending on a supported OpenAI surface
+- **Decision date:** 10 July 2026; amended 16 July 2026 for the Claude-first pivot and the [#46](https://github.com/amomand/flow/issues/46) spike results; accepted 19 July 2026; amended 31 July 2026 to make MCP explicitly cross-provider
 - **Issues:** [#37](https://github.com/amomand/flow/issues/37), handing off to [#38](https://github.com/amomand/flow/issues/38), [#39](https://github.com/amomand/flow/issues/39), [#40](https://github.com/amomand/flow/issues/40), and the secondary-client proof [#49](https://github.com/amomand/flow/issues/49)
 
 ## Context
 
 Flow already owns the safety-critical half of the coach loop: a whitelisted `FlowCoachContext`, typed `FlowRoutinePatch` operations, live validation and clean rebase, an explicit preview/apply decision, a durable inbox, and edit history with rollback. The bridge must expose that contract to an LLM chat client without becoming a fitness backend or another routine store.
 
-The project is Claude-first. Both household users are on Claude, so one method serves both people and supporting one phone means running the other. The MCP prototype in #36 proved the shared tool contract, and #46, repurposed as a Claude custom-connector spike, passed on 16 July 2026: Claude read coach context and created pending patches from both desktop and iOS through a custom connector against a deployed `primary` Worker. The secondary GPT Actions route resumed under [#49](https://github.com/amomand/flow/issues/49) on 30 July 2026. Its current schema and private-GPT instructions now follow the live Worker contract; importing them into ChatGPT and proving the web/iPhone round trip remains a human check and nothing in the primary architecture blocks on it.
+The first proved client is Claude. Both household users are on Claude, so #46 passed on 16 July 2026 with coach reads and pending patches from desktop and iOS against a deployed `primary` Worker. That proof never made Claude part of the bridge contract: the MCP endpoint, OAuth grant, tools, snapshots and patches are provider-neutral. Issue [#49](https://github.com/amomand/flow/issues/49) now tracks connecting that same endpoint to ChatGPT. The earlier private-GPT Actions package is retained as a fallback smoke surface after hands-on testing showed that a separate GPT without ordinary ChatGPT memory or conversation context is the wrong product experience.
 
 Flow itself remains one person per app installation. `RoutineStore`, the coach inbox, and edit history live in that installation's app sandbox, so two people using Flow on separate phones do not need an app-level account system. The remote bridge is different: its snapshots, proposals, deletion authority, and credentials must never be shared between people. A chat conversation boundary alone is not an authorization boundary.
 
@@ -20,7 +20,7 @@ For the first household deployment, use the checked-in `primary` and `partner` W
 
 This is deliberately not a general multi-tenant account platform. If Flow later serves more households, a routing Worker may resolve a credential or OAuth subject to a mailbox ID and then select the matching Durable Object. The mailbox schema and Flow contracts can remain unchanged.
 
-MCP over Streamable HTTP is the primary LLM-facing edge, with OAuth 2.1 in MVP scope for #38. The REST/OpenAPI Actions facade remains the smoke-test surface and is now packaged for one private GPT per person under #49; it is not treated as proved until the recorded ChatGPT round trip passes. Provider-specific authentication and transport stay at the adapters. `FlowCoachContext`, `FlowRoutinePatch`, snapshot identities, and pending-patch state do not fork by provider, and provenance (`claude-mcp`, `chatgpt-actions`) is derived from the authenticated edge, never from model-supplied text.
+MCP over Streamable HTTP is the primary LLM-facing edge, with OAuth 2.1 in MVP scope for #38. The REST/OpenAPI Actions facade remains a fallback smoke surface. Provider-specific setup stays outside the domain contract. `FlowCoachContext`, `FlowRoutinePatch`, snapshot identities, and pending-patch state do not fork by provider, and provenance (`mcp`, `chatgpt-actions`) is derived from the authenticated edge, never from model-supplied text. `mcp` deliberately records the trusted transport class rather than trusting a client to identify itself as Claude or ChatGPT.
 
 The authority boundary is unchanged, and is repeated independently per person:
 
@@ -28,15 +28,15 @@ The authority boundary is unchanged, and is repeated independently per person:
 Person A's Flow -- device credential A --> Worker A / mailbox A
        ^                                      ^
        |                                      |
-       +-- review/apply patch                 +-- connector A -- dedicated Claude Project A
+       +-- review/apply patch                 +-- MCP connector A -- chat context A
 
 Person B's Flow -- device credential B --> Worker B / mailbox B
        ^                                      ^
        |                                      |
-       +-- review/apply patch                 +-- connector B -- dedicated Claude Project B
+       +-- review/apply patch                 +-- MCP connector B -- chat context B
 ```
 
-The person operating a coach Project may differ from the person using the paired Flow installation. That supports one person designing a weekly routine for another without giving the coach authority to apply it: the proposal still lands only in the paired person's Flow inbox for explicit review. Use a dedicated Claude Project per person, each with its own instructions and its own connector, so injuries, preferences, availability, and training history do not bleed across chat context. The Project boundary is an isolation primitive for context, not an authorization boundary.
+The person operating a coach conversation may differ from the person using the paired Flow installation. That supports one person designing a weekly routine for another without giving the coach authority to apply it: the proposal still lands only in the paired person's Flow inbox for explicit review. Keep each person's conversational context attached only to their connector and mailbox. A Project, conversation, or model memory can improve context, but none is an authorization boundary.
 
 The bridge may validate shape, limits, IDs, hash format, and snapshot correlation. It cannot write HealthKit, mutate a routine, mark a local save successful, or auto-apply a proposal. Only Flow revalidates expected values against live routines, cleanly rebases, previews, obtains confirmation, persists through `RoutineStore`, records history, and offers rollback.
 
@@ -97,15 +97,15 @@ The first deployment keeps the random credentials as non-readable, environment-s
 ## Adapter responsibilities and failures
 
 - **Shared domain service:** schema and size bounds, operation-count limits, routine ID and hash-shape checks, exact snapshot correlation, idempotency, lifecycle transitions, retention, and payload deletion.
-- **MCP (primary):** the six bounded operations proved by the prototype and the #46 spike (context summary, routine list, one routine, training summary, patch validation, and pending-patch creation) over stateless Streamable HTTP, with OAuth 2.1 and `claude-mcp` provenance. Both patch tools publish the full `FlowRoutinePatch` JSON schema so a first-contact client can compose a valid patch without guessing field names; the spike showed an opaque patch argument costs real round-trips.
-- **Actions/OpenAPI:** the same six operations behind the Actions secret with `chatgpt-actions` provenance, retained as a smoke-test surface and packaged for the private-GPT proof in #49. The checked-in schema is contract-tested, but a GPT that imported an older copy still needs a manual refresh.
+- **MCP (primary):** the six bounded operations proved by the prototype and the #46 spike (context summary, routine list, one routine, training summary, patch validation, and pending-patch creation) over stateless Streamable HTTP, with OAuth 2.1 and provider-neutral `mcp` provenance. Each tool advertises its required OAuth scope as well as its safety annotations. Both patch tools publish the full `FlowRoutinePatch` JSON schema so a first-contact client can compose a valid patch without guessing field names; the spike showed an opaque patch argument costs real round-trips.
+- **Actions/OpenAPI:** the same six operations behind the Actions secret with `chatgpt-actions` provenance, retained as a fallback smoke surface. The checked-in schema is contract-tested, but a GPT that imported an older copy still needs a manual refresh.
 - **Flow device API:** envelope upload/delete, retry-safe cursor pull, and idempotent acknowledgement. It never reports a local apply result on Flow's behalf.
 
 Temporary network failure is handled by bounded exponential retry with jitter. Reads and uploads are safe to repeat; creates and acknowledgements use their idempotency rules. An expired or missing snapshot requires a fresh user-initiated sync before another proposal. If a patch is stale against live Flow state, Flow attempts its existing expected-value rebase and otherwise records `stale`; the bridge does not adjudicate the conflict. After reinstall, Flow re-pairs, pulls outstanding records, and deduplicates them against preserved local bridge IDs where available. If local state was also lost, remote records can be reviewed as new inbox entries; none are auto-applied.
 
 ## Implementation handoff
 
-[#38](https://github.com/amomand/flow/issues/38) implements the Worker, EU SQLite Durable Object, shared schemas/domain service, the MCP primary edge with OAuth 2.1 (candidate plumbing: `workers-oauth-provider` and the Agents SDK `McpAgent`), the Actions smoke facade, lifecycle alarms, authentication boundaries, contract tests, and the deploy/rotation/deletion/teardown runbook. Provenance is derived at the authenticated adapter: the Actions edge sets `chatgpt-actions`, while the internal MCP translation sets `claude-mcp`; caller-supplied provenance is discarded before either reaches the store. It deploys and verifies two isolated single-person environments before either receives real data. Cross-environment tests must prove that each connector and device credential is rejected by the other endpoint, neither mailbox can read or delete the other's records, and delete-all affects only its authenticated deployment. Each person's coach client must point at the correct person-specific endpoint, no edge may be exposed anonymously, and payloads must not enter logs.
+[#38](https://github.com/amomand/flow/issues/38) implements the Worker, EU SQLite Durable Object, shared schemas/domain service, the MCP primary edge with OAuth 2.1 (candidate plumbing: `workers-oauth-provider` and the Agents SDK `McpAgent`), the Actions smoke facade, lifecycle alarms, authentication boundaries, contract tests, and the deploy/rotation/deletion/teardown runbook. Provenance is derived at the authenticated adapter: the Actions edge sets `chatgpt-actions`, while the internal MCP translation sets `mcp`; caller-supplied provenance is discarded before either reaches the store. It deploys and verifies two isolated single-person environments before either receives real data. Cross-environment tests must prove that each connector and device credential is rejected by the other endpoint, neither mailbox can read or delete the other's records, and delete-all affects only its authenticated deployment. Each person's coach client must point at the correct person-specific endpoint, no edge may be exposed anonymously, and payloads must not enter logs.
 
 [#39](https://github.com/amomand/flow/issues/39) implements `FlowCoachSnapshotEnvelope`, sharing controls and explicit sync/delete UI, Keychain pairing and recovery, device API calls, bridge provenance, bridge-ID deduplication into the existing inbox, and durable local-first acknowledgement retries. Pairing must show a human-readable mailbox label and endpoint, enforce one active mailbox per installation, and warn before switching or deleting it; the label is UX, not authorization. It must also make routine, inbox, and edit-history persistence failures visible enough that the bridge is never told `applied` before the routine and local audit state are safely saved. The inbox must present competing drafts against the same routine or exercise together, make it obvious that applying one will stale the other, and make the stale acknowledgement path effortless. Connector behaviour on the partner's Claude plan tier must be verified before that installation pairs.
 
@@ -117,15 +117,16 @@ Closed on 16 July 2026:
 
 1. **Connector proof (was gate 1).** #46's Claude connector performed the required reads and the pending-patch write on both desktop and iOS; results, auth findings, and the tool-approval findings are recorded on #46.
 2. **Hosting (was gate 3).** Cloudflare with an EU-jurisdiction Durable Object is confirmed by the spike deployment on Alex's account. The free plan suffices, so there is no billing decision. Data-location trade-offs stand as documented in the privacy section.
-3. **Edge ordering (was gate 4).** The question inverted: MCP is the primary edge with OAuth 2.1 in #38's MVP scope. Actions now follows as an optional private-GPT client under #49 without changing that ordering.
+3. **Edge ordering (was gate 4).** MCP is the primary, provider-neutral edge with OAuth 2.1. Actions remains a fallback smoke adapter and does not define the ChatGPT product route.
 
 Closed on 19 July 2026, confirmed by Alex alongside the PR #53 review:
 
 4. **The initial sharing tier.** Confirmed as proposed: routines plus Flow strength-history summaries; cardio totals and HealthKit-derived metrics stay separate opt-ins. One operational check remains in #39: no real context is uploaded until Alex approves the concrete categories shown by Flow before the first sync.
-5. **The household model.** Confirmed: one isolated deployment and one dedicated Claude Project per person, with no shared credential or chat context.
+5. **The household model.** Confirmed: one isolated deployment and one person-specific connector/chat context per person, with no shared credential or chat context.
 
-All gates for the accepted Claude-first ADR remain closed. The separate #49
-private-GPT check is deliberately still open: the schema, instructions and
-contract check can be completed in the repo, but only a person signed into
-ChatGPT can import the Action, supply the mailbox secret, and prove the web and
-iPhone confirmation/inbox behaviour.
+All gates for the accepted bridge remain closed. The separate #49 ChatGPT MCP
+check is deliberately still open: the server contract can be completed in the
+repo and proved in ChatGPT Work on a supported web/desktop surface, but OpenAI's
+current product does not expose plugins in ordinary Chat or mobile. That is the
+remaining product gate for the intended iPhone experience, not a missing Flow
+bridge implementation.

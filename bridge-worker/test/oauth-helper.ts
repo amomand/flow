@@ -13,17 +13,23 @@ export interface TokenSet {
 }
 
 /**
- * Runs the whole OAuth 2.1 flow a Claude connector would: dynamic client
- * registration, the consent page with the connect phrase, then the
- * authorization-code + PKCE token exchange.
+ * Runs the whole OAuth 2.1 flow an MCP host such as Claude or ChatGPT would:
+ * dynamic client registration, the consent page with the connect phrase,
+ * then the authorization-code + PKCE token exchange.
  */
-export async function obtainTokens(options: { scope?: string } = {}): Promise<TokenSet> {
+export async function obtainTokens(options: {
+  scope?: string;
+  resource?: string;
+  redirectUri?: string;
+  clientName?: string;
+} = {}): Promise<TokenSet> {
+  const redirectUri = options.redirectUri ?? REDIRECT_URI;
   const registration = await SELF.fetch("https://flow.test/oauth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      client_name: "Fixture MCP client",
-      redirect_uris: [REDIRECT_URI],
+      client_name: options.clientName ?? "Fixture MCP client",
+      redirect_uris: [redirectUri],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",
@@ -37,11 +43,12 @@ export async function obtainTokens(options: { scope?: string } = {}): Promise<To
   const authorizeUrl = new URL("https://flow.test/oauth/authorize");
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", client.client_id);
-  authorizeUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
   authorizeUrl.searchParams.set("state", "fixture-state");
   authorizeUrl.searchParams.set("code_challenge", challenge);
   authorizeUrl.searchParams.set("code_challenge_method", "S256");
   if (options.scope !== undefined) authorizeUrl.searchParams.set("scope", options.scope);
+  if (options.resource !== undefined) authorizeUrl.searchParams.set("resource", options.resource);
 
   const consent = await SELF.fetch(authorizeUrl, {
     method: "POST",
@@ -51,21 +58,23 @@ export async function obtainTokens(options: { scope?: string } = {}): Promise<To
   });
   expect(consent.status).toBe(302);
   const redirected = new URL(consent.headers.get("location")!);
-  expect(`${redirected.origin}${redirected.pathname}`).toBe(REDIRECT_URI);
+  expect(`${redirected.origin}${redirected.pathname}`).toBe(redirectUri);
   expect(redirected.searchParams.get("state")).toBe("fixture-state");
   const code = redirected.searchParams.get("code")!;
   expect(code).toBeTruthy();
 
+  const exchangeBody = new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    client_id: client.client_id,
+    redirect_uri: redirectUri,
+    code_verifier: verifier,
+  });
+  if (options.resource !== undefined) exchangeBody.set("resource", options.resource);
   const exchange = await SELF.fetch("https://flow.test/oauth/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      client_id: client.client_id,
-      redirect_uri: REDIRECT_URI,
-      code_verifier: verifier,
-    }),
+    body: exchangeBody,
   });
   expect(exchange.status).toBe(200);
   const tokens = (await exchange.json()) as { access_token: string; refresh_token?: string; token_type: string };

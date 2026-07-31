@@ -1,6 +1,11 @@
-# Private ChatGPT GPT setup and proof
+# Private ChatGPT GPT setup and proof (fallback)
 
-This is the remaining human part of [#49](https://github.com/amomand/flow/issues/49). The Worker edge already exists; no ChatGPT developer mode or MCP plugin is involved.
+This package is retained for Actions smoke testing. It is not the target
+integration for [#49](https://github.com/amomand/flow/issues/49): private GPTs
+do not inherit ordinary ChatGPT memory or previous conversations. For the
+provider-neutral MCP route and its current OpenAI surface boundary, use
+[`MCP-SETUP.md`](MCP-SETUP.md). The Worker Actions edge still exists; no
+ChatGPT developer mode or MCP plugin is involved in this fallback.
 
 ## Create the private GPT
 
@@ -47,7 +52,7 @@ Run a small fixed prompt set in a fresh conversation:
 6. “Send that proposal to Flow.” Confirm that ChatGPT asks first, then that Flow shows a pending draft rather than a changed routine.
 7. Reject or apply the draft in Flow and confirm the ordinary local preview, validation and history behaviour.
 
-Repeat the read and one draft proposal from the same private GPT in the ChatGPT iPhone app. Record the date, surfaces, GPT sharing state, confirmation behaviour, returned provenance, and Flow inbox result on #49. Do not include routine content, credentials, or health data in the issue.
+If this fallback is intentionally exercised, repeat the read and one draft proposal from the same private GPT in the ChatGPT iPhone app. Record the date, surfaces, GPT sharing state, confirmation behaviour, returned provenance, and Flow inbox result without including routine content, credentials, or health data. Do not treat success here as the #49 MCP target.
 
 ## After the patch contract changes
 

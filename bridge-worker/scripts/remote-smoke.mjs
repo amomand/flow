@@ -183,7 +183,7 @@ try {
       name: "create_pending_routine_patch",
       arguments: { contextId, patch, idempotencyKey: `remote-smoke-mcp-${contextId}` },
     });
-    assert(mcpCreated.structuredContent?.patch?.provenance === "claude-mcp", "MCP draft provenance is claude-mcp");
+    assert(mcpCreated.structuredContent?.patch?.provenance === "mcp", "MCP draft provenance is provider-neutral");
   } else {
     console.log("SKIP  FLOW_COACH_MCP_ACCESS_TOKEN is not set; MCP tool calls not exercised.");
     console.log("SKIP  Mint one by completing the connector OAuth flow against this deployment.");

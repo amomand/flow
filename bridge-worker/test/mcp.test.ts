@@ -123,7 +123,7 @@ describe("Flow Coach bridge MCP edge", () => {
     expect(ping.result).toEqual({});
   });
 
-  it("lists six tools with only the proposal tool marked non-read-only", async () => {
+  it("lists six tools with accurate safety and OAuth metadata", async () => {
     const body = await json(await rpc("tools/list"));
     const tools = body.result.tools as Array<Record<string, any>>;
     expect(tools.map((tool) => tool.name)).toEqual([
@@ -139,6 +139,12 @@ describe("Flow Coach bridge MCP edge", () => {
       expect(tool.annotations.readOnlyHint).toBe(tool.name !== "create_pending_routine_patch");
       expect(tool.annotations.destructiveHint).toBe(false);
       expect(tool.annotations.idempotentHint).toBe(true);
+      expect(tool.securitySchemes).toEqual([{
+        type: "oauth2",
+        scopes: [tool.name === "validate_flow_routine_patch" || tool.name === "create_pending_routine_patch"
+          ? "patch:propose"
+          : "coach:read"],
+      }]);
     }
   });
 
@@ -174,7 +180,7 @@ describe("Flow Coach bridge MCP edge", () => {
     }
   });
 
-  it("runs the full read-propose loop with claude-mcp provenance", async () => {
+  it("runs the full read-propose loop with provider-neutral MCP provenance", async () => {
     const envelope = snapshot();
     expect((await upload(envelope)).status).toBe(201);
 
@@ -205,7 +211,7 @@ describe("Flow Coach bridge MCP edge", () => {
       idempotencyKey: "mcp-proposal-1",
     });
     expect(created.structuredContent.duplicate).toBe(false);
-    expect(created.structuredContent.patch.provenance).toBe("claude-mcp");
+    expect(created.structuredContent.patch.provenance).toBe("mcp");
     const patchId = created.structuredContent.patch.patchId as string;
 
     const retried = await callTool("create_pending_routine_patch", {
@@ -222,7 +228,7 @@ describe("Flow Coach bridge MCP edge", () => {
     const pulled = await json(pull);
     expect(pulled.patches).toHaveLength(1);
     expect(pulled.patches[0].patchId).toBe(patchId);
-    expect(pulled.patches[0].provenance).toBe("claude-mcp");
+    expect(pulled.patches[0].provenance).toBe("mcp");
   });
 
   it("keeps per-edge provenance distinct and unspoofable", async () => {
@@ -233,7 +239,7 @@ describe("Flow Coach bridge MCP edge", () => {
     const viaRest = await SELF.fetch("https://flow.test/actions/pending-patches", {
       method: "POST",
       // A caller-supplied provenance header must be stripped by the Worker.
-      headers: { ...auth(ACTIONS_SECRET), "x-flow-provenance": "claude-mcp" },
+      headers: { ...auth(ACTIONS_SECRET), "x-flow-provenance": "mcp" },
       body,
     });
     expect(viaRest.status).toBe(201);
@@ -244,13 +250,13 @@ describe("Flow Coach bridge MCP edge", () => {
       patch: validPatch(),
     });
     expect(viaMcp.structuredContent.duplicate).toBe(false);
-    expect(viaMcp.structuredContent.patch.provenance).toBe("claude-mcp");
+    expect(viaMcp.structuredContent.patch.provenance).toBe("mcp");
 
     const pull = await SELF.fetch("https://flow.test/device/pending-patches", {
       headers: auth(DEVICE_SECRET),
     });
     const provenances = (await json(pull)).patches.map((patch: { provenance: string }) => patch.provenance);
-    expect(provenances.sort()).toEqual(["chatgpt-actions", "claude-mcp"]);
+    expect(provenances.sort()).toEqual(["chatgpt-actions", "mcp"]);
   });
 
   it("surfaces domain failures as tool errors, not protocol errors", async () => {

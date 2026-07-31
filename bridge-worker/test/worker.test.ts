@@ -1242,7 +1242,7 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       state.storage.sql.exec(
         `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
           provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
-         VALUES ('patch-1', 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', 'd1', 'd2')`,
+         VALUES ('patch-1', 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'mcp', 'p', 'why', '{}', 'd1', 'd2')`,
       );
       expect(anchorColumns().every((column) => column.notnull === 1)).toBe(true);
 
@@ -1258,7 +1258,7 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       state.storage.sql.exec(
         `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
           provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
-         VALUES ('patch-2', 'ctx-1', NULL, NULL, 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', 'd3', 'd4')`,
+         VALUES ('patch-2', 'ctx-1', NULL, NULL, 1, 2, 'pending', 'mcp', 'p', 'why', '{}', 'd3', 'd4')`,
       );
       expect(state.storage.sql.exec("SELECT COUNT(*) AS n FROM patches").one().n).toBe(2);
 
@@ -1292,7 +1292,7 @@ describe("Flow Coach bridge capabilities and renameRoutine", () => {
       const insert = (patchId: string, digest: string) => state.storage.sql.exec(
         `INSERT INTO patches(patch_id, context_id, routine_id, base_hash, created_at, expires_at, status,
           provenance, principal_id, rationale, patch_json, proposal_digest, payload_digest)
-         VALUES (?, 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'claude-mcp', 'p', 'why', '{}', ?, 'pd')`,
+         VALUES (?, 'ctx-1', 'routine-1', 'c1-0011223344556677', 1, 2, 'pending', 'mcp', 'p', 'why', '{}', ?, 'pd')`,
         patchId, digest,
       );
       insert("patch-1", "d1");

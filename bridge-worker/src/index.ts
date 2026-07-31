@@ -134,7 +134,10 @@ const mcpApiHandler = {
       const forwarded = new Headers(headers);
       forwarded.set("x-flow-edge", "actions");
       forwarded.set("x-flow-principal", `mcp:${mailboxId}`);
-      forwarded.set("x-flow-provenance", "claude-mcp");
+      // MCP is the provider-neutral primary edge. The authenticated OAuth
+      // client may be Claude, ChatGPT, Codex, or another compatible host;
+      // none of them may choose the stored provenance value themselves.
+      forwarded.set("x-flow-provenance", "mcp");
       if (body !== undefined) forwarded.set("content-type", "application/json");
       return stub.fetch(`https://mailbox.internal${path}`, {
         method,

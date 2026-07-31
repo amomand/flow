@@ -61,7 +61,14 @@
         "description": "Lists routine IDs, names, phases, counts and revision hashes for the exact snapshot. Read a routine separately for exercise-level detail.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/ContextId"
+            "name": "contextId",
+            "in": "query",
+            "required": true,
+            "description": "The exact opaque snapshot ID returned by get_flow_coach_context. Do not invent, reuse after expiry, or substitute a newer snapshot silently.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -108,7 +115,14 @@
         "description": "Read this before proposing edits so section and exercise IDs, current values and revision identity are copied from the snapshot rather than guessed.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/ContextId"
+            "name": "contextId",
+            "in": "query",
+            "required": true,
+            "description": "The exact opaque snapshot ID returned by get_flow_coach_context. Do not invent, reuse after expiry, or substitute a newer snapshot silently.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           {
             "name": "routineId",
@@ -162,7 +176,14 @@
         "description": "Returns recent strength and cardio summaries from the chosen snapshot. Health-derived aggregates are omitted unless explicitly requested.",
         "parameters": [
           {
-            "$ref": "#/components/parameters/ContextId"
+            "name": "contextId",
+            "in": "query",
+            "required": true,
+            "description": "The exact opaque snapshot ID returned by get_flow_coach_context. Do not invent, reuse after expiry, or substitute a newer snapshot silently.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           },
           {
             "name": "strengthLimit",
@@ -354,18 +375,6 @@
         "type": "http",
         "scheme": "bearer",
         "description": "The person-specific FLOW_COACH_ACTIONS_SECRET configured in this private GPT"
-      }
-    },
-    "parameters": {
-      "ContextId": {
-        "name": "contextId",
-        "in": "query",
-        "required": true,
-        "description": "The exact opaque snapshot ID returned by get_flow_coach_context. Do not invent, reuse after expiry, or substitute a newer snapshot silently.",
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
       }
     },
     "responses": {

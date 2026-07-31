@@ -7,6 +7,13 @@ const schema = JSON.parse(await readFile(schemaUrl, "utf8"));
 const contract = JSON.parse(await readFile(contractUrl, "utf8"));
 
 const schemas = schema.components.schemas;
+const contextIdParameter = {
+  name: "contextId",
+  in: "query",
+  required: true,
+  description: "The exact opaque snapshot ID returned by get_flow_coach_context. Do not invent, reuse after expiry, or substitute a newer snapshot silently.",
+  schema: { type: "string", format: "uuid" },
+};
 const actions = [
   ["/coach-context", "get", "get_flow_coach_context", undefined],
   ["/routines", "get", "list_flow_routines", undefined],
@@ -41,14 +48,14 @@ for (const [path, method, operationId, consequential] of actions) {
     `${operationId} has the wrong consequential flag`,
   );
   for (const parameter of operation.parameters ?? []) {
-    if ("$ref" in parameter) continue;
+    assert.ok(!("$ref" in parameter), `${operationId} uses a parameter $ref that the ChatGPT importer skips`);
     assert.ok((parameter.description?.length ?? 0) <= 700, `${operationId} parameter description exceeds the Actions limit`);
   }
 }
-assert.ok(
-  schema.components.parameters.ContextId.description.length <= 700,
-  "shared contextId parameter description exceeds the Actions limit",
-);
+assert.deepEqual(schema.paths["/routines"].get.parameters[0], contextIdParameter);
+assert.deepEqual(schema.paths["/routines/{routineId}"].get.parameters[0], contextIdParameter);
+assert.deepEqual(schema.paths["/training-summary"].get.parameters[0], contextIdParameter);
+assert.equal(schema.components.parameters, undefined);
 
 function assertLocalReferences(value, path = "$") {
   if (Array.isArray(value)) {
@@ -57,7 +64,7 @@ function assertLocalReferences(value, path = "$") {
   }
   if (!value || typeof value !== "object") return;
   if ("$ref" in value) {
-    assert.match(value.$ref, /^#\/components\/(schemas|responses|parameters)\/[^/]+$/, `unsupported reference at ${path}`);
+    assert.match(value.$ref, /^#\/components\/(schemas|responses)\/[^/]+$/, `unsupported reference at ${path}`);
     const [, , group, name] = value.$ref.split("/");
     assert.ok(schema.components[group]?.[name], `missing ${value.$ref} referenced at ${path}`);
   }
