@@ -1,6 +1,6 @@
 # ADR: Flow Coach bridge
 
-- **Status:** Accepted for the provider-neutral MCP architecture; ChatGPT MCP proof [#49](https://github.com/amomand/flow/issues/49) pending on a supported OpenAI surface
+- **Status:** Accepted for the provider-neutral MCP architecture; ChatGPT MCP proof [#49](https://github.com/amomand/flow/issues/49) completed 1 August 2026, technically successful and blocked as a product on OpenAI's surfaces
 - **Decision date:** 10 July 2026; amended 16 July 2026 for the Claude-first pivot and the [#46](https://github.com/amomand/flow/issues/46) spike results; accepted 19 July 2026; amended 31 July 2026 to make MCP explicitly cross-provider
 - **Issues:** [#37](https://github.com/amomand/flow/issues/37), handing off to [#38](https://github.com/amomand/flow/issues/38), [#39](https://github.com/amomand/flow/issues/39), [#40](https://github.com/amomand/flow/issues/40), and the secondary-client proof [#49](https://github.com/amomand/flow/issues/49)
 
@@ -8,7 +8,7 @@
 
 Flow already owns the safety-critical half of the coach loop: a whitelisted `FlowCoachContext`, typed `FlowRoutinePatch` operations, live validation and clean rebase, an explicit preview/apply decision, a durable inbox, and edit history with rollback. The bridge must expose that contract to an LLM chat client without becoming a fitness backend or another routine store.
 
-The first proved client is Claude. Both household users are on Claude, so #46 passed on 16 July 2026 with coach reads and pending patches from desktop and iOS against a deployed `primary` Worker. That proof never made Claude part of the bridge contract: the MCP endpoint, OAuth grant, tools, snapshots and patches are provider-neutral. Issue [#49](https://github.com/amomand/flow/issues/49) now tracks connecting that same endpoint to ChatGPT. The earlier private-GPT Actions package is retained as a fallback smoke surface after hands-on testing showed that a separate GPT without ordinary ChatGPT memory or conversation context is the wrong product experience.
+The first proved client is Claude. Both household users are on Claude, so #46 passed on 16 July 2026 with coach reads and pending patches from desktop and iOS against a deployed `primary` Worker. That proof never made Claude part of the bridge contract: the MCP endpoint, OAuth grant, tools, snapshots and patches are provider-neutral. Issue [#49](https://github.com/amomand/flow/issues/49) connected that same endpoint to ChatGPT and proved it works, from ChatGPT Work only. The earlier private-GPT Actions package is retained as a fallback smoke surface after hands-on testing showed that a separate GPT without ordinary ChatGPT memory or conversation context is the wrong product experience. ChatGPT Work turns out to have the same gap, so that objection now applies to both ChatGPT routes rather than only to custom GPTs.
 
 Flow itself remains one person per app installation. `RoutineStore`, the coach inbox, and edit history live in that installation's app sandbox, so two people using Flow on separate phones do not need an app-level account system. The remote bridge is different: its snapshots, proposals, deletion authority, and credentials must never be shared between people. A chat conversation boundary alone is not an authorization boundary.
 
@@ -125,8 +125,17 @@ Closed on 19 July 2026, confirmed by Alex alongside the PR #53 review:
 5. **The household model.** Confirmed: one isolated deployment and one person-specific connector/chat context per person, with no shared credential or chat context.
 
 All gates for the accepted bridge remain closed. The separate #49 ChatGPT MCP
-check is deliberately still open: the server contract can be completed in the
-repo and proved in ChatGPT Work on a supported web/desktop surface, but OpenAI's
-current product does not expose plugins in ordinary Chat or mobile. That is the
-remaining product gate for the intended iPhone experience, not a missing Flow
-bridge implementation.
+check completed on 1 August 2026 with a negative product result and a positive
+technical one. ChatGPT authenticates against the provider-neutral endpoint,
+discovers the tools and drives them from ChatGPT Work; it cannot reach them
+from ordinary Chat or mobile, and ChatGPT Work does not carry the person's
+ordinary memory or previous conversations.
+
+That second point is the same objection already recorded above against the
+private-GPT route, reached by a different path, and it settles the question:
+both available ChatGPT routes lose the personal context that was the entire
+reason to want ChatGPT over Claude. The route into ordinary Chat is
+publication and review of a directory app, not configuration, which conflicts
+directly with the one-deployment-per-person model in gate 5. No Flow work is
+outstanding; the remaining gate is OpenAI's product, and Claude stays the
+working coach surface on desktop and iOS.

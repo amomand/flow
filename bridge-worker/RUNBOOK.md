@@ -51,9 +51,9 @@ To connect a person's Claude:
 2. Claude opens the consent page; enter that deployment's connect phrase and approve.
 3. Confirm the six tools appear and a read works before any real data is synced.
 
-### ChatGPT MCP compatibility proof (#49)
+### ChatGPT MCP compatibility (#49): proved, and not useful yet
 
-ChatGPT's supported MCP/plugin surface is currently ChatGPT Work on web or in the desktop app. OpenAI's current product documentation says plugins are not available in ordinary Chat or mobile, so this proves server compatibility but does not yet deliver the desired ordinary ChatGPT iOS experience. See [`chatgpt/MCP-SETUP.md`](chatgpt/MCP-SETUP.md) for the exact developer-mode connection and evaluation steps.
+Confirmed working from ChatGPT Work on 1 August 2026, and confirmed unavailable in ordinary Chat. Two limits apply, and the second is the one that bites: custom MCP connections are Work-only, and ChatGPT Work does not carry the person's ordinary ChatGPT memory or previous conversations. The reason to want ChatGPT here was that it knows the person, and no available route delivers that, so treat this as compatibility rather than capability. Claude remains the working coach surface, including on iOS. See [`chatgpt/MCP-SETUP.md`](chatgpt/MCP-SETUP.md) for the connection steps, the published-versus-custom distinction that explains why GitHub and Apple Music do work in ordinary Chat, and what would have to change.
 
 The connection uses the same person-specific `https://<their-host>/mcp` URL and `FLOW_COACH_CONNECT_SECRET` as Claude. Do not enter the Actions secret. ChatGPT discovers the protected-resource and authorization-server metadata, dynamically registers its callback, and completes authorization code + S256 PKCE with the MCP `resource` parameter bound to the endpoint.
 
