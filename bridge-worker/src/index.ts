@@ -20,14 +20,25 @@ const TOMBSTONE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
  * Display provenance changed when the MCP edge became provider-neutral. Keep
- * the old digest namespace as a read-only lookup alias until every legacy
- * pending row has naturally expired, so a retry straddling that deploy still
- * resolves to the original draft. New rows are always written with the first
- * (current) value; adapter isolation remains anchored by the trusted principal.
+ * the old digest namespace as a read-only lookup alias so a retry straddling
+ * that deploy still resolves to the original draft. New rows are always
+ * written with the first (current) value; adapter isolation remains anchored
+ * by the trusted principal.
+ *
+ * A retry can only reach the dedup check while the snapshot it cites is still
+ * alive, so the alias stops mattering one MAX_SNAPSHOT_LIFETIME_MS after the
+ * cutover deploy. It is inert rather than harmful after that; the RUNBOOK
+ * carries the removal note.
+ *
+ * Null-prototype so a provenance value of `constructor` or `toString` cannot
+ * resolve to an inherited member and make the spread below throw. Unreachable
+ * while both edges set provenance themselves, which is why it is cheap to
+ * keep true.
  */
-const LEGACY_DEDUPLICATION_PROVENANCE: Readonly<Record<string, readonly string[]>> = {
-  mcp: ["claude-mcp"],
-};
+const LEGACY_DEDUPLICATION_PROVENANCE: Readonly<Record<string, readonly string[]>> = Object.assign(
+  Object.create(null) as Record<string, readonly string[]>,
+  { mcp: ["claude-mcp"] },
+);
 
 export interface Env {
   FLOW_COACH: DurableObjectNamespace<FlowCoachMailbox>;
