@@ -715,7 +715,7 @@ final class CoachBridgeSyncTests: XCTestCase {
         XCTAssertEqual(stored?.source, .bridge)
         XCTAssertEqual(stored?.remoteProvenance?.bridgePatchId, "bridge-1")
         XCTAssertEqual(stored?.remoteProvenance?.contextId, "ctx-1")
-        XCTAssertEqual(stored?.assistantProvider, "claude-mcp")
+        XCTAssertEqual(stored?.assistantProvider, "mcp")
     }
 
     func testPullAcknowledgesOnlyAfterTheInboxWriteSucceeds() async throws {
@@ -955,7 +955,7 @@ final class CoachBridgeSyncTests: XCTestCase {
               "routineId": "11111111-1111-1111-1111-111111111111",
               "baseContentHash": "c1-0123456789abcdef",
               "status": "pending",
-              "provenance": "claude-mcp",
+              "provenance": "mcp",
               "rationale": "Add a set.",
               "patch": {
                 "schemaVersion": 2,

@@ -2,7 +2,7 @@
 
 Everything one person needs, once. Repeat it per person against their own deployment. The architecture and the reasoning behind the boundaries are in [flow-coach-bridge-architecture.md](flow-coach-bridge-architecture.md); this is the practical walkthrough.
 
-Doing this for someone else needs their phone and their Claude account both to hand, so it is a sit-down-together job rather than something the operator can prepare in advance.
+Doing this for someone else needs their phone and their chosen MCP client account both to hand, so it is a sit-down-together job rather than something the operator can prepare in advance.
 
 ## Before you start
 
@@ -16,7 +16,7 @@ The operator needs three values for that person's mailbox, generated at deploy t
 
 The device credential and the connect phrase are both 64 hex characters and look identical at a glance. They are not interchangeable, and mixing them up produces a 401 with no clue as to why. If you ever find yourself pasting either into a conversation with an assistant, stop.
 
-Custom connectors work on Free, Pro, Max, Team and Enterprise plans, and on the mobile apps as well as web and desktop. Free is limited to one custom connector, and on Team or Enterprise an Owner has to add it.
+The already-proved mobile route is Claude's custom connector. ChatGPT uses the same `/mcp` endpoint, but OpenAI currently exposes custom MCP plugins only in ChatGPT Work on web/desktop, not ordinary Chat or mobile. The exact ChatGPT compatibility proof is in [`../bridge-worker/chatgpt/MCP-SETUP.md`](../bridge-worker/chatgpt/MCP-SETUP.md).
 
 ## 1. Pair Flow to the mailbox
 
@@ -49,9 +49,9 @@ A snapshot lives 24 hours and then the Worker deletes it. There is no background
 
 A draft the assistant has already proposed does not die with its snapshot. Patch payloads last seven days independently, so a proposal made on Monday is still waiting on Thursday.
 
-## 4. Add the connector
+## 4. Add the MCP connector
 
-Do this on desktop or web. Connectors are stored against the Claude account, so it appears on that person's phone afterwards.
+For the proved Claude route, do this on desktop or web. The connector is stored against the Claude account, so it appears on that person's phone afterwards.
 
 1. Settings, then Connectors, then add a custom connector rather than browsing the directory.
 2. Name it for the person, for example `Flow Coach (Alex)`. The URL is the hostname with `/mcp` on the end.
@@ -67,9 +67,9 @@ The assistant asks permission per tool. Five of the six tools are read-only; onl
 
 Allowing the five reads permanently and leaving the write to prompt each time turns five prompts per conversation into one, and keeps the prompt on the only call that puts something in the inbox. Make that choice deliberately: the permanent option is account-scoped, applies to every device, and is awkward to reverse. It is a convenience setting, not a safety boundary. Flow's preview and apply is the safety boundary.
 
-## 6. A Project per person
+## 6. Conversation context per person
 
-A Claude Project holds its own instructions and conversations. One per person, with only that person's connector enabled, is what stops two people's training context mixing. Give it instructions along these lines:
+A Claude Project currently supplies the proved per-person instructions and conversation context. The ChatGPT target is an ordinary conversation with the Flow MCP plugin available, so it can use the context ChatGPT already has rather than a separate private GPT. In either client, keep only that person's connector attached to that context. Give it instructions along these lines:
 
 ```text
 You help me adjust my strength routines in Flow.

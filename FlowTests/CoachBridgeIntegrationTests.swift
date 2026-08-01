@@ -132,7 +132,7 @@ final class CoachBridgeIntegrationTests: XCTestCase {
         ])
         let stored = try XCTUnwrap(proposal["structuredContent"] as? [String: Any])
         let bridgePatchId = try XCTUnwrap((stored["patch"] as? [String: Any])?["patchId"] as? String)
-        XCTAssertEqual((stored["patch"] as? [String: Any])?["provenance"] as? String, "claude-mcp")
+        XCTAssertEqual((stored["patch"] as? [String: Any])?["provenance"] as? String, "mcp")
 
         // 3. Flow pulls the draft into its existing durable inbox.
         let pulled = await sync.pullPendingPatches()
@@ -140,7 +140,7 @@ final class CoachBridgeIntegrationTests: XCTestCase {
         let pending = try XCTUnwrap(inbox.pending.first)
         XCTAssertEqual(pending.source, .bridge)
         XCTAssertEqual(pending.remoteProvenance?.bridgePatchId, bridgePatchId)
-        XCTAssertEqual(pending.assistantProvider, "claude-mcp")
+        XCTAssertEqual(pending.assistantProvider, "mcp")
         XCTAssertEqual(
             inbox.summary(for: pending, routines: store.routines).readiness,
             .ready,

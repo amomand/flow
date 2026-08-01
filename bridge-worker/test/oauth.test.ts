@@ -85,9 +85,17 @@ describe("Flow Coach bridge OAuth edge", () => {
     expect(authServer.scopes_supported).toEqual(["coach:read", "patch:propose"]);
     expect(authServer.code_challenge_methods_supported).toEqual(["S256"]);
 
-    const resource = await json(await SELF.fetch("https://flow.test/.well-known/oauth-protected-resource"));
-    expect(resource.resource).toBe("https://flow.test");
+    const resource = await json(await SELF.fetch("https://flow.test/.well-known/oauth-protected-resource/mcp"));
+    expect(resource.resource).toBe("https://flow.test/mcp");
+    expect(resource.authorization_servers).toEqual(["https://flow.test"]);
     expect(resource.scopes_supported).toEqual(["coach:read", "patch:propose"]);
+
+    // The bare origin path is what a client connected before path-aware
+    // discovery may re-fetch. It must keep serving a valid document.
+    const originResource = await json(await SELF.fetch("https://flow.test/.well-known/oauth-protected-resource"));
+    expect(originResource.resource).toBe("https://flow.test");
+    expect(originResource.authorization_servers).toEqual(["https://flow.test"]);
+    expect(originResource.scopes_supported).toEqual(["coach:read", "patch:propose"]);
   });
 
   it("refuses the MCP endpoint without a valid bearer token", async () => {
@@ -97,7 +105,9 @@ describe("Flow Coach bridge OAuth edge", () => {
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
     });
     expect(missing.status).toBe(401);
-    expect(missing.headers.get("www-authenticate")).toContain("resource_metadata");
+    expect(missing.headers.get("www-authenticate")).toContain(
+      'resource_metadata="https://flow.test/.well-known/oauth-protected-resource/mcp"',
+    );
 
     const wrong = await SELF.fetch("https://flow.test/mcp", {
       method: "POST",
@@ -215,6 +225,77 @@ describe("Flow Coach bridge OAuth edge", () => {
       arguments: {},
     }));
     expect(context.result.structuredContent.contextId).toBe(contextId);
+  });
+
+  it("accepts a ChatGPT-shaped DCR callback and resource-bound OAuth flow", async () => {
+    const { accessToken } = await obtainTokens({
+      clientName: "ChatGPT",
+      redirectUri: "https://chatgpt.com/connector/oauth/flow-fixture",
+      resource: "https://flow.test/mcp",
+    });
+
+    const initialized = await json(await mcp(accessToken, "initialize", {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "ChatGPT", version: "fixture" },
+    }));
+    expect(initialized.result.serverInfo.name).toBe("flow-coach-bridge");
+  });
+
+  it("enforces the MCP token audience while accepting the legacy origin resource", async () => {
+    const foreign = await obtainTokens({ resource: "https://another-resource.test/mcp" });
+    const rejected = await mcp(foreign.accessToken, "ping");
+    expect(rejected.status).toBe(401);
+    expect((await json(rejected)).error_description).toContain("audience");
+
+    // OAuth grants created before path-aware protected-resource discovery
+    // used the Worker origin. The provider deliberately treats that parent
+    // resource as valid for /mcp, so deploying this change does not force
+    // existing Claude connectors to reauthorise.
+    const legacy = await obtainTokens({ resource: "https://flow.test" });
+    const accepted = await json(await mcp(legacy.accessToken, "ping"));
+    expect(accepted.result).toEqual({});
+
+    // The likelier production shape: a grant whose client never sent
+    // `resource` at all carries no audience, so the check does not apply.
+    const unbound = await obtainTokens();
+    const stillAccepted = await json(await mcp(unbound.accessToken, "ping"));
+    expect(stillAccepted.result).toEqual({});
+
+    // Renewing an unbound legacy grant must not start failing the audience
+    // check either, since that is what a long-lived connector actually does.
+    const renewed = await json(await SELF.fetch("https://flow.test/oauth/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: unbound.refreshToken!,
+        client_id: unbound.clientId,
+      }),
+    }));
+    const afterRefresh = await json(await mcp(renewed.access_token, "ping"));
+    expect(afterRefresh.result).toEqual({});
+  });
+
+  it("renews a resource-bound grant when the client repeats the same resource", async () => {
+    // ChatGPT appends `resource` to token requests, and refresh is a token
+    // request. The provider compares the requested resource to the grant's by
+    // exact string, so this passes only while the client keeps sending the
+    // string it originally sent; re-deriving it mid-grant forces reauth.
+    const bound = await obtainTokens({ resource: "https://flow.test/mcp" });
+    const renewed = await SELF.fetch("https://flow.test/oauth/token", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        refresh_token: bound.refreshToken!,
+        client_id: bound.clientId,
+        resource: "https://flow.test/mcp",
+      }),
+    });
+    expect(renewed.status).toBe(200);
+    const afterRefresh = await json(await mcp((await json(renewed)).access_token, "ping"));
+    expect(afterRefresh.result).toEqual({});
   });
 
   it("supports refresh tokens so the connector can renew without re-consent", async () => {

@@ -547,8 +547,16 @@ export async function handleMcpMessage(
     return rpcResult(id, {
       tools: TOOLS
         .filter((tool) => grantedScopes.includes(tool.requiredScope))
-        .map(({ name, title, description, inputSchema, annotations }) => ({
-          name, title, description, inputSchema, annotations,
+        .map(({ name, title, description, requiredScope, inputSchema, annotations }) => ({
+          name,
+          title,
+          description,
+          inputSchema,
+          annotations,
+          // OpenAI's MCP host uses per-tool schemes to explain the scope a
+          // tool needs and to drive OAuth linking/reauthorisation UX. The
+          // Worker still verifies the bearer token and scope server-side.
+          securitySchemes: [{ type: "oauth2", scopes: [requiredScope] }],
         })),
     });
   }

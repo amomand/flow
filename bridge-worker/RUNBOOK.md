@@ -7,7 +7,7 @@ Both environments are deployed and carrying real data for one person. The spike'
 | `primary` | `flow-coach-bridge-primary.aomand.workers.dev` | `primary-v1` | paired, in use |
 | `partner` | `flow-coach-bridge-partner.aomand.workers.dev` | `partner-v1` | deployed, not yet paired |
 
-Credentials live only in the operator's password manager. Three secrets per environment, all generated with `openssl rand -hex 32` and never reused across edges or people: `FLOW_COACH_DEVICE_SECRET` for the paired Flow installation, `FLOW_COACH_CONNECT_SECRET` for the connector consent page, and `FLOW_COACH_ACTIONS_SECRET` for smoke tests and that person's private GPT when enabled. Pipe them in with `printf '%s'` rather than `echo`, because a trailing newline inside a stored secret produces 401s that are miserable to diagnose.
+Credentials live only in the operator's password manager. Three secrets per environment, all generated with `openssl rand -hex 32` and never reused across edges or people: `FLOW_COACH_DEVICE_SECRET` for the paired Flow installation, `FLOW_COACH_CONNECT_SECRET` for MCP connector consent, and `FLOW_COACH_ACTIONS_SECRET` for fallback Actions smoke tests. Pipe them in with `printf '%s'` rather than `echo`, because a trailing newline inside a stored secret produces 401s that are miserable to diagnose.
 
 ## Local setup
 
@@ -35,11 +35,13 @@ The first production shape is one deployment per person, not one shared househol
 
 Wrangler environments have non-inherited Durable Object bindings and environment-specific secrets. Do not add `script_name` pointing both environments back to the same Worker, reuse either credential, or configure both people's coach clients against one hostname. The mailbox IDs are routing configuration, not person authentication; the separately scoped credentials and service boundary provide authorization.
 
-One Flow installation pairs with one device endpoint. The person operating the matching coach client may be someone else, but proposals still land only in the paired Flow inbox for review. Give each Claude Project or private GPT and its conversations a clear person-specific name so conversational context does not cross the storage boundary.
+One Flow installation pairs with one device endpoint. The person operating the matching coach client may be someone else, but proposals still land only in the paired Flow inbox for review. Give each connector and its conversations a clear person-specific name so conversational context does not cross the storage boundary.
 
 ## Claude connector (OAuth, #38)
 
-The MCP edge mounts at `/mcp` and requires an OAuth 2.1 bearer token. Tokens are issued by the Worker itself (`@cloudflare/workers-oauth-provider`): Claude registers a client dynamically, sends the person to `/oauth/authorize`, and the consent page asks for that deployment's connect phrase before granting `coach:read` and `patch:propose`. Grants, refresh tokens, and registered clients live in that environment's `OAUTH_KV` namespace, so nothing OAuth-shaped is shared between people.
+The MCP edge mounts at `/mcp` and requires an OAuth 2.1 bearer token. Tokens are issued by the Worker itself (`@cloudflare/workers-oauth-provider`): the MCP host registers a client dynamically, sends the person to `/oauth/authorize`, and the consent page asks for that deployment's connect phrase before granting `coach:read` and `patch:propose`. Grants, refresh tokens, and registered clients live in that environment's `OAUTH_KV` namespace, so nothing OAuth-shaped is shared between people. The same edge is used by Claude and ChatGPT; stored provenance is the server-derived value `mcp`, not a provider name supplied by a client or model.
+
+One caveat on renewal, not introduced by any Flow change. When a client binds its grant to a `resource`, the provider compares the resource on a refresh request to the grant's by exact string, so a client that later re-derives a different-but-equivalent resource (say `https://<host>` becoming `https://<host>/mcp` after re-reading discovery) has its refresh rejected with `invalid_target` and must reauthorise with the connect phrase. Token *use* is more lenient than token *issue*: a parent resource is accepted at `/mcp`, which is why existing grants keep working. If someone reports a connector that suddenly demands re-approval without any deploy, this is the likely cause and re-approval is the fix.
 
 `FLOW_COACH_CONNECT_SECRET` is the consent page's whole authentication: at least 32 fresh random characters (`openssl rand -hex 32`), never reused from another secret or person, handed only to the one person allowed to connect to that mailbox. The page fails closed (503) while it is unset or too short.
 
@@ -49,26 +51,42 @@ To connect a person's Claude:
 2. Claude opens the consent page; enter that deployment's connect phrase and approve.
 3. Confirm the six tools appear and a read works before any real data is synced.
 
-To disconnect: remove the connector in Claude, then rotate the connect phrase. To force-revoke server-side without the client's cooperation, delete that environment's grants in `OAUTH_KV` (`npx wrangler kv key list --binding OAUTH_KV --env <env>` and delete the listed grant/token keys), then rotate the connect phrase.
+### ChatGPT MCP compatibility proof (#49)
+
+ChatGPT's supported MCP/plugin surface is currently ChatGPT Work on web or in the desktop app. OpenAI's current product documentation says plugins are not available in ordinary Chat or mobile, so this proves server compatibility but does not yet deliver the desired ordinary ChatGPT iOS experience. See [`chatgpt/MCP-SETUP.md`](chatgpt/MCP-SETUP.md) for the exact developer-mode connection and evaluation steps.
+
+The connection uses the same person-specific `https://<their-host>/mcp` URL and `FLOW_COACH_CONNECT_SECRET` as Claude. Do not enter the Actions secret. ChatGPT discovers the protected-resource and authorization-server metadata, dynamically registers its callback, and completes authorization code + S256 PKCE with the MCP `resource` parameter bound to the endpoint.
+
+To disconnect: remove the connector from every MCP host holding it, then rotate the connect phrase. To force-revoke server-side without the client's cooperation, delete that environment's grants in `OAUTH_KV` (`npx wrangler kv key list --binding OAUTH_KV --env <env>` and delete the listed grant/token keys), then rotate the connect phrase.
+
+### Provenance cutover: removing the temporary dedup alias
+
+The MCP edge used to stamp `claude-mcp` and now stamps `mcp`. `LEGACY_DEDUPLICATION_PROVENANCE` in `src/index.ts` keeps the old value as a read-only digest alias so a proposal retried across that one deploy dedupes against the draft it already created instead of making a second one.
+
+It stops being reachable 24 hours after the cutover deploy, because a proposal must cite a live snapshot and snapshots cap at `MAX_SNAPSHOT_LIFETIME_MS`. It is inert rather than harmful after that, so there is no urgency, but it is dead code: delete the constant and the two loops that consume it, and drop the two cutover-named tests in `test/mcp.test.ts`, next time this file is open. The principal-binding and leak tests do not depend on the alias and should stay.
+
+One thing to know before any future deploy that straddles a retry: cross-deploy dedup depends on the *validated* patch being byte-stable, not just on the digest formula. `createPatch` digests the output of `validatePatch`, which injects Zod defaults such as `target`. Changing or adding a schema default silently changes every payload digest, so a retry across that deploy stops deduplicating and stores a second draft. No test would catch it, because both sides of a single test run use the same schema.
 
 ### After a contract deploy: refresh the connector
 
-Redeploying the Worker does not touch Claude's cached `tools/list`. Anthropic documents no cache duration and no automatic refetch, so assume a connected client keeps composing against the tool schemas it fetched when the connector was added. That failure is silent and points the wrong way: after the schema 3 deploy, a connected coach reported the patch tool "still advertises schema 2 only", worked around operations that were in fact live, and nothing on either side disagreed out loud (#83).
+Redeploying the Worker does not necessarily invalidate an MCP host's cached `tools/list`. Assume a connected client keeps composing against the tool schemas it fetched when the connector was added. That failure is silent and points the wrong way: after the schema 3 deploy, a connected coach reported the patch tool "still advertises schema 2 only", worked around operations that were in fact live, and nothing on either side disagreed out loud (#83).
 
 The server cannot push a correction. `notifications/tools/list_changed` requires a delivery channel — an SSE stream or a session — and this Worker deliberately has neither, so the capability is not advertised (see the `initialize` handler in `src/mcp.ts`).
 
 So the step is manual. After any deploy that changes a tool's input schema, description, or the operation contract:
 
-1. In Claude (Settings, Connectors) refresh the affected person's connector — remove it and add it back if no lighter refresh is offered. Re-approval uses the same connect phrase; grants in `OAUTH_KV` are unaffected.
+1. Refresh the affected person's connector. In Claude, use Settings, Connectors and remove/re-add it if no lighter refresh is offered. In ChatGPT developer mode, open the connection from Plugins and select Refresh. Re-approval uses the same connect phrase.
 2. Check it took: ask the coach to list the operation kinds and schema versions visible in its patch tool's input schema, and compare against `capabilities.operationKinds` and `capabilities.patchSchemaVersions` from `get_flow_coach_context`. One message, and it would have caught the incident above.
 
 The coach-context payload also carries a fresh-per-call `advisory` telling a coach to trust the capabilities block over a cached schema and to ask for a refresh, so a stale client that reads a context at least learns it is stale. It does not remove the manual step; it bounds the damage until someone performs it.
 
-## Private ChatGPT GPT (Actions, #49)
+## Private ChatGPT GPT (Actions fallback)
 
-ChatGPT uses the existing `/actions/*` edge rather than the MCP connector. The
-current importable OpenAPI schema, private-GPT instructions and proof checklist
-are in [`chatgpt`](chatgpt). This route needs no ChatGPT developer mode.
+The private-GPT package uses `/actions/*` rather than the MCP connector. It is
+retained as a contract-tested smoke/fallback surface, but it is not the target
+ChatGPT integration: a custom GPT does not inherit ordinary ChatGPT memory or
+previous conversations. The importable OpenAPI schema, private-GPT instructions
+and proof checklist remain in [`chatgpt`](chatgpt).
 
 Configure one private GPT per Flow mailbox:
 
@@ -173,7 +191,7 @@ Delete one snapshot with `DELETE /device/snapshots/{contextId}`. This also remov
 For full teardown:
 
 1. Call `DELETE /device/data` and verify it succeeds.
-2. Remove the coach connector configuration in Claude and any private GPT Action using this mailbox.
+2. Remove the coach connector configuration from every MCP host and any fallback private GPT Action using this mailbox.
 3. Delete that environment's `OAUTH_KV` namespace so every grant, refresh token, and registered client dies with it.
 4. Delete the environment's Worker secrets with Wrangler.
 5. Delete that environment's Worker only after its mailbox is empty.
