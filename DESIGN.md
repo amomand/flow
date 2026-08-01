@@ -89,7 +89,7 @@ The inbox's after-apply counterpart is `CoachEditHistoryStore` (`coach-edit-hist
 
 `RoutineStore` remains the sole authority for mutating and saving `routines.json`. The exchange layer classifies, decodes, and hashes; it never persists.
 
-The managed bridge shape is documented in `docs/flow-coach-bridge-architecture.md`: one isolated single-person deployment with an EU-jurisdiction SQLite Durable Object behind a primary provider-neutral MCP edge, the Flow device edge, and a fallback Actions adapter. Multiple people use separate deployments and credentials rather than sharing a mailbox or introducing app-level accounts. Claude has proved the MCP loop on desktop and iOS; #49 tracks the same endpoint in ChatGPT, whose current custom-MCP surface is web/desktop ChatGPT Work rather than ordinary Chat or mobile.
+The managed bridge shape is documented in `docs/flow-coach-bridge-architecture.md`: one isolated single-person deployment with an EU-jurisdiction SQLite Durable Object behind a primary provider-neutral MCP edge, the Flow device edge, and a fallback Actions adapter. Multiple people use separate deployments and credentials rather than sharing a mailbox or introducing app-level accounts. Claude has proved the MCP loop on desktop and iOS. #49 proved the same endpoint in ChatGPT and closed with a negative product result: custom MCP connections work only in ChatGPT Work, and Work does not carry the person's ordinary memory or previous conversations, which was the whole reason to want ChatGPT. Claude remains the coach surface.
 
 ## Runs Model
 
