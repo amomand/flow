@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit && npm run check:chatgpt-actions",
+    "check": "tsc --noEmit && npm run check:chatgpt-actions && npm run check:patch-contract-corpus",
     "check:chatgpt-actions": "node scripts/verify-chatgpt-actions-contract.mjs",
+    "check:patch-contract-corpus": "node scripts/verify-patch-contract-corpus.mjs",
     "test": "vitest run",
     "dev": "wrangler dev",
     "smoke:remote": "node scripts/remote-smoke.mjs",
