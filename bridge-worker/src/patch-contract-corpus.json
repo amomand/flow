@@ -1,0 +1,1337 @@
+{
+  "comment": "Frozen current-result matrix. Each patch is run unchanged apart from replacing {{baseContentHash}} with the runtime's hash for the first routine. Expected outcomes deliberately preserve stricter bridge checks and Flow-owned rebase behaviour.",
+  "expectedCapabilities": {
+    "patchSchemaVersions": [
+      2,
+      3
+    ],
+    "operationKinds": [
+      "replaceExerciseReps",
+      "replaceExerciseSets",
+      "replaceTimedDuration",
+      "replaceRestBetweenSets",
+      "replaceRestAfterExercise",
+      "updateExerciseNotes",
+      "addExercise",
+      "removeExercise",
+      "moveExercise",
+      "replacePhaseOverride",
+      "renameRoutine",
+      "addSection",
+      "createRoutine"
+    ]
+  },
+  "baseRoutine": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "name": "Upper",
+    "sections": [
+      {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "name": "Main",
+        "exercises": [
+          {
+            "id": "33333333-3333-4333-8333-333333333333",
+            "name": "Press",
+            "sets": 3,
+            "reps": 8,
+            "restBetweenSetsSeconds": 60,
+            "restAfterExerciseSeconds": 90,
+            "notes": "",
+            "perSide": false,
+            "phaseOverrides": {
+              "peak": {
+                "sets": 4,
+                "reps": 6
+              }
+            }
+          },
+          {
+            "id": "55555555-5555-4555-8555-555555555555",
+            "name": "Plank",
+            "sets": 3,
+            "reps": 1,
+            "restBetweenSetsSeconds": 45,
+            "restAfterExerciseSeconds": 60,
+            "notes": "Brace",
+            "perSide": false,
+            "phaseOverrides": {},
+            "durationSeconds": 30
+          }
+        ]
+      },
+      {
+        "id": "44444444-4444-4444-8444-444444444444",
+        "name": "Aux",
+        "exercises": [
+          {
+            "id": "66666666-6666-4666-8666-666666666666",
+            "name": "Row",
+            "sets": 3,
+            "reps": 10,
+            "restBetweenSetsSeconds": 60,
+            "restAfterExerciseSeconds": 90,
+            "notes": "",
+            "perSide": false,
+            "phaseOverrides": {}
+          }
+        ]
+      }
+    ],
+    "currentPhase": "base"
+  },
+  "cases": [
+    {
+      "id": "operation-replace-reps",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-replace-sets",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseSets",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 3,
+            "newIntValue": 4
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-replace-duration",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceTimedDuration",
+            "exerciseId": "55555555-5555-4555-8555-555555555555",
+            "expectedIntValue": 30,
+            "newIntValue": 45
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-replace-rest-between",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceRestBetweenSets",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 60,
+            "newIntValue": 75
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-replace-rest-after",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceRestAfterExercise",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 90,
+            "newIntValue": 120
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-update-notes",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "updateExerciseNotes",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedStringValue": "",
+            "newStringValue": "Pause at the bottom"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-add-exercise",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "addExercise",
+            "sectionId": "22222222-2222-4222-8222-222222222222",
+            "afterExerciseId": "33333333-3333-4333-8333-333333333333",
+            "exercise": {
+              "id": "77777777-7777-4777-8777-777777777777",
+              "name": "Fly",
+              "sets": 3,
+              "reps": 8,
+              "restBetweenSetsSeconds": 60,
+              "restAfterExerciseSeconds": 90,
+              "notes": "",
+              "perSide": false,
+              "phaseOverrides": {}
+            }
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-remove-exercise",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "removeExercise",
+            "exerciseId": "66666666-6666-4666-8666-666666666666",
+            "expectedStringValue": "Row"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-move-exercise",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "moveExercise",
+            "exerciseId": "66666666-6666-4666-8666-666666666666",
+            "targetSectionId": "22222222-2222-4222-8222-222222222222",
+            "afterExerciseId": "33333333-3333-4333-8333-333333333333"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-replace-phase-override",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replacePhaseOverride",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "phase": "peak",
+            "expectedPhaseOverride": {
+              "sets": 4,
+              "reps": 6
+            },
+            "newPhaseOverride": {
+              "sets": 5,
+              "reps": 5
+            }
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-rename-routine",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper A"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-add-section",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "addSection",
+            "afterSectionId": "22222222-2222-4222-8222-222222222222",
+            "section": {
+              "id": "88888888-8888-4888-8888-888888888888",
+              "name": "Accessories"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "operation-create-routine",
+      "rule": "operation kind",
+      "patch": {
+        "schemaVersion": 3,
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "createRoutine",
+            "routine": {
+              "id": "99999999-9999-4999-8999-999999999999",
+              "name": "Lower",
+              "sections": [
+                {
+                  "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                  "name": "Main",
+                  "exercises": [
+                    {
+                      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                      "name": "Squat",
+                      "sets": 3,
+                      "reps": 8,
+                      "restBetweenSetsSeconds": 60,
+                      "restAfterExerciseSeconds": 90,
+                      "notes": "",
+                      "perSide": false,
+                      "phaseOverrides": {}
+                    }
+                  ]
+                }
+              ],
+              "currentPhase": "base"
+            }
+          }
+        ],
+        "target": "newRoutine"
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "schema-1-rejected",
+      "rule": "schema versions",
+      "patch": {
+        "schemaVersion": 1,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "schema-2-defaults-to-existing",
+      "rule": "defaults",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "schema-2-rejects-schema-3-operation",
+      "rule": "schema versions",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper A"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "unknown-operation-rejected",
+      "rule": "strict operation kinds",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "inventExercise"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "unknown-top-level-field",
+      "rule": "strict object validation",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ],
+        "assistant": "ignored by Swift"
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "revision-current-hash",
+      "rule": "revision identity",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "revision-stale-but-rebasable",
+      "rule": "revision identity",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "c1-0000000000000000",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "revision-anchor-missing",
+      "rule": "revision identity",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "expected-value-mismatch",
+      "rule": "expected-value checks",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 7,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "ordered-renames",
+      "rule": "operation ordering",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper A"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper A",
+            "newStringValue": "Upper B"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "ordered-renames-stale-second-expectation",
+      "rule": "operation ordering",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper A"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper B"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "add-section-before-targeting-it",
+      "rule": "operation ordering",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "addSection",
+            "section": {
+              "id": "88888888-8888-4888-8888-888888888888",
+              "name": "Accessories"
+            }
+          },
+          {
+            "kind": "addExercise",
+            "sectionId": "88888888-8888-4888-8888-888888888888",
+            "exercise": {
+              "id": "77777777-7777-4777-8777-777777777777",
+              "name": "Fly",
+              "sets": 3,
+              "reps": 8,
+              "restBetweenSetsSeconds": 60,
+              "restAfterExerciseSeconds": 90,
+              "notes": "",
+              "perSide": false,
+              "phaseOverrides": {}
+            }
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "target-section-added-too-late",
+      "rule": "operation ordering",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "addExercise",
+            "sectionId": "88888888-8888-4888-8888-888888888888",
+            "exercise": {
+              "id": "77777777-7777-4777-8777-777777777777",
+              "name": "Fly",
+              "sets": 3,
+              "reps": 8,
+              "restBetweenSetsSeconds": 60,
+              "restAfterExerciseSeconds": 90,
+              "notes": "",
+              "perSide": false,
+              "phaseOverrides": {}
+            }
+          },
+          {
+            "kind": "addSection",
+            "section": {
+              "id": "88888888-8888-4888-8888-888888888888",
+              "name": "Accessories"
+            }
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "routine-target-missing",
+      "rule": "target lookup",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "exercise-target-missing",
+      "rule": "target lookup",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "ffffffff-ffff-4fff-8fff-ffffffffffff",
+            "expectedIntValue": 8,
+            "newIntValue": 10
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "anchor-in-wrong-section",
+      "rule": "target lookup",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "moveExercise",
+            "exerciseId": "66666666-6666-4666-8666-666666666666",
+            "targetSectionId": "44444444-4444-4444-8444-444444444444",
+            "afterExerciseId": "33333333-3333-4333-8333-333333333333"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "rename-trims-padding",
+      "rule": "trimming",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "  Upper A  "
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "rename-blank-after-trim",
+      "rule": "trimming",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "   "
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "rename-next-line-trimming-difference",
+      "rule": "trimming",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": ""
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "notes-at-500-utf16-units",
+      "rule": "UTF-16 bounds",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "updateExerciseNotes",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedStringValue": "",
+            "newStringValue": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "notes-at-501-utf16-units",
+      "rule": "UTF-16 bounds",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "updateExerciseNotes",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedStringValue": "",
+            "newStringValue": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀a"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "numeric-lower-bound",
+      "rule": "numeric bounds",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceRestBetweenSets",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 60,
+            "newIntValue": 0
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "accepted"
+      }
+    },
+    {
+      "id": "numeric-below-lower-bound",
+      "rule": "numeric bounds",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceRestBetweenSets",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 60,
+            "newIntValue": -1
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "numeric-fraction-rejected",
+      "rule": "numeric bounds",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseSets",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedIntValue": 3,
+            "newIntValue": 3.5
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "timed-exercise-rejects-reps",
+      "rule": "operation applicability",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "replaceExerciseReps",
+            "exerciseId": "55555555-5555-4555-8555-555555555555",
+            "expectedIntValue": 1,
+            "newIntValue": 2
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "empty-operations",
+      "rule": "collection limits",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": []
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "fifty-one-operations",
+      "rule": "collection limits",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper 1"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 1",
+            "newStringValue": "Upper 2"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 2",
+            "newStringValue": "Upper 3"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 3",
+            "newStringValue": "Upper 4"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 4",
+            "newStringValue": "Upper 5"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 5",
+            "newStringValue": "Upper 6"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 6",
+            "newStringValue": "Upper 7"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 7",
+            "newStringValue": "Upper 8"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 8",
+            "newStringValue": "Upper 9"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 9",
+            "newStringValue": "Upper 10"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 10",
+            "newStringValue": "Upper 11"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 11",
+            "newStringValue": "Upper 12"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 12",
+            "newStringValue": "Upper 13"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 13",
+            "newStringValue": "Upper 14"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 14",
+            "newStringValue": "Upper 15"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 15",
+            "newStringValue": "Upper 16"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 16",
+            "newStringValue": "Upper 17"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 17",
+            "newStringValue": "Upper 18"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 18",
+            "newStringValue": "Upper 19"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 19",
+            "newStringValue": "Upper 20"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 20",
+            "newStringValue": "Upper 21"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 21",
+            "newStringValue": "Upper 22"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 22",
+            "newStringValue": "Upper 23"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 23",
+            "newStringValue": "Upper 24"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 24",
+            "newStringValue": "Upper 25"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 25",
+            "newStringValue": "Upper 26"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 26",
+            "newStringValue": "Upper 27"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 27",
+            "newStringValue": "Upper 28"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 28",
+            "newStringValue": "Upper 29"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 29",
+            "newStringValue": "Upper 30"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 30",
+            "newStringValue": "Upper 31"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 31",
+            "newStringValue": "Upper 32"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 32",
+            "newStringValue": "Upper 33"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 33",
+            "newStringValue": "Upper 34"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 34",
+            "newStringValue": "Upper 35"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 35",
+            "newStringValue": "Upper 36"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 36",
+            "newStringValue": "Upper 37"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 37",
+            "newStringValue": "Upper 38"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 38",
+            "newStringValue": "Upper 39"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 39",
+            "newStringValue": "Upper 40"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 40",
+            "newStringValue": "Upper 41"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 41",
+            "newStringValue": "Upper 42"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 42",
+            "newStringValue": "Upper 43"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 43",
+            "newStringValue": "Upper 44"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 44",
+            "newStringValue": "Upper 45"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 45",
+            "newStringValue": "Upper 46"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 46",
+            "newStringValue": "Upper 47"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 47",
+            "newStringValue": "Upper 48"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 48",
+            "newStringValue": "Upper 49"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 49",
+            "newStringValue": "Upper 50"
+          },
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper 50",
+            "newStringValue": "Upper 51"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "remove-all-exercises",
+      "rule": "collection invariants",
+      "patch": {
+        "schemaVersion": 2,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "removeExercise",
+            "exerciseId": "33333333-3333-4333-8333-333333333333",
+            "expectedStringValue": "Press"
+          },
+          {
+            "kind": "removeExercise",
+            "exerciseId": "55555555-5555-4555-8555-555555555555",
+            "expectedStringValue": "Plank"
+          },
+          {
+            "kind": "removeExercise",
+            "exerciseId": "66666666-6666-4666-8666-666666666666",
+            "expectedStringValue": "Row"
+          }
+        ]
+      },
+      "expected": {
+        "swift": "rejected",
+        "bridge": "rejected"
+      }
+    },
+    {
+      "id": "device-does-not-advertise-rename",
+      "rule": "capability advertisement",
+      "patch": {
+        "schemaVersion": 3,
+        "routineId": "11111111-1111-4111-8111-111111111111",
+        "baseContentHash": "{{baseContentHash}}",
+        "rationale": "Contract fixture",
+        "operations": [
+          {
+            "kind": "renameRoutine",
+            "expectedStringValue": "Upper",
+            "newStringValue": "Upper A"
+          }
+        ]
+      },
+      "capabilities": {
+        "patchSchemaVersions": [
+          2,
+          3
+        ],
+        "operationKinds": [
+          "replaceExerciseReps"
+        ]
+      },
+      "expected": {
+        "swift": "accepted",
+        "bridge": "rejected"
+      }
+    }
+  ]
+}

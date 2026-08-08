@@ -15,6 +15,8 @@ const phase = z.enum(["base", "peak", "deload"]);
  * what JavaScript's `length` measures without being asked.
  */
 export const STRING_BOUNDS = contract.stringBoundsUtf16;
+export const NUMERIC_BOUNDS = contract.numericBounds;
+export const COLLECTION_LIMITS = contract.collectionLimits;
 
 /**
  * A name as the app stores it: bounded on its trimmed length, refused when
@@ -54,19 +56,19 @@ const relayedName = z.string().refine((value) => value.trim().length <= STRING_B
 });
 
 const phaseOverride = z.object({
-  sets: z.number().int().min(1).max(10).optional(),
-  reps: z.number().int().min(1).max(100).optional(),
-  durationSeconds: z.number().int().min(1).max(3600).optional(),
+  sets: z.number().int().min(NUMERIC_BOUNDS.sets.minimum).max(NUMERIC_BOUNDS.sets.maximum).optional(),
+  reps: z.number().int().min(NUMERIC_BOUNDS.reps.minimum).max(NUMERIC_BOUNDS.reps.maximum).optional(),
+  durationSeconds: z.number().int().min(NUMERIC_BOUNDS.durationSeconds.minimum).max(NUMERIC_BOUNDS.durationSeconds.maximum).optional(),
 }).strict();
 
 export const exerciseSchema = z.object({
   id: UUID,
   name: storedName,
-  sets: z.number().int().min(1).max(10),
-  reps: z.number().int().min(1).max(100),
-  durationSeconds: z.number().int().min(1).max(3600).optional(),
-  restBetweenSetsSeconds: z.number().int().min(0).max(900),
-  restAfterExerciseSeconds: z.number().int().min(0).max(900),
+  sets: z.number().int().min(NUMERIC_BOUNDS.sets.minimum).max(NUMERIC_BOUNDS.sets.maximum),
+  reps: z.number().int().min(NUMERIC_BOUNDS.reps.minimum).max(NUMERIC_BOUNDS.reps.maximum),
+  durationSeconds: z.number().int().min(NUMERIC_BOUNDS.durationSeconds.minimum).max(NUMERIC_BOUNDS.durationSeconds.maximum).optional(),
+  restBetweenSetsSeconds: z.number().int().min(NUMERIC_BOUNDS.restSeconds.minimum).max(NUMERIC_BOUNDS.restSeconds.maximum),
+  restAfterExerciseSeconds: z.number().int().min(NUMERIC_BOUNDS.restSeconds.minimum).max(NUMERIC_BOUNDS.restSeconds.maximum),
   notes: z.string().max(STRING_BOUNDS.exerciseNotes),
   perSide: z.boolean(),
   // Swift omits this key when the dictionary is empty.
@@ -82,15 +84,15 @@ export const exerciseSchema = z.object({
  * routine would then silently fail to upload, dropping out of the coach's
  * view entirely rather than failing anywhere visible.
  */
-export const MAX_SECTIONS = 50;
-export const MAX_EXERCISES_PER_SECTION = 100;
+export const MAX_SECTIONS = COLLECTION_LIMITS.sectionsPerRoutine;
+export const MAX_EXERCISES_PER_SECTION = COLLECTION_LIMITS.exercisesPerSection;
 /**
  * And the most routines a snapshot carries. `createRoutine` is the first
  * operation that can grow the count, and passing this is worse than the other
  * ceilings: the next upload fails whole, so the coach stops seeing anything
  * at all rather than losing one routine.
  */
-export const MAX_ROUTINES = 50;
+export const MAX_ROUTINES = COLLECTION_LIMITS.routines;
 
 export const routineSchema = z.object({
   id: UUID,
@@ -405,11 +407,11 @@ type WorkingRoutine = ReturnType<typeof workingRoutine>;
  * result.
  */
 const NUMERIC_REPLACES = {
-  replaceExerciseReps: { field: "reps", range: [1, 100], name: "reps" },
-  replaceExerciseSets: { field: "sets", range: [1, 10], name: "sets" },
-  replaceTimedDuration: { field: "durationSeconds", range: [1, 3600], name: "duration" },
-  replaceRestBetweenSets: { field: "restBetweenSetsSeconds", range: [0, 900], name: "rest between sets" },
-  replaceRestAfterExercise: { field: "restAfterExerciseSeconds", range: [0, 900], name: "rest after exercise" },
+  replaceExerciseReps: { field: "reps", range: [NUMERIC_BOUNDS.reps.minimum, NUMERIC_BOUNDS.reps.maximum], name: "reps" },
+  replaceExerciseSets: { field: "sets", range: [NUMERIC_BOUNDS.sets.minimum, NUMERIC_BOUNDS.sets.maximum], name: "sets" },
+  replaceTimedDuration: { field: "durationSeconds", range: [NUMERIC_BOUNDS.durationSeconds.minimum, NUMERIC_BOUNDS.durationSeconds.maximum], name: "duration" },
+  replaceRestBetweenSets: { field: "restBetweenSetsSeconds", range: [NUMERIC_BOUNDS.restSeconds.minimum, NUMERIC_BOUNDS.restSeconds.maximum], name: "rest between sets" },
+  replaceRestAfterExercise: { field: "restAfterExerciseSeconds", range: [NUMERIC_BOUNDS.restSeconds.minimum, NUMERIC_BOUNDS.restSeconds.maximum], name: "rest after exercise" },
 } as const satisfies Record<string, { field: keyof Exercise; range: readonly [number, number]; name: string }>;
 
 /**
@@ -737,7 +739,7 @@ export function validatePatch(raw: unknown, context: CoachContext, capabilities:
           message: `${located.exercise.name} has notes ${describeNotes(located.exercise.notes)} at this point in the patch`,
         });
       }
-      if (located && proposed !== undefined && proposed.length <= 500) {
+      if (located && proposed !== undefined && proposed.length <= STRING_BOUNDS.exerciseNotes) {
         recordExerciseChange(working, located.exercise.id, { notes: proposed });
       }
     }

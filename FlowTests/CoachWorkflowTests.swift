@@ -1207,6 +1207,79 @@ final class CoachWorkflowTests: XCTestCase {
         XCTAssertEqual(patcherKinds, contract.operationKindMinimumSchema)
     }
 
+    /// The same accepted-and-rejected payloads run in Swift and TypeScript.
+    /// Each side records its own current result because the bridge is
+    /// deliberately stricter at its remote edge, while stale-hash rebase is
+    /// deliberately owned by Flow. The corpus hash freezes those differences
+    /// before contract ownership moves.
+    func testFrozenPatchContractCorpus() throws {
+        enum Outcome: String {
+            case accepted, rejected
+        }
+
+        let corpusURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("bridge-worker/src/patch-contract-corpus.json")
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: try Data(contentsOf: corpusURL)) as? [String: Any]
+        )
+        let expectedCapabilities = try XCTUnwrap(root["expectedCapabilities"] as? [String: Any])
+        XCTAssertEqual(
+            expectedCapabilities["patchSchemaVersions"] as? [Int],
+            FlowRoutinePatch.supportedSchemaVersions.sorted()
+        )
+        XCTAssertEqual(
+            expectedCapabilities["operationKinds"] as? [String],
+            FlowRoutinePatchOperation.Kind.allCases.map(\.rawValue)
+        )
+
+        let baseRoutineObject = try XCTUnwrap(root["baseRoutine"] as? [String: Any])
+        let cases = try XCTUnwrap(root["cases"] as? [[String: Any]])
+
+        func decodeRoutines(_ objects: [[String: Any]]) throws -> [Routine] {
+            let data = try JSONSerialization.data(withJSONObject: objects)
+            return try FlowRoutineExchange.decoder().decode([Routine].self, from: data)
+        }
+
+        func replacingBaseHash(in value: Any, with hash: String) -> Any {
+            if let string = value as? String {
+                return string == "{{baseContentHash}}" ? hash : string
+            }
+            if let array = value as? [Any] {
+                return array.map { replacingBaseHash(in: $0, with: hash) }
+            }
+            if let dictionary = value as? [String: Any] {
+                return dictionary.mapValues { replacingBaseHash(in: $0, with: hash) }
+            }
+            return value
+        }
+
+        for fixture in cases {
+            let id = try XCTUnwrap(fixture["id"] as? String)
+            let routineObjects = fixture["routines"] as? [[String: Any]] ?? [baseRoutineObject]
+            let routines = try decodeRoutines(routineObjects)
+            let hash = try XCTUnwrap(routines.first.map(FlowRoutineRevision.contentHash(for:)))
+            let patchObject = replacingBaseHash(
+                in: try XCTUnwrap(fixture["patch"]),
+                with: hash
+            )
+            let patchData = try JSONSerialization.data(withJSONObject: patchObject)
+            let patchJSON = try XCTUnwrap(String(data: patchData, encoding: .utf8))
+            let actual: Outcome
+            do {
+                _ = try FlowRoutinePatcher.preview(json: patchJSON, routines: routines)
+                actual = .accepted
+            } catch {
+                actual = .rejected
+            }
+            let expected = try XCTUnwrap(
+                (fixture["expected"] as? [String: String])?["swift"]
+            )
+            XCTAssertEqual(actual.rawValue, expected, "fixture: \(id)")
+        }
+    }
+
     /// The text ceilings are shared the same way as the operation kinds: the
     /// bridge derives its schemas from `patch-operations.json`, and this
     /// asserts the app's constants against the same file, so a bound changed

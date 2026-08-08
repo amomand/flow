@@ -4,8 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check": "tsc --noEmit && npm run check:chatgpt-actions",
+    "check": "tsc --noEmit && npm run check:chatgpt-actions && npm run check:patch-contract-corpus && npm run check:generated-patch-contract",
     "check:chatgpt-actions": "node scripts/verify-chatgpt-actions-contract.mjs",
+    "check:patch-contract-corpus": "node scripts/verify-patch-contract-corpus.mjs",
+    "check:generated-patch-contract": "node scripts/generate-swift-patch-contract.mjs --check",
+    "generate:patch-contract": "node scripts/generate-swift-patch-contract.mjs",
     "test": "vitest run",
     "dev": "wrangler dev",
     "smoke:remote": "node scripts/remote-smoke.mjs",
