@@ -7,7 +7,7 @@ const contract = JSON.parse(await readFile(contractUrl, "utf8"));
 
 const integers = (values, label) => {
   assert.ok(values.length > 0, `${label} must not be empty`);
-  values.forEach((value) => assert.ok(Number.isInteger(value), `${label} must contain integers`));
+  values.forEach((value) => assert.ok(Number.isInteger(value) && value > 0, `${label} must contain positive integers`));
   return values;
 };
 const identifier = (value) => {
@@ -21,6 +21,17 @@ const range = (value, label) => {
 };
 
 const versions = integers(contract.patchSchemaVersions, "patchSchemaVersions");
+assert.deepEqual(
+  versions,
+  [...new Set(versions)].sort((left, right) => left - right),
+  "patchSchemaVersions must be unique and ascending",
+);
+for (const [name, value] of Object.entries(contract.stringBoundsUtf16)) {
+  assert.ok(Number.isInteger(value) && value > 0, `${name} must be a positive integer`);
+}
+for (const [name, value] of Object.entries(contract.collectionLimits)) {
+  assert.ok(Number.isInteger(value) && value > 0, `${name} must be a positive integer`);
+}
 const operations = Object.entries(contract.operationKindMinimumSchema);
 operations.forEach(([kind, version]) => {
   identifier(kind);

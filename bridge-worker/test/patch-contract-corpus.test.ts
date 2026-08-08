@@ -20,6 +20,13 @@ type FixtureCase = {
 };
 
 const CURRENT_HASH = "c1-0123456789abcdef";
+const APPROVED_RUNTIME_DIFFERENCES = [
+  "unknown-top-level-field",
+  "revision-stale-but-rebasable",
+  "rename-next-line-trimming-difference",
+  "fifty-one-operations",
+  "device-does-not-advertise-rename",
+];
 
 function replaceBaseHash<T>(value: T): T {
   return JSON.parse(JSON.stringify(value).replaceAll("{{baseContentHash}}", CURRENT_HASH)) as T;
@@ -43,6 +50,13 @@ describe("frozen Flow routine patch contract corpus", () => {
   it("advertises the capabilities recorded with the matrix", () => {
     expect(PATCH_SCHEMA_VERSIONS).toEqual(corpus.expectedCapabilities.patchSchemaVersions);
     expect(OPERATION_KINDS).toEqual(corpus.expectedCapabilities.operationKinds);
+  });
+
+  it("keeps the five reviewed runtime differences explicit", () => {
+    const differences = (corpus.cases as FixtureCase[])
+      .filter((fixture) => fixture.expected.swift !== fixture.expected.bridge)
+      .map((fixture) => fixture.id);
+    expect(differences).toEqual(APPROVED_RUNTIME_DIFFERENCES);
   });
 
   for (const fixture of corpus.cases as FixtureCase[]) {
