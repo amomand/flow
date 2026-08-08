@@ -5,13 +5,9 @@ import Foundation
  the editors, the JSON import, and the patch path all measure against the
  same numbers.
 
- The bridge derives its schemas from `bridge-worker/src/patch-operations.json`;
- FlowTests asserts these constants against that same file, so a change there
- fails a test here rather than quietly leaving the app accepting what the
- next snapshot upload refuses. That failure mode is the whole reason these
- exist: the envelope is validated whole, so one over-long name typed months
- ago takes every routine out of the coach's view at sync time, far from the
- edit that caused it.
+ The bridge reads `bridge-worker/src/patch-operations.json` directly and
+ Flow's values below point at its generated Swift view. That file owns the
+ numbers; this type keeps the app-facing names and validation helpers.
 
  All bounds are UTF-16 code units, not Swift `count`, because UTF-16 is what
  the bridge's JavaScript measures without being asked. The two agree for most
@@ -20,14 +16,14 @@ import Foundation
  */
 enum FlowTextBounds {
     /// Routine, section and exercise names as the snapshot carries them.
-    static let name = 200
+    static let name = FlowPatchContract.name
     /// A routine name a coach proposes (createRoutine, renameRoutine).
     /// Deliberately tighter than `name`.
-    static let proposedRoutineName = 100
+    static let proposedRoutineName = FlowPatchContract.proposedRoutineName
     /// Per-exercise notes.
-    static let exerciseNotes = 500
+    static let exerciseNotes = FlowPatchContract.exerciseNotes
     /// The free-text constraints notes attached to a coach context export.
-    static let constraintsNotes = 2000
+    static let constraintsNotes = FlowPatchContract.constraintsNotes
 
     /**
      What counts as padding around a name.
@@ -77,10 +73,10 @@ enum FlowTextBounds {
      the JSON import share, and a `sets` of 12 fails the envelope exactly the
      way a 201-character name does.
      */
-    static let setsRange = 1...10
-    static let repsRange = 1...100
-    static let durationSecondsRange = 1...3600
-    static let restSecondsRange = 0...900
+    static let setsRange = FlowPatchContract.setsRange
+    static let repsRange = FlowPatchContract.repsRange
+    static let durationSecondsRange = FlowPatchContract.durationSecondsRange
+    static let restSecondsRange = FlowPatchContract.restSecondsRange
 
     /**
      The first field in the routine the snapshot schema would refuse,

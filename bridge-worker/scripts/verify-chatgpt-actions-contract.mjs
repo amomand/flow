@@ -99,6 +99,26 @@ assert.equal(schemas.ProposedRoutine.properties.name.maxLength, bounds.proposedR
 assert.equal(schemas.PatchOperation.properties.newStringValue.maxLength, bounds.exerciseNotes);
 assert.equal(schemas.CoachContextSummary.properties.constraints.properties.notes.maxLength, bounds.constraintsNotes);
 
+const numbers = contract.numericBounds;
+for (const schemaName of ["Exercise", "PhaseOverride"]) {
+  assert.equal(schemas[schemaName].properties.sets.minimum, numbers.sets.minimum);
+  assert.equal(schemas[schemaName].properties.sets.maximum, numbers.sets.maximum);
+  assert.equal(schemas[schemaName].properties.reps.minimum, numbers.reps.minimum);
+  assert.equal(schemas[schemaName].properties.reps.maximum, numbers.reps.maximum);
+  assert.equal(schemas[schemaName].properties.durationSeconds.minimum, numbers.durationSeconds.minimum);
+  assert.equal(schemas[schemaName].properties.durationSeconds.maximum, numbers.durationSeconds.maximum);
+}
+for (const field of ["restBetweenSetsSeconds", "restAfterExerciseSeconds"]) {
+  assert.equal(schemas.Exercise.properties[field].minimum, numbers.restSeconds.minimum);
+  assert.equal(schemas.Exercise.properties[field].maximum, numbers.restSeconds.maximum);
+}
+
+const collections = contract.collectionLimits;
+assert.equal(schemas.CoachContextSummary.properties.routines.maxItems, collections.routines);
+assert.equal(schemas.Routine.properties.sections.maxItems, collections.sectionsPerRoutine);
+assert.equal(schemas.ProposedRoutine.properties.sections.maxItems, collections.sectionsPerRoutine);
+assert.equal(schemas.Section.properties.exercises.maxItems, collections.exercisesPerSection);
+
 assert.deepEqual(
   schema.paths["/training-summary"].get.responses["200"].content["application/json"].schema.required,
   ["contextId", "recentStrengthSummary", "recentCardioSummary"],

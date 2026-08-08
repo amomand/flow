@@ -14,8 +14,8 @@ struct FlowRoutinePatch: Codable, Equatable {
     /// appear in a patch whose declared version knows about it. That rule is
     /// what lets the bridge advertise capabilities honestly, because "schema 2"
     /// names one fixed operation set on both sides.
-    static let currentSchemaVersion = 3
-    static let supportedSchemaVersions: Set<Int> = [2, 3]
+    static let currentSchemaVersion = FlowPatchContract.currentSchemaVersion
+    static let supportedSchemaVersions = FlowPatchContract.supportedSchemaVersions
 
     /// What a patch is aimed at.
     ///
@@ -103,34 +103,6 @@ struct FlowRoutinePatchOperation: Codable, Equatable {
     /// model and nothing to leave out.
     var routine: Routine? = nil
 
-    enum Kind: String, Codable, Equatable, CaseIterable {
-        case replaceExerciseReps
-        case replaceExerciseSets
-        case replaceTimedDuration
-        case replaceRestBetweenSets
-        case replaceRestAfterExercise
-        case updateExerciseNotes
-        case addExercise
-        case removeExercise
-        case moveExercise
-        case replacePhaseOverride
-        case renameRoutine
-        case addSection
-        case createRoutine
-
-        /// The first schema version this operation belongs to. A patch may
-        /// only use operations its declared version knows about, so a coach
-        /// that was told "this build speaks schema 2" cannot smuggle a newer
-        /// operation through under the older version number.
-        var minimumSchemaVersion: Int {
-            switch self {
-            case .renameRoutine, .addSection, .createRoutine:
-                return 3
-            default:
-                return 2
-            }
-        }
-    }
 }
 
 struct FlowRoutinePatchPreview {
@@ -342,18 +314,18 @@ enum FlowRoutinePatcher {
     /// with more sections than this. A cap here is not about what a training
     /// block should look like; it is about not letting a patch push a routine
     /// out of the range the coach can still read back.
-    static let maximumSections = 50
+    static let maximumSections = FlowPatchContract.maximumSections
 
     /// Also from the bridge's `routineSchema`, for the same reason: a section
     /// pushed past this stops fitting in a snapshot, so the routine would drop
     /// out of the coach's view at the next sync.
-    static let maximumExercisesPerSection = 100
+    static let maximumExercisesPerSection = FlowPatchContract.maximumExercisesPerSection
 
     /// A snapshot carries at most this many routines. `createRoutine` is the
     /// first operation that can grow the count, and going past it is worse
     /// than the other ceilings: the next snapshot upload fails whole, so the
     /// coach stops seeing anything at all rather than losing one routine.
-    static let maximumRoutines = 50
+    static let maximumRoutines = FlowPatchContract.maximumRoutines
 
     static func preview(json: String, routines: [Routine]) throws -> FlowRoutinePatchPreview {
         let cleaned = FlowRoutineExchange.sanitizedJSON(from: json)
@@ -652,7 +624,7 @@ enum FlowRoutinePatcher {
         switch operation.kind {
         case .replaceExerciseReps:
             let value = try requireInt(operation.newIntValue, "newIntValue")
-            try validate(value, field: "reps", range: 1...100)
+            try validate(value, field: "reps", range: FlowTextBounds.repsRange)
             let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
             var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
             guard exercise.durationSeconds == nil else {
@@ -675,7 +647,7 @@ enum FlowRoutinePatcher {
 
         case .replaceExerciseSets:
             let value = try requireInt(operation.newIntValue, "newIntValue")
-            try validate(value, field: "sets", range: 1...10)
+            try validate(value, field: "sets", range: FlowTextBounds.setsRange)
             let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
             var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
             try expectInt(operation.expectedIntValue, actual: exercise.sets, field: "\(exercise.name) sets")
@@ -692,7 +664,7 @@ enum FlowRoutinePatcher {
 
         case .replaceTimedDuration:
             let value = try requireInt(operation.newIntValue, "newIntValue")
-            try validate(value, field: "durationSeconds", range: 1...3600)
+            try validate(value, field: "durationSeconds", range: FlowTextBounds.durationSecondsRange)
             let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
             var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
             guard let current = exercise.durationSeconds else {
@@ -1012,7 +984,7 @@ enum FlowRoutinePatcher {
         in routine: inout Routine
     ) throws -> FlowRoutinePatchDiff {
         let value = try requireInt(operation.newIntValue, "newIntValue")
-        try validate(value, field: fieldName, range: 0...900)
+        try validate(value, field: fieldName, range: FlowTextBounds.restSecondsRange)
         let location = try exerciseLocation(in: routine, id: try requireUUID(operation.exerciseId, "exerciseId"))
         var exercise = routine.sections[location.sectionIndex].exercises[location.exerciseIndex]
         let actual = current(exercise)
@@ -1119,13 +1091,13 @@ enum FlowRoutinePatcher {
         // one name over this ceiling costs the coach every routine, not one.
         try check(name, atMost: FlowTextBounds.name, field: "exercise.name")
         stored.name = name
-        try validate(exercise.sets, field: "exercise.sets", range: 1...10)
-        try validate(exercise.reps, field: "exercise.reps", range: 1...100)
+        try validate(exercise.sets, field: "exercise.sets", range: FlowTextBounds.setsRange)
+        try validate(exercise.reps, field: "exercise.reps", range: FlowTextBounds.repsRange)
         if let duration = exercise.durationSeconds {
-            try validate(duration, field: "exercise.durationSeconds", range: 1...3600)
+            try validate(duration, field: "exercise.durationSeconds", range: FlowTextBounds.durationSecondsRange)
         }
-        try validate(exercise.restBetweenSetsSeconds, field: "exercise.restBetweenSetsSeconds", range: 0...900)
-        try validate(exercise.restAfterExerciseSeconds, field: "exercise.restAfterExerciseSeconds", range: 0...900)
+        try validate(exercise.restBetweenSetsSeconds, field: "exercise.restBetweenSetsSeconds", range: FlowTextBounds.restSecondsRange)
+        try validate(exercise.restAfterExerciseSeconds, field: "exercise.restAfterExerciseSeconds", range: FlowTextBounds.restSecondsRange)
         try check(exercise.notes, atMost: FlowTextBounds.exerciseNotes, field: "exercise.notes")
         for override in exercise.phaseOverrides.values {
             try validatePhaseOverride(override)
@@ -1135,13 +1107,13 @@ enum FlowRoutinePatcher {
 
     private static func validatePhaseOverride(_ override: PhaseOverride) throws {
         if let sets = override.sets {
-            try validate(sets, field: "phaseOverride.sets", range: 1...10)
+            try validate(sets, field: "phaseOverride.sets", range: FlowTextBounds.setsRange)
         }
         if let reps = override.reps {
-            try validate(reps, field: "phaseOverride.reps", range: 1...100)
+            try validate(reps, field: "phaseOverride.reps", range: FlowTextBounds.repsRange)
         }
         if let duration = override.durationSeconds {
-            try validate(duration, field: "phaseOverride.durationSeconds", range: 1...3600)
+            try validate(duration, field: "phaseOverride.durationSeconds", range: FlowTextBounds.durationSecondsRange)
         }
     }
 
