@@ -51,9 +51,17 @@ To connect a person's Claude:
 2. Claude opens the consent page; enter that deployment's connect phrase and approve.
 3. Confirm the six tools appear and a read works before any real data is synced.
 
-### ChatGPT MCP compatibility (#49): proved, and not useful yet
+### ChatGPT MCP compatibility (#49): ordinary iOS Chat confirmed 28 October 2026
 
-Confirmed working from ChatGPT Work on 1 August 2026, and confirmed unavailable in ordinary Chat. Two limits apply, and the second is the one that bites: custom MCP connections are Work-only, and ChatGPT Work does not carry the person's ordinary ChatGPT memory or previous conversations. The reason to want ChatGPT here was that it knows the person, and no available route delivers that, so treat this as compatibility rather than capability. Claude remains the working coach surface, including on iOS. See [`chatgpt/MCP-SETUP.md`](chatgpt/MCP-SETUP.md) for the connection steps, the published-versus-custom distinction that explains why GitHub and Apple Music do work in ordinary Chat, and what would have to change.
+The 1 August 2026 proof established ChatGPT Work compatibility but found
+ordinary Chat and mobile unavailable, while Work lacked the user's personal
+conversation context. **This restriction has changed for the tested account:**
+on 28 October 2026, an existing ordinary ChatGPT iOS conversation exposed all
+six Flow tools and a call to `get_flow_coach_context` returned the expected
+"No unexpired coach snapshot is available. Sync from Flow first." No new chat
+or server change was required. Real-snapshot reads and a pending-draft write
+are still untested from ChatGPT; tool availability alone does not prove those
+paths. See [`chatgpt/MCP-SETUP.md`](chatgpt/MCP-SETUP.md).
 
 The connection uses the same person-specific `https://<their-host>/mcp` URL and `FLOW_COACH_CONNECT_SECRET` as Claude. Do not enter the Actions secret. ChatGPT discovers the protected-resource and authorization-server metadata, dynamically registers its callback, and completes authorization code + S256 PKCE with the MCP `resource` parameter bound to the endpoint.
 
