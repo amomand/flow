@@ -5,47 +5,31 @@ connect ChatGPT to the same provider-neutral `/mcp` endpoint already used by
 Claude. Do not create a custom GPT and do not use
 `FLOW_COACH_ACTIONS_SECRET`.
 
-**Result: the server side is proved, and the integration is not useful yet.**
-ChatGPT authenticates, discovers the six tools and can drive them, but only
-from ChatGPT Work, which does not carry the person's ordinary ChatGPT memory
-or previous conversations. The reason to want ChatGPT here was that it knows
-the person. No available route delivers that, so this is compatibility rather
-than capability. Read the boundary below before spending time on it.
+**Result (28 October 2026): the custom Flow MCP connector works in ordinary ChatGPT on iOS.**
+The user added the existing Flow endpoint as a plugin, and all six tools became
+available to the assistant in an *existing personal chat*, without restarting
+the conversation or entering ChatGPT Work. A live call to
+`get_flow_coach_context` reached the Worker and returned the expected
+"No unexpired coach snapshot is available. Sync from Flow first."
 
-## The OpenAI surface boundary
+**Scope of proof:** tool discovery and a live authenticated call to the
+bridge are confirmed. The user had not uploaded a fresh snapshot, so actual
+routine reads, training history, patch validation and pending-draft creation
+have **not yet been exercised** in ChatGPT iOS. Seeing the write tool does not
+prove that an end-to-end write is permitted.
 
-Two separate limits, and the second is the one that actually bites.
+## History: the August product boundary has moved
 
-**Custom MCP connections are Work-only.** OpenAI's documentation says plugins
-are available with ChatGPT Work on the web and with ChatGPT Work or Codex in
-the desktop app, and that they "aren't available in Chat, the IDE extension,
-or mobile". Configuring the connection and using it are different surfaces:
-even once it is saved and authorised, the tools appear only in a ChatGPT Work
-conversation.
+On 1 August 2026, [#49](https://github.com/amomand/flow/issues/49)
+proved the same server from ChatGPT Work, but custom MCP was unavailable in
+ordinary Chat and on mobile. Work did not bring the user's ordinary ChatGPT
+memory and past conversations, so this was a negative *product* result despite
+successful MCP compatibility.
 
-**ChatGPT Work does not have the person's memory.** This is the same defect
-that demoted the private-GPT Actions route to a fallback, arriving by a
-different path: a custom GPT does not inherit ordinary ChatGPT memory or
-previous conversations, and neither does Work. Both available ChatGPT routes
-drop the personal context, and the one surface that has it is the one that
-cannot take connectors.
-
-### Why GitHub and Apple Music work in ordinary Chat
-
-Because they are published, reviewed integrations distributed by OpenAI, not
-self-hosted custom MCP connections added through developer mode. The
-documentation notes that published plugins "can run in ChatGPT and Codex" and
-that published plugins with MCP use reviewed metadata snapshots. Same protocol
-underneath; different distribution status. Note this is an inference from two
-separate statements rather than something OpenAI states directly.
-
-The consequence is what matters: the route into ordinary Chat is publication
-and review, not configuration. That is a poor fit for Flow by design. The
-bridge is one deployment per person with a person-specific hostname and connect
-phrase and no account system (see [`../RUNBOOK.md`](../RUNBOOK.md) on the
-household deployment boundary). A directory app is the opposite shape, and
-adopting it would mean introducing exactly the multi-tenancy this design
-deliberately avoids.
+The 28 October iOS observation supersedes the Work-only conclusion **for this
+account and connector**. It does not prove availability for every plan or
+account, or a pending-draft write. A published directory app and multi-tenant
+redesign are not necessary for the observed connection.
 
 - [OpenAI: Plugins and supported surfaces](https://learn.chatgpt.com/docs/plugins)
 - [OpenAI: Connect and test an MCP server](https://developers.openai.com/plugins/deploy/connect-chatgpt)
@@ -73,48 +57,46 @@ Worker issued itself; the #46 spike's no-auth `/mcp/<token>` mount is gone.
 
 ## Connect from ChatGPT
 
-Use ChatGPT web or the desktop app in **ChatGPT Work**, not ordinary Chat.
+For ordinary ChatGPT, add the person-specific custom MCP connection in
+ChatGPT's plugin settings (web setup may be required). The resulting plugin
+was usable in an existing iOS chat on 28 October 2026.
 
-1. Open **Settings**, then **Security and login**, and turn on **Developer mode**.
-2. Open **Plugins**, select the **MCPs** tab, and add a connection. The form is
-   headed *Connect to a custom MCP*.
-3. **Name**: `Flow Coach — Alex` (or the correct person).
-4. **Type**: **Streamable HTTP**, not STDIO.
-5. **URL**: the exact person-specific URL including the `/mcp` path.
-6. Leave **Bearer token env var** empty, and leave both **Headers** sections
-   empty. Those fields are for servers using static credentials. Putting any
-   Flow secret there would fail against the OAuth gate and would leave a real
-   credential in ChatGPT's configuration.
-7. **Save**. ChatGPT probes the endpoint, follows the 401 challenge to the
-   protected-resource metadata, registers itself dynamically, and opens the
-   Flow Coach consent page.
-8. Enter that mailbox's connect phrase from the password manager and approve.
-   Not the Actions secret, not the device credential.
-9. Review the six discovered tools, then start a new **ChatGPT Work**
-   conversation and add the connection from the tools menu.
+1. Add a custom **Streamable HTTP** MCP server, named for the person.
+2. Set the URL to `https://<their-host>/mcp`. For the deployed primary
+   mailbox use `https://flow-coach-bridge-primary.aomand.workers.dev/mcp`.
+3. Leave bearer-token and custom-header fields empty. The Worker handles OAuth;
+   never put a Flow secret in a static-token field.
+4. Follow the OAuth consent flow and enter `FLOW_COACH_CONNECT_SECRET` from
+   the password manager *on the Worker's consent page*. Do not use the device
+   credential or Actions secret.
+5. Select the plugin in an ordinary ChatGPT conversation. On 28 October, the
+   existing iOS chat could see all six tools immediately.
+6. Call `get_flow_coach_context`. If it reports an expired/missing snapshot,
+   sync from Flow first; this is an expected application-level response.
 
-If Save returns a bare 401 with no consent page, the surface is not performing
-OAuth discovery. Record that and stop. Do not add a static-token path to the
-Worker to work around it; that would undo the auth model built in
-[#38](https://github.com/amomand/flow/issues/38).
+If the connection returns a bare 401 without opening consent, investigate
+OAuth discovery rather than weakening the server to accept static tokens.
+The former ChatGPT Work-only instructions describe an obsolete product
+restriction, not the desired connection surface.
 
 ## Evaluation
 
-Sync Flow first, then type these prompts. Keep the first pass read-only.
+Confirmed on 28 October 2026 from **ordinary ChatGPT iOS**: all six tools
+discoverable, and `get_flow_coach_context` invoked successfully enough to
+return the Worker's missing-snapshot error.
+
+Still to prove **after a fresh Flow sync**:
 
 1. `Use Flow Coach and list the routines in my current snapshot. Do not propose changes.`
 2. `Open <routine> and explain its current structure.`
 3. `Summarise my recent training without health metrics.`
 4. `Suggest one small improvement to <routine>, but do not send it to Flow.`
 5. `Validate that exact proposal.` Confirm no draft appears in Flow.
-6. `Send that exact proposal to Flow.` Confirm a pending draft appears and the
-   response does not claim that the routine changed.
-7. Preview and reject or apply it in Flow.
+6. `Send that exact proposal to Flow.` Confirm a pending draft, not an applied routine.
+7. Preview and reject or apply the proposal in Flow.
 
-Record the date, ChatGPT surface and mode, OAuth result, discovered tool names,
-selected tool and arguments for each prompt, write confirmation behaviour, and
-Flow inbox result on #49. Never include routine contents, credentials, health
-data or access tokens in the issue.
+Record the surface, date, successful tools, permission and write behaviour,
+and Flow inbox outcome without logging routine details, health data or secrets.
 
 ## Refresh after a contract deploy
 
@@ -130,13 +112,12 @@ rejected with `invalid_target` and must reauthorise with the connect phrase.
 Token use is more lenient than token issue. If a connector demands re-approval
 with no deploy behind it, this is the likely cause.
 
-## What would change the picture
+## Remaining proof
 
-Nothing server-side. Flow is already compatible and needs no work to stay that
-way. The blockers are OpenAI's: connectors reaching ordinary Chat or mobile, or
-Work gaining access to personal memory. Until one of those moves, Claude
-remains the working coach surface, including on iOS (proved in
-[#46](https://github.com/amomand/flow/issues/46)).
+No Flow server change was necessary to overcome the previous ChatGPT product
+boundary. The next step is to verify real-snapshot reads and a pending-draft
+round trip, including any client write restrictions. Only Flow can preview,
+validate and apply a proposed routine change.
 
 The private-GPT Actions instructions and OpenAPI schema in this directory
 remain fallback smoke coverage only.
