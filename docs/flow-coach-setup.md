@@ -16,7 +16,7 @@ The operator needs three values for that person's mailbox, generated at deploy t
 
 The device credential and the connect phrase are both 64 hex characters and look identical at a glance. They are not interchangeable, and mixing them up produces a 401 with no clue as to why. If you ever find yourself pasting either into a conversation with an assistant, stop.
 
-The already-proved mobile route is Claude's custom connector. ChatGPT uses the same `/mcp` endpoint, but OpenAI currently exposes custom MCP plugins only in ChatGPT Work on web/desktop, not ordinary Chat or mobile. The exact ChatGPT compatibility proof is in [`../bridge-worker/chatgpt/MCP-SETUP.md`](../bridge-worker/chatgpt/MCP-SETUP.md).
+Claude's custom connector works on iOS, and on 28 October 2026 an existing ordinary ChatGPT iOS conversation also discovered all six Flow tools and called the bridge successfully (which reported the expected missing-snapshot error). Actual routine reads and draft writes from ChatGPT still need a fresh-snapshot test. See [`../bridge-worker/chatgpt/MCP-SETUP.md`](../bridge-worker/chatgpt/MCP-SETUP.md).
 
 ## 1. Pair Flow to the mailbox
 
@@ -51,7 +51,7 @@ A draft the assistant has already proposed does not die with its snapshot. Patch
 
 ## 4. Add the MCP connector
 
-For the proved Claude route, do this on desktop or web. The connector is stored against the Claude account, so it appears on that person's phone afterwards.
+For Claude, configure the custom connector on desktop or web; it then appears on that person's phone. For ChatGPT, add the same person-specific Streamable HTTP `/mcp` endpoint in plugin settings (web setup may be required), authorise through the Worker's OAuth consent page, and use it in an ordinary chat. This route was observed working on iOS on 28 October 2026. The following steps describe the Claude-specific screens:
 
 1. Settings, then Connectors, then add a custom connector rather than browsing the directory.
 2. Name it for the person, for example `Flow Coach (Alex)`. The URL is the hostname with `/mcp` on the end.
@@ -59,17 +59,17 @@ For the proved Claude route, do this on desktop or web. The connector is stored 
 4. A page served by that person's own Worker opens, headed "Flow Coach bridge". It names the client and lists what it gets: reading routines and training summary, and storing draft edits for Flow to preview. Enter the connect phrase and approve.
 5. Approving redirects back to Claude. Six tools should be listed on the connector.
 
-Before the first real conversation, check the data-training setting on that Claude account. Syncing exposes nothing to the assistant; this is the step where the data actually reaches it.
+Before the first real conversation, check the data-training setting on the account being used. Syncing exposes nothing to the assistant; this is the step where the data actually reaches it.
 
 ## 5. Decide about tool approval
 
-The assistant asks permission per tool. Five of the six tools are read-only; only `create_pending_routine_patch` writes anything, and even that only stores a draft.
+Five of the six tools are read-only; only `create_pending_routine_patch` writes anything, and even that only stores a draft. Claude's approval prompts are proved; ChatGPT's approval behaviour for the write tool is not yet tested.
 
-Allowing the five reads permanently and leaving the write to prompt each time turns five prompts per conversation into one, and keeps the prompt on the only call that puts something in the inbox. Make that choice deliberately: the permanent option is account-scoped, applies to every device, and is awkward to reverse. It is a convenience setting, not a safety boundary. Flow's preview and apply is the safety boundary.
+In Claude, allowing the five reads permanently and leaving the write to prompt each time turns five prompts per conversation into one, and keeps the prompt on the only call that puts something in the inbox. Make that choice deliberately: the permanent option is account-scoped, applies to every device, and is awkward to reverse. It is a convenience setting, not a safety boundary. Flow's preview and apply is the safety boundary.
 
 ## 6. Conversation context per person
 
-A Claude Project currently supplies the proved per-person instructions and conversation context. The ChatGPT target is an ordinary conversation with the Flow MCP plugin available, so it can use the context ChatGPT already has rather than a separate private GPT. In either client, keep only that person's connector attached to that context. Give it instructions along these lines:
+A Claude Project supplies per-person instructions and conversation context. The ChatGPT target is now reachable: an ordinary iOS chat with the Flow MCP plugin can use ChatGPT's personal context rather than a private GPT. Actual synced-data reads and writes remain to be verified. In either client, keep only that person's connector attached to that context. Give it instructions along these lines:
 
 ```text
 You help me adjust my strength routines in Flow.
@@ -123,12 +123,12 @@ Three things that will come up:
 
 ### After the bridge is updated
 
-Claude fetches the connector's tool descriptions when the connector is added and keeps its own copy; updating the Worker does not update that copy. The visible symptom is a coach that quietly believes less than the bridge can do — telling you a kind of edit is impossible, or proposing something clumsier than it needed to.
+MCP clients may cache connector tool descriptions; updating the Worker does not necessarily refresh those copies. The visible symptom is a coach that quietly believes less than the bridge can do — telling you a kind of edit is impossible, or proposing something clumsier than it needed to.
 
-After any bridge update that changes what the tools accept, refresh the connector in Claude (Settings, Connectors — remove and re-add it if no refresh is offered; the same connect phrase works). Then check it took, in one message: ask the coach to list the operation kinds it can see in its patch tool, and compare against `capabilities.operationKinds` from `get_flow_coach_context`. If they disagree, the copy is still stale.
+After any bridge update that changes what the tools accept, refresh the connector (Claude: Settings, Connectors, remove/re-add if necessary; ChatGPT: Plugins, Refresh where offered). Then check it took, in one message: ask the coach to list the operation kinds it can see in its patch tool, and compare against `capabilities.operationKinds` from `get_flow_coach_context`. If they disagree, the copy is still stale.
 
 ## Turning it off
 
-Removing the connector in Claude stops the assistant reaching the mailbox. Rotating the connect phrase stops new authorisations but leaves existing grants valid, so a full revocation also means deleting that environment's grants from `OAUTH_KV`, as described in the runbook.
+Removing the connector from all connected clients stops those assistants reaching the mailbox. Rotating the connect phrase stops new authorisations but leaves existing grants valid, so a full revocation also means deleting that environment's grants from `OAUTH_KV`, as described in the runbook.
 
 SIGN OUT in Flow stops remote calls and leaves routines, inbox and history untouched. WIPE MAILBOX deletes everything the mailbox holds, and cannot retract a draft already pulled into Flow.
